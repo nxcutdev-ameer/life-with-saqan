@@ -1,0 +1,108 @@
+export type TransactionType = 'BUY' | 'RENT' | 'STAY';
+
+export type LifestyleType = 'FOREST' | 'BEACH' | 'CITY_LIVING';
+
+export type PropertyType = 'apartment' | 'villa' | 'townhouse' | 'penthouse' | 'studio';
+
+export interface Location {
+  city: string;
+  area: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  agency: string;
+  photo: string;
+  phone: string;
+  email: string;
+  bio?: string;
+  isVerified: boolean;
+  rating?: number;
+  totalReviews?: number;
+  yearsExperience?: number;
+  licenseNumber?: string;
+}
+
+export interface Property {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  currency: string;
+  listingType: TransactionType;
+  propertyType: PropertyType;
+  bedrooms: number;
+  bathrooms: number;
+  sizeSqft: number;
+  location: Location;
+  videoUrl: string;
+  thumbnailUrl: string;
+  images: string[];
+  amenities: string[];
+  lifestyle: LifestyleType[];
+  agent: Agent;
+  agentName: string;
+  agentPhoto: string;
+  likesCount: number;
+  savesCount: number;
+  sharesCount: number;
+  commentsCount: number;
+}
+
+export interface LifestyleOption {
+  id: LifestyleType;
+  name: string;
+  tagline: string;
+  description: string;
+  imageUrl: string;
+  color: string;
+}
+
+export interface UserPreferences {
+  transactionType?: TransactionType;
+  location?: string;
+  lifestyles: LifestyleType[];
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  icon?: string;
+  propertyIds: string[];
+  createdAt: Date;
+  isPrivate: boolean;
+}
+
+export interface Notification {
+  id: string;
+  type: 'engagement' | 'activity' | 'marketing' | 'agent' | 'system';
+  title: string;
+  message: string;
+  timestamp: Date;
+  isRead: boolean;
+  propertyId?: string;
+  agentId?: string;
+  userId?: string;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  propertyId?: string;
+  text: string;
+  timestamp: Date;
+  isRead: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  participants: string[];
+  lastMessage: Message;
+  unreadCount: number;
+}
