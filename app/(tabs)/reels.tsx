@@ -90,9 +90,7 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     setCurrentTime(timestamp);
   };
 
-  const 
-  EDGE_ZONE_WIDTH = scaleWidth(100);
-  const SCREEN_WIDTH = Dimensions.get('window').width;
+  const EDGE_ZONE_WIDTH = scaleWidth(50);
   const isSpeedingRef = useRef(false);
 
   const swipeGesture = Gesture.Pan().onEnd((event) => {
@@ -102,31 +100,39 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     }
   });
 
-  const speedGesture = Gesture.LongPress()
-    .minDuration(150)
-    .onStart((e) => {
-      // Only activate speed-up in the left/right edge zones.
-      const isEdge = e.x <= EDGE_ZONE_WIDTH || e.x >= SCREEN_WIDTH - EDGE_ZONE_WIDTH;
-      if (!isEdge) return;
-      isSpeedingRef.current = true;
-      setPlaybackRate(2);
-    })
-    .onFinalize(() => {
-      if (!isSpeedingRef.current) return;
-      isSpeedingRef.current = false;
-      setPlaybackRate(1);
-    });
+  const leftSpeedGesture = Gesture.Exclusive(
+    Gesture.LongPress()
+      .minDuration(220)
+      .onStart(() => {
+        isSpeedingRef.current = true;
+        setPlaybackRate(2);
+      })
+      .onFinalize(() => {
+        isSpeedingRef.current = false;
+        setPlaybackRate(1);
+      }),
+    // No-op tap to consume touches and prevent navigation.
+    Gesture.Tap().onEnd(() => {})
+  );
 
-  const tapGesture = Gesture.Tap().onEnd((e) => {
-    // Navigate ONLY when tapping the center area.
-    const isEdge = e.x <= EDGE_ZONE_WIDTH || e.x >= SCREEN_WIDTH - EDGE_ZONE_WIDTH;
-    if (isEdge) return;
+  const rightSpeedGesture = Gesture.Exclusive(
+    Gesture.LongPress()
+      .minDuration(220)
+      .onStart(() => {
+        isSpeedingRef.current = true;
+        setPlaybackRate(2);
+      })
+      .onFinalize(() => {
+        isSpeedingRef.current = false;
+        setPlaybackRate(1);
+      }),
+    Gesture.Tap().onEnd(() => {})
+  );
 
+  const centerTapGesture = Gesture.Tap().onEnd(() => {
     player.pause();
     onNavigateToProperty(item.id);
   });
-
-  const gesture = Gesture.Simultaneous(swipeGesture, speedGesture, tapGesture);
 
   const setPlaybackRate = (rate: number) => {
     // expo-video's player API varies slightly by platform/version; set both common properties.
@@ -139,7 +145,7 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   };
 
   return (
-    <GestureDetector gesture={gesture}>
+    <GestureDetector gesture={swipeGesture}>
       <View style={styles.propertyContainer}>
         <View style={styles.videoTouchArea}>
           <VideoView
@@ -149,9 +155,9 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
             nativeControls={false}
           />
 
-          {/* Touch overlay (visual only). Gesture logic is handled by the parent GestureDetector. */}
+              {/* Left/Right: long-press = 2x speed, release = 1x. Taps are consumed (no navigation). */}
+  
           <View
-            pointerEvents="none"
             style={{
               position: 'absolute',
               top: 0,
@@ -162,9 +168,17 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
               zIndex: 2,
             }}
           >
-            <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
-            <View style={{ flex: 1, height: '100%' }} />
-            <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
+            <GestureDetector gesture={leftSpeedGesture}>
+              <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
+            </GestureDetector>
+
+            <GestureDetector gesture={centerTapGesture}>
+              <View style={{ flex: 1, height: '100%' }} />
+            </GestureDetector>
+
+            <GestureDetector gesture={rightSpeedGesture}>
+              <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
+            </GestureDetector>
           </View>
         </View>
 

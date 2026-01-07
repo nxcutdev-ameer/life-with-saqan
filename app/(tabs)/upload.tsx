@@ -231,27 +231,22 @@ export default function UploadScreen() {
     setActiveHighlightStepIndex(0);
     setIsHighlightsMuted(false);
     setIsHighlightsVideoLoaded(false);
-    setIsHighlightsPlaying(false);
+    setIsHighlightsPlaying(true);
     setStep('selectHighlights');
   };
 
   useEffect(() => {
     if (step !== 'selectHighlights') return;
 
-    // Start playback smoothly when the highlights modal opens.
+    // On Android, calling playAsync/pauseAsync during load/seek can crash.
+    // Drive playback using the `shouldPlay` prop only.
     setIsHighlightsVideoLoaded(false);
-    setIsHighlightsPlaying(false);
+    setIsHighlightsPlaying(true);
 
-    const id = requestAnimationFrame(async () => {
-      try {
-        await videoRef.current?.playAsync();
-        setIsHighlightsPlaying(true);
-      } catch {
-        // ignore
-      }
-    });
-
-    return () => cancelAnimationFrame(id);
+    return () => {
+      // stop when leaving
+      setIsHighlightsPlaying(false);
+    };
   }, [step, selectedVideoUri]);
 
   const handleDeleteVideo = () => {
@@ -339,6 +334,7 @@ export default function UploadScreen() {
    const activeRoom = highlightSteps[activeHighlightStepIndex];
 
    const seek = async (sec: number) => {
+     if (!isHighlightsVideoLoaded) return;
      try {
        await videoRef.current?.setPositionAsync(Math.max(0, sec * 1000));
        setVideoCurrentTimeSec(sec);
@@ -351,19 +347,13 @@ export default function UploadScreen() {
      setHighlightsByRoom((prev) => ({ ...prev, [activeRoom]: videoCurrentTimeSec }));
    };
 
-   const handleDone = async () => {
-     try {
-       await videoRef.current?.pauseAsync();
-     } catch {}
+   const handleDone = () => {
      setIsHighlightsPlaying(false);
      setStep('details');
    };
 
-   const goPrevious = async () => {
+   const goPrevious = () => {
      // return back to edit step
-     try {
-       await videoRef.current?.pauseAsync();
-     } catch {}
      setIsHighlightsPlaying(false);
      setStep('edit');
    };
@@ -423,17 +413,9 @@ export default function UploadScreen() {
                <View style={styles.highlightsVideoControls}>
                  <Pressable
                    style={styles.highlightsVideoControlButton}
-                   onPress={async () => {
+                   onPress={() => {
                      if (!isHighlightsVideoLoaded) return;
-                     try {
-                       if (isHighlightsPlaying) {
-                         await videoRef.current?.pauseAsync();
-                         setIsHighlightsPlaying(false);
-                       } else {
-                         await videoRef.current?.playAsync();
-                         setIsHighlightsPlaying(true);
-                       }
-                     } catch {}
+                     setIsHighlightsPlaying((p) => !p);
                    }}
                  >
                    {isHighlightsPlaying ? (
@@ -631,6 +613,7 @@ export default function UploadScreen() {
             <Video
               source={{ uri: selectedVideoUri! }}
               style={styles.videoPreview}
+              resizeMode={'cover' as any}
               useNativeControls={true}
             />
             {overlayText && (
@@ -1210,9 +1193,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   videoPreview: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
   textOverlayPreview: {
     position: 'absolute',
