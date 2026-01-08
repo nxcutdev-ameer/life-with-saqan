@@ -8,14 +8,13 @@ import {
   TextInput,
   Alert,
   Share,
-  Dimensions,
+  Modal,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Video } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
   Image as ImageIcon,
@@ -42,7 +41,6 @@ import { useSubscription } from '@/contexts/SubscriptionContext';
 
 export default function UploadScreen() {
   const tabBarHeight = useBottomTabBarHeight();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
@@ -53,15 +51,21 @@ export default function UploadScreen() {
   const [overlayTextPosition, setOverlayTextPosition] = useState<'top' | 'center' | 'bottom'>('center');
   const [showShareModal, setShowShareModal] = useState(false);
 
-  const highlightSteps = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom', 'View', 'Balcony', 'Terrace'] as const;
-  type HighlightStep = (typeof highlightSteps)[number];
+  type HighlightStep = string;
+
+  const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
+  type HighlightOption = (typeof DEFAULT_HIGHLIGHT_OPTIONS)[number];
+
+  const [highlightSteps, setHighlightSteps] = useState<HighlightStep[]>([...DEFAULT_HIGHLIGHT_OPTIONS]);
   const [activeHighlightStepIndex, setActiveHighlightStepIndex] = useState(0);
   const [highlightsByRoom, setHighlightsByRoom] = useState<Partial<Record<HighlightStep, number>>>({});
+
+  const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
 
   const videoRef = React.useRef<Video>(null);
   const [videoCurrentTimeSec, setVideoCurrentTimeSec] = useState(0);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
-  const [isHighlightsPlaying, setIsHighlightsPlaying] = useState(true);
+  const [isHighlightsPlaying, setIsHighlightsPlaying] = useState(false);
   const [isHighlightsMuted, setIsHighlightsMuted] = useState(false);
   const [isHighlightsVideoLoaded, setIsHighlightsVideoLoaded] = useState(false);
 
@@ -231,7 +235,7 @@ export default function UploadScreen() {
     setActiveHighlightStepIndex(0);
     setIsHighlightsMuted(false);
     setIsHighlightsVideoLoaded(false);
-    setIsHighlightsPlaying(true);
+    setIsHighlightsPlaying(false);
     setStep('selectHighlights');
   };
 
@@ -241,7 +245,8 @@ export default function UploadScreen() {
     // On Android, calling playAsync/pauseAsync during load/seek can crash.
     // Drive playback using the `shouldPlay` prop only.
     setIsHighlightsVideoLoaded(false);
-    setIsHighlightsPlaying(true);
+    // Video should be paused initially when entering this step.
+    setIsHighlightsPlaying(false);
 
     return () => {
       // stop when leaving
@@ -331,6 +336,31 @@ export default function UploadScreen() {
   }
 
  if (step === 'selectHighlights') {
+   const addHighlightStep = (option: HighlightOption) => {
+     setHighlightSteps((prev) => {
+       const base = option;
+       // Determine next available suffix for duplicates: Kitchen, Kitchen 2, Kitchen 3, ...
+       let maxSuffix = 0;
+       for (const name of prev) {
+         if (name === base) {
+           maxSuffix = Math.max(maxSuffix, 1);
+           continue;
+         }
+         if (name.startsWith(base + ' ')) {
+           const suffix = Number(name.slice((base + ' ').length));
+           if (Number.isFinite(suffix) && suffix > 0) {
+             maxSuffix = Math.max(maxSuffix, suffix);
+           }
+         }
+       }
+
+       const nextName = maxSuffix === 0 ? base : `${base} ${maxSuffix + 1}`;
+       return [...prev, nextName];
+     });
+     setActiveHighlightStepIndex((prev) => prev);
+     setShowAddHighlightModal(false);
+   };
+
    const activeRoom = highlightSteps[activeHighlightStepIndex];
 
    const seek = async (sec: number) => {
@@ -352,11 +382,11 @@ export default function UploadScreen() {
      setStep('details');
    };
 
-   const goPrevious = () => {
-     // return back to edit step
-     setIsHighlightsPlaying(false);
-     setStep('edit');
-   };
+   // const goPrevious = () => {
+   //   // return back to edit step
+   //   setIsHighlightsPlaying(false);
+   //   setStep('edit');
+   // };
 
    return (
      <View style={styles.container}>
@@ -368,30 +398,23 @@ export default function UploadScreen() {
          style={[
            styles.highlightsSheet,
            {
-             height: Dimensions.get('window').height * 0.85,
+             height: '100%',
              bottom: tabBarHeight,
            },
          ]}
        >
-         <View style={styles.highlightsHeader}>
+         {/* <View style={styles.highlightsHeader}>
            <Pressable onPress={goPrevious}>
              <Text style={styles.highlightsBack}>Back</Text>
            </Pressable>
            <Text style={styles.highlightsTitle}>Select Highlights</Text>
-           {/* <Pressable onPress={() => setStep('details')}>
+           <Pressable onPress={() => setStep('details')}>
              <Text style={styles.highlightsClose}>Close</Text>
-           </Pressable> */}
-         </View>
+           </Pressable> 
+         </View> */}
 
-         <ScrollView
-           style={styles.highlightsScroll}
-           contentContainerStyle={[
-             styles.highlightsContent,
-             { paddingBottom: (insets?.bottom ?? 0) + scaleHeight(24) },
-           ]}
-           showsVerticalScrollIndicator={false}
-         >
-           {/* Video preview (not full-sheet) */}
+         <View style={styles.highlightsScroll}>
+           {/* Video preview (edge-to-edge) */}
            <View style={styles.highlightsVideoOuter}>
              <View style={styles.highlightsVideoContainer}>
                <Video
@@ -450,7 +473,7 @@ export default function UploadScreen() {
                    trackColor={'rgba(255,255,255,0.35)'}
                    fillColor={Colors.textLight}
                    height={3.5}
-                   thumbSize={12}
+                   thumbSize={14}
                    thumbColor={Colors.textLight}
                  />
                </View>
@@ -481,68 +504,54 @@ export default function UploadScreen() {
                  </View>
                )}
              </View>
-   {/* Picker */}
-           <ScrollView
-             horizontal
-             showsHorizontalScrollIndicator={false}
-             contentContainerStyle={styles.highlightsPicker}
-           >
-             {highlightSteps.map((room, idx) => {
-               const isActive = idx === activeHighlightStepIndex;
-               return (
-                 <Pressable
-                   key={room}
-                   style={[styles.highlightsPickerChip, isActive && styles.highlightsPickerChipActive]}
-                   onPress={() => setActiveHighlightStepIndex(idx)}
-                 >
-                   <Text
-                     style={[
-                       styles.highlightsPickerChipText,
-                       isActive && styles.highlightsPickerChipTextActive,
-                     ]}
-                   >
-                     {room}
-                   </Text>
-                 </Pressable>
-               );
-             })}
-           </ScrollView>
-             <Text style={styles.highlightsStepTitle}>Skip to highlights</Text>
+             {/* <Text style={styles.highlightsStepTitle}>Skip to highlights</Text>
              <Text style={styles.highlightsStepSubtitle}>
                Drag the bar to find the moment, then tap the button bellow.
-             </Text>
+             </Text> */}
 
-             {/* Select button under the video */}
-             <Pressable style={styles.highlightsSelectButton} onPress={handleSelectThisHighlight}>
-               <Text style={styles.highlightsSelectButtonText}>{`Set Skip to ${activeRoom}`}</Text>
-             </Pressable>
            </View>
 
-    
-
-           <View style={styles.highlightsBody}>
+           {/* Padded content below the video */}
+           <View
+             style={[
+               styles.highlightsContent,
+               { paddingBottom: scaleHeight(20) },
+             ]}
+           >
+             <View style={styles.highlightsBody}>
              {/* Circular highlight picker under the Select button */}
              <ScrollView
                horizontal
                showsHorizontalScrollIndicator={false}
                contentContainerStyle={styles.highlightsCirclePicker}
-             >
+>
+               <Pressable
+                 style={styles.highlightsCircleItem}
+                 onPress={() => setShowAddHighlightModal(true)}
+               >
+                 <View style={styles.highlightsCircleAdd}>
+                   <Text style={styles.highlightsCircleAddText}>+</Text>
+                 </View>
+                 <Text style={styles.highlightsCircleTime}>Add</Text>
+               </Pressable>
+
                {highlightSteps.map((room, idx) => {
                  const value = highlightsByRoom[room];
                  const isActive = idx === activeHighlightStepIndex;
 
+                 const baseRoom = room.replace(/\s\d+$/, '');
                  const Icon =
-                   room === 'Kitchen'
+                   baseRoom === 'Kitchen'
                      ? Utensils
-                     : room === 'Living room'
+                     : baseRoom === 'Living room'
                        ? Sofa
-                       : room === 'Bedroom'
+                       : baseRoom === 'Bedroom'
                          ? Bed
-                         : room === 'Bathroom'
+                         : baseRoom === 'Bathroom'
                            ? Bath
-                           : room === 'View'
+                           : baseRoom === 'View'
                              ? Eye
-                             : room === 'Balcony'
+                             : baseRoom === 'Balcony'
                                ? Sun
                                : Mountain; // Terrace fallback
 
@@ -575,12 +584,61 @@ export default function UploadScreen() {
                  );
                })}
              </ScrollView>
-
+           <View style={styles.highlightsActionsRow}>
+             <Pressable style={styles.highlightsSelectButton} onPress={handleSelectThisHighlight}>
+               <Text style={styles.highlightsSelectButtonText}>{`Set ${activeRoom}`}</Text>
+             </Pressable>
              <Pressable style={styles.highlightsDoneButton} onPress={handleDone}>
                <Text style={styles.highlightsDoneButtonText}>Done</Text>
              </Pressable>
            </View>
-         </ScrollView>
+           </View>
+
+           <Modal
+             visible={showAddHighlightModal}
+             transparent
+             animationType="fade"
+             onRequestClose={() => setShowAddHighlightModal(false)}
+           >
+             <View style={styles.highlightsAddOverlay}>
+               <View style={styles.highlightsAddModal}>
+                 <Text style={styles.highlightsAddTitle}>Add highlight</Text>
+                 <View style={styles.highlightsAddGrid}>
+                   {DEFAULT_HIGHLIGHT_OPTIONS.map((option) => {
+                     const Icon =
+                       option === 'Kitchen'
+                         ? Utensils
+                         : option === 'Living room'
+                           ? Sofa
+                           : option === 'Bedroom'
+                             ? Bed
+                             : Bath;
+
+                     return (
+                       <Pressable
+                         key={option}
+                         style={styles.highlightsAddCircleItem}
+                         onPress={() => addHighlightStep(option)}
+                       >
+                         <View style={styles.highlightsAddCircle}>
+                           <Icon size={scaleWidth(22)} color={Colors.text} />
+                         </View>
+                         <Text style={styles.highlightsAddCircleLabel}>{option}</Text>
+                       </Pressable>
+                     );
+                   })}
+                 </View>
+                 <Pressable
+                   style={styles.highlightsAddCancel}
+                   onPress={() => setShowAddHighlightModal(false)}
+                 >
+                   <Text style={styles.highlightsAddCancelText}>Cancel</Text>
+                 </Pressable>
+               </View>
+             </View>
+           </Modal>
+           </View>
+         </View>
        </View>
      </View>
    );
@@ -1399,14 +1457,19 @@ const styles = StyleSheet.create({
   },
   highlightsVideoContainer: {
     width: '100%',
-    aspectRatio: 9 / 16,
+    alignSelf: 'stretch',
+    // Fill available space above the highlight controls.
+    flex: 1,
+    minHeight: 0,
     backgroundColor: '#000',
-    borderRadius: scaleWidth(16),
+    borderRadius: 0,
     overflow: 'hidden',
   },
   highlightsVideo: {
     width: '100%',
     height: '100%',
+    flex: 1,
+    alignSelf: 'stretch',
   },
   highlightsVideoControls: {
     position: 'absolute',
@@ -1430,8 +1493,11 @@ const styles = StyleSheet.create({
   },
   highlightsContent: {
     paddingHorizontal: scaleWidth(16),
-    paddingTop: scaleHeight(12),
+    paddingTop: scaleHeight(10),
     gap: scaleHeight(10),
+    // Let the controls take only the space they need; video fills the rest.
+    flexGrow: 0,
+    flexShrink: 0,
   },
   highlightsPicker: {
     paddingRight: scaleWidth(16),
@@ -1458,7 +1524,15 @@ const styles = StyleSheet.create({
     color: Colors.bronze,
   },
   highlightsVideoOuter: {
-    gap: scaleHeight(10),
+    width: '100%',
+    // Give the video more of the sheet height so there's no unused white area below.
+    flex: 2,
+    minHeight: 0,
+    alignSelf: 'stretch',
+    // Ensure no inset around the edge-to-edge video.
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    marginTop: 0,
   },
   highlightsScrubberOverlay: {
     position: 'absolute',
@@ -1482,10 +1556,12 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
   },
   highlightsCirclePicker: {
-    paddingTop: scaleHeight(6),
-    paddingBottom: scaleHeight(2),
+    paddingTop: scaleHeight(2),
+    paddingBottom: 0,
     gap: scaleWidth(14),
     paddingRight: scaleWidth(16),
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   highlightsCircleItem: {
     alignItems: 'center',
@@ -1505,6 +1581,83 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.textLight,
     borderColor: Colors.bronze,
   },
+  highlightsCircleAdd: {
+    width: scaleWidth(54),
+    height: scaleWidth(54),
+    borderRadius: scaleWidth(27),
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  highlightsCircleAddText: {
+    fontSize: scaleFont(26),
+    fontWeight: '800',
+    color: Colors.bronze,
+    marginTop: -2,
+  },
+  highlightsAddOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: scaleWidth(20),
+  },
+  highlightsAddModal: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: Colors.background,
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(16),
+  },
+  highlightsAddTitle: {
+    fontSize: scaleFont(16),
+    fontWeight: '800',
+    color: Colors.text,
+    marginBottom: scaleHeight(12),
+  },
+  highlightsAddGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: scaleWidth(14),
+  },
+  highlightsAddCircleItem: {
+    width: scaleWidth(86),
+    alignItems: 'center',
+    marginBottom: scaleHeight(10),
+  },
+  highlightsAddCircle: {
+    width: scaleWidth(64),
+    height: scaleWidth(64),
+    borderRadius: scaleWidth(32),
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  highlightsAddCircleLabel: {
+    marginTop: scaleHeight(8),
+    fontSize: scaleFont(13),
+    fontWeight: '800',
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  highlightsAddCancel: {
+    marginTop: scaleHeight(14),
+    paddingVertical: scaleHeight(12),
+    alignItems: 'center',
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  highlightsAddCancelText: {
+    fontSize: scaleFont(14),
+    fontWeight: '800',
+    color: Colors.textSecondary,
+  },
   highlightsCircleTime: {
     marginTop: scaleHeight(6),
     fontSize: scaleFont(12),
@@ -1515,7 +1668,8 @@ const styles = StyleSheet.create({
     color: Colors.bronze,
   },
   highlightsDoneButton: {
-    marginTop: scaleHeight(14),
+    flex: 1,
+    marginTop: 0,
     backgroundColor: Colors.bronze,
     // borderWidth:1,
     // borderColor: Colors.bronze,
@@ -1552,11 +1706,12 @@ const styles = StyleSheet.create({
   highlightsSelectButton: {
     flex: 1,
     backgroundColor: Colors.textLight,
-    borderWidth:1,
+    borderWidth: 1,
     borderColor: Colors.bronze,
     borderRadius: scaleWidth(12),
     paddingVertical: scaleHeight(12),
     alignItems: 'center',
+    marginTop: 0,
   },
   highlightsSelectButtonText: {
     color: Colors.bronze,

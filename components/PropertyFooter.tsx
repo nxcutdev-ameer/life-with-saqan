@@ -23,6 +23,8 @@ interface PropertyFooterProps {
   onOpenComments: (id: string) => void;
   onShare?: (id: string) => void;
   onSeek: (timestamp: number) => void;
+  /** Navigate to property details (only triggered from the footer tap area). */
+  onNavigateToProperty?: () => void;
 }
 
 interface LanguageTranslation {
@@ -50,6 +52,7 @@ export default function PropertyFooter({
   onOpenComments,
   onShare,
   onSeek,
+  onNavigateToProperty,
 }: PropertyFooterProps) {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
@@ -105,8 +108,12 @@ export default function PropertyFooter({
 
       {/* Black footer bar with progress and property info (sits above bottom tabs) */}
       <View style={[styles.globalFooterBar, { bottom: bottomTabBarHeight }]}>
-                {/* Property info */}
-        <View style={styles.footerMainContent}>
+        {/* Property info (tap to navigate) */}
+        <Pressable
+          style={styles.footerMainContent}
+          onPress={onNavigateToProperty}
+          disabled={!onNavigateToProperty}
+        >
           <PropertyInfo
             item={item}
             translationContent={
@@ -118,7 +125,7 @@ export default function PropertyFooter({
                 : null
             }
           />
-        </View>
+        </Pressable>
         {/* Progress bar should sit right above the bottom tabs */}
         <PropertyProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
       </View>

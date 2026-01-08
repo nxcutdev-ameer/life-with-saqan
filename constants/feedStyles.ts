@@ -25,7 +25,10 @@ export const feedStyles = StyleSheet.create({
     width: '100%',
     height: '100%',
     position: 'absolute' as const,
-    zIndex: 1,
+    // On iOS, the native video surface can float above RN subviews unless the
+    // containing layer is significantly elevated.
+    zIndex: 100,
+    elevation: 100,
   },
   video: {
     width: '100%',
@@ -35,7 +38,8 @@ export const feedStyles = StyleSheet.create({
     position: 'absolute' as const,
     right: spacing(12),
     bottom: scaleHeight(140),
-    zIndex: 21,
+    zIndex: 210,
+    elevation: 210,
     flexDirection: 'column',
     gap: spacing(12),
     alignItems: 'center',
@@ -46,7 +50,8 @@ export const feedStyles = StyleSheet.create({
     left: 0,
     right: 0,
     //backgroundColor: '#000000',
-    zIndex: 20,
+    zIndex: 200,
+    elevation: 200,
   },
   footerMainContent: {
     flexDirection: 'row',
@@ -136,7 +141,7 @@ export const feedStyles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: spacing(2),
     borderColor: '#85C8CC',
-    marginRight:scaleWidth(8)
+    marginRight: scaleWidth(8),
   },
   agentPlusIcon: {
     position: 'absolute' as const,
@@ -150,7 +155,7 @@ export const feedStyles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: spacing(0.5),
     borderColor: '#8c0707ff',
-    marginRight:scaleWidth(4)
+    marginRight: scaleWidth(4),
   },
   agentInitial: {
     color: Colors.text,

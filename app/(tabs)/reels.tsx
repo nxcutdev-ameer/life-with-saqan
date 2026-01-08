@@ -1,13 +1,15 @@
 import React, { useRef, useState } from 'react';
-import { 
-  Text, 
-  View, 
+import {
+  Text,
+  View,
   Dimensions,
   ViewToken,
   Animated,
+  Pressable,
 } from 'react-native';
-import { scaleWidth } from '@/utils/responsive';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { mockProperties, filterProperties } from '@/mocks/properties';
@@ -36,6 +38,7 @@ interface ReelItemProps {
 }
 
 function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: ReelItemProps) {
+  const [isPaused, setIsPaused] = useState(false);
   const player = useVideoPlayer(item.videoUrl, (player) => {
     player.loop = true;
     player.muted = false;
@@ -48,7 +51,11 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
   React.useEffect(() => {
     if (isViewable) {
-      player.play();
+      if (isPaused) {
+        player.pause();
+      } else {
+        player.play();
+      }
     } else {
       // Ensure we never keep a reel at 2x when it leaves the viewport.
       try {
@@ -60,7 +67,7 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
       player.pause();
     }
-  }, [isViewable, player]);
+  }, [isPaused, isViewable, player]);
 
   React.useEffect(() => {
     if (!isViewable) return;
@@ -90,49 +97,40 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     setCurrentTime(timestamp);
   };
 
-  const EDGE_ZONE_WIDTH = scaleWidth(50);
+  const insets = useSafeAreaInsets();
+  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+
+  const EDGE_ZONE_WIDTH = scaleWidth(70);
   const isSpeedingRef = useRef(false);
 
-  const swipeGesture = Gesture.Pan().onEnd((event) => {
-    if (event.translationX < -50) {
-      player.pause();
-      onNavigateToProperty(item.id);
-    }
-  });
+  // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
+  // or the engagement/video controls (bottom).
+  const OVERLAY_TOP = insets.top + scaleHeight(12) + scaleHeight(16) + scaleHeight(32);
+  const OVERLAY_BOTTOM = scaleHeight(140) + bottomTabBarHeight;
 
-  const leftSpeedGesture = Gesture.Exclusive(
-    Gesture.LongPress()
-      .minDuration(220)
-      .onStart(() => {
-        isSpeedingRef.current = true;
-        setPlaybackRate(2);
-      })
-      .onFinalize(() => {
-        isSpeedingRef.current = false;
-        setPlaybackRate(1);
-      }),
-    // No-op tap to consume touches and prevent navigation.
-    Gesture.Tap().onEnd(() => {})
-  );
+  const togglePause = () => {
+    setIsPaused((prev) => {
+      const next = !prev;
+      if (isViewable) {
+        if (next) {
+          player.pause();
+        } else {
+          player.play();
+        }
+      }
+      return next;
+    });
+  };
 
-  const rightSpeedGesture = Gesture.Exclusive(
-    Gesture.LongPress()
-      .minDuration(220)
-      .onStart(() => {
-        isSpeedingRef.current = true;
-        setPlaybackRate(2);
-      })
-      .onFinalize(() => {
-        isSpeedingRef.current = false;
-        setPlaybackRate(1);
-      }),
-    Gesture.Tap().onEnd(() => {})
-  );
+  const startSpeed = () => {
+    isSpeedingRef.current = true;
+    setPlaybackRate(2);
+  };
 
-  const centerTapGesture = Gesture.Tap().onEnd(() => {
-    player.pause();
-    onNavigateToProperty(item.id);
-  });
+  const stopSpeed = () => {
+    isSpeedingRef.current = false;
+    setPlaybackRate(1);
+  };
 
   const setPlaybackRate = (rate: number) => {
     // expo-video's player API varies slightly by platform/version; set both common properties.
@@ -145,41 +143,69 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   };
 
   return (
-    <GestureDetector gesture={swipeGesture}>
       <View style={styles.propertyContainer}>
         <View style={styles.videoTouchArea}>
           <VideoView
             player={player}
-            style={styles.video}
+            style={[
+              styles.video,
+              {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 0,
+              },
+            ]}
             contentFit="cover"
             nativeControls={false}
           />
+        </View>
 
-              {/* Left/Right: long-press = 2x speed, release = 1x. Taps are consumed (no navigation). */}
-  
-          <View
+        {/* Overlay touch zones */}
+        <View
+          style={{
+            position: 'absolute',
+            top: OVERLAY_TOP,
+            left: 0,
+            right: 0,
+            bottom: OVERLAY_BOTTOM,
+            flexDirection: 'row',
+            // Above native video surface, below footer.
+            zIndex: 150,
+            elevation: 150,
+            backgroundColor: 'transparent',
+          }}
+        >
+          <Pressable
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              flexDirection: 'row',
-              zIndex: 2,
+              width: EDGE_ZONE_WIDTH,
+              height: '100%',
+              backgroundColor: 'transparent',
             }}
-          >
-            <GestureDetector gesture={leftSpeedGesture}>
-              <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
-            </GestureDetector>
+            onPressIn={startSpeed}
+            onPressOut={stopSpeed}
+          />
 
-            <GestureDetector gesture={centerTapGesture}>
-              <View style={{ flex: 1, height: '100%' }} />
-            </GestureDetector>
+          <Pressable
+            style={{
+              flex: 1,
+              height: '100%',
+              backgroundColor: 'transparent',
+            }}
+            onPress={togglePause}
+          />
 
-            <GestureDetector gesture={rightSpeedGesture}>
-              <View style={{ width: EDGE_ZONE_WIDTH, height: '100%' }} />
-            </GestureDetector>
-          </View>
+          <Pressable
+            style={{
+              width: EDGE_ZONE_WIDTH,
+              height: '100%',
+              backgroundColor: 'transparent',
+            }}
+            onPressIn={startSpeed}
+            onPressOut={stopSpeed}
+          />
         </View>
 
         <PropertyFooter
@@ -192,9 +218,13 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           onToggleSave={onToggleSave}
           onOpenComments={onOpenComments}
           onSeek={handleSeek}
+          onNavigateToProperty={() => {
+            player.pause();
+            setIsPaused(true);
+            onNavigateToProperty(item.id);
+          }}
         />
       </View>
-    </GestureDetector>
   );
 }
 

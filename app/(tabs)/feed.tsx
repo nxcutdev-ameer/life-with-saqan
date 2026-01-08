@@ -1,14 +1,17 @@
 import React, { useRef, useState } from 'react';
-import { 
-  Text, 
-  View, 
-  Pressable, 
+import {
+  Text,
+  View,
+  Pressable,
   Dimensions,
   ViewToken,
   Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { mockProperties, filterProperties } from '@/mocks/properties';
 import { Property } from '@/types';
 import * as Haptics from 'expo-haptics';
@@ -35,6 +38,8 @@ interface FeedItemProps {
 }
 
 function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: FeedItemProps) {
+  const [isPaused, setIsPaused] = useState(false);
+
   const player = useVideoPlayer(item.videoUrl, (player) => {
     player.loop = true;
     player.muted = false;
@@ -47,11 +52,23 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
   React.useEffect(() => {
     if (isViewable) {
-      player.play();
+      if (isPaused) {
+        player.pause();
+      } else {
+        player.play();
+      }
     } else {
+      // Ensure we never keep a feed item at 2x when it leaves the viewport.
+      try {
+        (player as any).playbackRate = 1;
+      } catch {}
+      try {
+        (player as any).rate = 1;
+      } catch {}
+
       player.pause();
     }
-  }, [isViewable, player]);
+  }, [isPaused, isViewable, player]);
 
   React.useEffect(() => {
     if (!isViewable) return;
@@ -60,7 +77,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     let lastUpdate = 0;
 
     const tick = (t: number) => {
-      // Update ~10 times/sec; the progress bar animates between updates for smoothness.
+      // Update the progress bar animates between updates for smoothness.
       if (t - lastUpdate >= 100) {
         lastUpdate = t;
         setCurrentTime(player.currentTime);
@@ -81,19 +98,84 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     setCurrentTime(timestamp);
   };
 
+  const insets = useSafeAreaInsets();
+  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+
+  const EDGE_ZONE_WIDTH = scaleWidth(70);
+
+  // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
+  // or the engagement/video controls (bottom).
+  const OVERLAY_TOP = insets.top + scaleHeight(12) + scaleHeight(16) + scaleHeight(32);
+  const OVERLAY_BOTTOM = scaleHeight(140) + bottomTabBarHeight;
+
+  const togglePause = () => {
+    setIsPaused((prev) => {
+      const next = !prev;
+      if (isViewable) {
+        if (next) {
+          player.pause();
+        } else {
+          player.play();
+        }
+      }
+      return next;
+    });
+  };
+
+  const setPlaybackRate = (rate: number) => {
+    try {
+      (player as any).playbackRate = rate;
+    } catch {}
+    try {
+      (player as any).rate = rate;
+    } catch {}
+  };
+
+  const startSpeed = () => setPlaybackRate(2);
+  const stopSpeed = () => setPlaybackRate(1);
+
   return (
     <View style={styles.propertyContainer}>
-      <Pressable 
-        style={styles.videoTouchArea}
-        onPress={() => onNavigateToProperty(item.id)}
-      >
+      <View style={styles.videoTouchArea}>
         <VideoView
           player={player}
           style={styles.video}
           contentFit="cover"
           nativeControls={false}
         />
-      </Pressable>
+      </View>
+
+      {/* Overlay touch zones: left/right hold = 2x speed, center tap = pause/play */}
+      <View
+        style={{
+          position: 'absolute',
+          top: OVERLAY_TOP,
+          left: 0,
+          right: 0,
+          bottom: OVERLAY_BOTTOM,
+          flexDirection: 'row',
+          zIndex: 150,
+          elevation: 150,
+          backgroundColor: 'transparent',
+        }}
+      >
+        <Pressable
+          style={{ width: EDGE_ZONE_WIDTH, height: '100%', backgroundColor: 'transparent' }}
+          onPressIn={startSpeed}
+          onPressOut={stopSpeed}
+        />
+
+        <Pressable
+          style={{ flex: 1, height: '100%', backgroundColor: 'transparent' }}
+          onPress={togglePause}
+        />
+
+        <Pressable
+          style={{ width: EDGE_ZONE_WIDTH, height: '100%', backgroundColor: 'transparent' }}
+          onPressIn={startSpeed}
+          onPressOut={stopSpeed}
+        />
+      </View>
 
       <PropertyFooter
         item={item}
@@ -105,6 +187,11 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         onToggleSave={onToggleSave}
         onOpenComments={onOpenComments}
         onSeek={handleSeek}
+        onNavigateToProperty={() => {
+          player.pause();
+          setIsPaused(true);
+          onNavigateToProperty(item.id);
+        }}
       />
     </View>
   );
