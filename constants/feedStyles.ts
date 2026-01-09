@@ -145,7 +145,7 @@ export const feedStyles = StyleSheet.create({
   },
   agentPlusIcon: {
     position: 'absolute' as const,
-    bottom: -spacing(3),
+    bottom: -spacing(-22), //3
     right: -spacing(2),
     width: PLUS_ICON_SIZE,
     height: PLUS_ICON_SIZE,

@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Video } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import {
   Camera,
   Image as ImageIcon,
@@ -38,10 +39,17 @@ import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { PropertyType, TransactionType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useSubscription } from '@/contexts/SubscriptionContext';
+import { useAuthStore } from '@/stores/authStore';
 
 export default function UploadScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
+  const navigation = useNavigation();
+
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: false } as any);
+  }, [navigation]);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
@@ -125,7 +133,6 @@ export default function UploadScreen() {
       aspect: [9, 16],
       quality: 1,
     });
-
     if (!result.canceled) {
       setSelectedVideoUri(result.assets[0].uri);
       setStep('edit');
@@ -199,7 +206,7 @@ export default function UploadScreen() {
       [
         {
           text: 'View Property',
-          onPress: () => router.push('/(tabs)/profile'),
+          onPress: () => router.replace('/(tabs)/profile'),
         },
         {
           text: 'Upload Another',
@@ -276,6 +283,35 @@ export default function UploadScreen() {
       ]
     );
   };
+
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Upload Property</Text>
+        </View>
+
+        <View style={[styles.contentContainer, { paddingBottom: tabBarHeight + scaleHeight(16) }]}>
+          <View style={styles.authGateCard}>
+            <Text style={styles.authGateTitle}>Login required</Text>
+            <Text style={styles.authGateDescription}>
+              Only logged in users can upload videos.
+            </Text>
+            <Pressable
+              style={styles.authGateButton}
+              onPress={() => router.replace('/auth/login' as any)}
+            >
+              <Text style={styles.authGateButtonText}>Log in</Text>
+            </Pressable>
+
+            <Pressable onPress={() => router.replace('/auth/register' as any)}>
+              <Text style={styles.authGateLink}>Create an account</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (step === 'select') {
     return (
@@ -787,7 +823,7 @@ export default function UploadScreen() {
         <View
           style={[
             styles.editFooter,
-            // Move the footer above the bottom tab bar (tab bar overlays the screen)
+            // Move the footer above the bottom tab bar
             { marginBottom: tabBarHeight },
           ]}
         >
@@ -1073,6 +1109,46 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: scaleWidth(20),
+  },
+  authGateCard: {
+    marginTop: scaleHeight(20),
+    backgroundColor: Colors.textLight,
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(20),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  authGateTitle: {
+    fontSize: scaleFont(20),
+    fontWeight: '800',
+    color: Colors.text,
+    marginBottom: scaleHeight(6),
+  },
+  authGateDescription: {
+    fontSize: scaleFont(14),
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: scaleFont(20),
+    marginBottom: scaleHeight(14),
+  },
+  authGateButton: {
+    width: '100%',
+    backgroundColor: Colors.bronze,
+    paddingVertical: scaleHeight(14),
+    borderRadius: scaleWidth(12),
+    alignItems: 'center',
+    marginBottom: scaleHeight(12),
+  },
+  authGateButtonText: {
+    color: Colors.textLight,
+    fontSize: scaleFont(16),
+    fontWeight: '700',
+  },
+  authGateLink: {
+    color: Colors.brown,
+    fontSize: scaleFont(14),
+    fontWeight: '700',
   },
   sectionTitle: {
     fontSize: scaleFont(20),
@@ -1593,7 +1669,7 @@ const styles = StyleSheet.create({
   },
   highlightsCircleAddText: {
     fontSize: scaleFont(26),
-    fontWeight: '800',
+    fontWeight: '400',
     color: Colors.bronze,
     marginTop: -2,
   },

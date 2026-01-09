@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -25,6 +27,7 @@ import {
   CreditCard,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
+import { useAuthStore } from '@/stores/authStore';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 
 type SettingItemProps = {
@@ -89,11 +92,34 @@ const SettingToggle = React.memo(function SettingToggle({
 
 export default function SettingsScreen() { 
   const router = useRouter();
+  const logout = useAuthStore((s) => s.logout);
 
   const [darkMode, setDarkMode] = React.useState(false);
   const [pushNotifications, setPushNotifications] = React.useState(true);
   const [emailNotifications, setEmailNotifications] = React.useState(true);
   const [autoPlayOnWifi, setAutoPlayOnWifi] = React.useState(false);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  const onLogoutPress = () => {
+    if (isLoggingOut) return;
+
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: () => {
+          setIsLoggingOut(true);
+
+          // UI-only: show loading state briefly.
+          setTimeout(() => {
+            logout();
+            setIsLoggingOut(false);
+          }, 800);
+        },
+      },
+    ]);
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -209,9 +235,17 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Pressable style={styles.logoutButton}>
-          <LogOut size={scaleFont(20)} color={Colors.textLight} />
-          <Text style={styles.logoutText}>Log Out</Text>
+        <Pressable
+          style={[styles.logoutButton, isLoggingOut && styles.logoutButtonDisabled]}
+          onPress={onLogoutPress}
+          disabled={isLoggingOut}
+        >
+          {isLoggingOut ? (
+            <ActivityIndicator size="small" color={Colors.textLight} />
+          ) : (
+            <LogOut size={scaleFont(20)} color={Colors.textLight} />
+          )}
+          <Text style={styles.logoutText}>{isLoggingOut ? 'Logging out…' : 'Log Out'}</Text>
         </Pressable>
       </View>
 
@@ -289,6 +323,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#e74c3c',
     paddingVertical: scaleHeight(16),
     borderRadius: scaleWidth(12),
+  },
+  logoutButtonDisabled: {
+    opacity: 0.7,
   },
   logoutText: {
     fontSize: scaleFont(16),
