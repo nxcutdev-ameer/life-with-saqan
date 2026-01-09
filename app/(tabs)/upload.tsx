@@ -148,7 +148,7 @@ export default function UploadScreen() {
           [
             {
               text: 'View Plans',
-              onPress: () => router.push('/paywall')
+              onPress: () => router.replace('/paywall')
             },
             { text: 'Cancel', style: 'cancel' }
           ]
@@ -161,7 +161,7 @@ export default function UploadScreen() {
           [
             {
               text: 'Upgrade to Premium',
-              onPress: () => router.push('/paywall')
+              onPress: () => router.replace('/paywall')
             },
             {
               text: 'Buy Extra Post (15 AED)',

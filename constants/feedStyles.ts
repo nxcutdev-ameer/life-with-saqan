@@ -126,7 +126,8 @@ export const feedStyles = StyleSheet.create({
     gap: spacing(8),
   },
   agentAvatarContainer: {
-    position: 'relative' as const,
+    position: 'absolute' as const, //relative
+    bottom: -spacing(350),
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     alignItems: 'center',
