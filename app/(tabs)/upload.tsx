@@ -9,6 +9,10 @@ import {
   Alert,
   Share,
   Modal,
+  FlatList,
+  Keyboard,
+  useWindowDimensions,
+  Image,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -40,6 +44,15 @@ import { PropertyType, TransactionType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuthStore } from '@/stores/authStore';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import {
+  District,
+  Emirate,
+  OffPlanProjectListItem,
+  fetchDistricts,
+  fetchEmirates,
+  fetchOffPlanProjects,
+} from '@/utils/propertiesApi';
 
 export default function UploadScreen() {
   const tabBarHeight = useBottomTabBarHeight();
@@ -70,6 +83,24 @@ export default function UploadScreen() {
 
   const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
 
+  const { height: windowHeight } = useWindowDimensions();
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const videoRef = React.useRef<Video>(null);
   const [videoCurrentTimeSec, setVideoCurrentTimeSec] = useState(0);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
@@ -77,12 +108,15 @@ export default function UploadScreen() {
   const [isHighlightsMuted, setIsHighlightsMuted] = useState(false);
   const [isHighlightsVideoLoaded, setIsHighlightsVideoLoaded] = useState(false);
 
-  const formatTimeMmSs = (totalSeconds: number) => {
-    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '00:00';
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = Math.floor(totalSeconds % 60);
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+  // Property Location dropdown state
+  const [locationPicker, setLocationPicker] = useState<
+    null | 'emirate' | 'district' | 'building' | 'area'
+  >(null);
+  const [emirateSearch, setEmirateSearch] = useState('');
+  const [districtSearch, setDistrictSearch] = useState('');
+
+  const [offPlanPickerOpen, setOffPlanPickerOpen] = useState(false);
+  const [offPlanSearch, setOffPlanSearch] = useState('');
 
   const [propertyDetails, setPropertyDetails] = useState({
     title: '',
@@ -94,9 +128,101 @@ export default function UploadScreen() {
     bedrooms: '',
     bathrooms: '',
     sizeSqft: '',
-    location: '',
+
+    // If OFF_PLAN, user selects an existing off-plan project.
+    offPlanProjectId: null as number | null,
+    offPlanProjectTitle: '',
+
+    // Property Location (READY only)
+    emirateId: null as number | null,
+    emirateName: '',
+    districtId: null as number | null,
+    districtName: '',
+    building: '',
+    area: '',
+    longitude: '',
+    latitude: '',
+
     description: '',
   });
+
+  const {
+    data: emirates,
+    isLoading: isEmiratesLoading,
+    isError: isEmiratesError,
+    refetch: refetchEmirates,
+  } = useQuery({
+    queryKey: ['properties', 'emirates', { limit: 999, size: 'mini' }],
+    queryFn: fetchEmirates,
+    staleTime: 1000 * 60 * 60, // 1h
+    gcTime: 1000 * 60 * 60 * 24, // 24h
+  });
+
+  const emirateOptions: Emirate[] = emirates ?? [];
+
+  const {
+    data: districts,
+    isLoading: isDistrictsLoading,
+    isError: isDistrictsError,
+    refetch: refetchDistricts,
+  } = useQuery({
+    queryKey: ['properties', 'districts', { emirateId: propertyDetails.emirateId, limit: 999, size: 'mini' }],
+    queryFn: () => fetchDistricts(propertyDetails.emirateId as number),
+    enabled: typeof propertyDetails.emirateId === 'number',
+    staleTime: 1000 * 60 * 60, // 1h
+    gcTime: 1000 * 60 * 60 * 24, // 24h
+  });
+
+  const districtOptions: District[] = districts ?? [];
+
+  const {
+    data: offPlanPages,
+    isLoading: isOffPlanLoading,
+    isError: isOffPlanError,
+    refetch: refetchOffPlan,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['properties', 'offplan', { view: 'list', order_by: 'created_at', size: 'xs', limit: 20 }],
+    queryFn: ({ pageParam }) => fetchOffPlanProjects({ page: Number(pageParam ?? 1), limit: 20 }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage) return undefined;
+      if (lastPage.lastPage && lastPage.currentPage >= lastPage.lastPage) return undefined;
+      return lastPage.currentPage + 1;
+    },
+    enabled: propertyDetails.developmentStatus === 'OFF_PLAN',
+    staleTime: 1000 * 60 * 5, // 5m
+    gcTime: 1000 * 60 * 60, // 1h
+  });
+
+  const offPlanOptions: OffPlanProjectListItem[] =
+    offPlanPages?.pages.flatMap((p) => p.data) ?? [];
+
+  // TODO: Replace Building/Area static lists with API endpoints when available.
+
+  const BUILDINGS_BY_DISTRICT: Record<string, string[]> = {
+    'Downtown Dubai': ['Burj Khalifa', 'Address Downtown', 'South Ridge'],
+    'Dubai Marina': ['Marina Gate', 'Cayan Tower', 'Princess Tower'],
+    Jumeirah: ['City Walk', 'La Mer'],
+    'Business Bay': ['Damac Towers', 'The Opus'],
+  };
+
+  const AREAS_BY_BUILDING: Record<string, string[]> = {
+    'Marina Gate': ['Marina Gate 1', 'Marina Gate 2'],
+    'Burj Khalifa': ['Downtown'],
+  };
+
+  const getBuildingOptions = () => BUILDINGS_BY_DISTRICT[propertyDetails.districtName] ?? [];
+  const getAreaOptions = () => AREAS_BY_BUILDING[propertyDetails.building] ?? [];
+
+  const formatTimeMmSs = (totalSeconds: number) => {
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '00:00';
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = Math.floor(totalSeconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   const pickVideo = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -221,7 +347,19 @@ export default function UploadScreen() {
               bedrooms: '',
               bathrooms: '',
               sizeSqft: '',
-              location: '',
+
+              offPlanProjectId: null,
+              offPlanProjectTitle: '',
+
+              emirateId: null,
+              emirateName: '',
+              districtId: null,
+              districtName: '',
+              building: '',
+              area: '',
+              longitude: '',
+              latitude: '',
+
               description: '',
             });
           },
@@ -920,12 +1058,16 @@ export default function UploadScreen() {
           <View style={styles.radioRow}>
             <Pressable
               style={styles.radioOption}
-              onPress={() =>
+              onPress={() => {
+                setOffPlanPickerOpen(false);
+                setOffPlanSearch('');
                 setPropertyDetails({
                   ...propertyDetails,
                   developmentStatus: 'READY',
-                })
-              }
+                  offPlanProjectId: null,
+                  offPlanProjectTitle: '',
+                });
+              }}
             >
               <View
                 style={[
@@ -940,12 +1082,24 @@ export default function UploadScreen() {
 
             <Pressable
               style={styles.radioOption}
-              onPress={() =>
+              onPress={() => {
+                // Clear READY-only fields when switching to OFF_PLAN.
+                setOffPlanPickerOpen(false);
+                setOffPlanSearch('');
                 setPropertyDetails({
                   ...propertyDetails,
                   developmentStatus: 'OFF_PLAN',
-                })
-              }
+                  listingType: 'BUY',
+                  emirateId: null,
+                  emirateName: '',
+                  districtId: null,
+                  districtName: '',
+                  building: '',
+                  area: '',
+                  longitude: '',
+                  latitude: '',
+                });
+              }}
             >
               <View
                 style={[
@@ -987,6 +1141,28 @@ export default function UploadScreen() {
           </View>
         )}
 
+        {propertyDetails.developmentStatus === 'OFF_PLAN' && (
+          <View style={styles.formSection}>
+            <Text style={styles.formLabel}>Off-plan project *</Text>
+            <Pressable
+              style={styles.locationInput}
+              onPress={() => setOffPlanPickerOpen(true)}
+            >
+              <Text
+                style={[
+                  styles.locationInputText,
+                  !propertyDetails.offPlanProjectId && styles.placeholder,
+                ]}
+              >
+                {propertyDetails.offPlanProjectTitle || 'Select project'}
+              </Text>
+              <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+            </Pressable>
+          </View>
+        )}
+
+        {propertyDetails.developmentStatus === 'READY' && (
+          <>
         <View style={styles.formSection}>
           <Text style={styles.formLabel}>Property Type *</Text>
           <View style={styles.chipRow}>
@@ -1050,14 +1226,292 @@ export default function UploadScreen() {
         </View>
 
         <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Location *</Text>
-          <Pressable style={styles.locationInput}>
-            <Text style={[styles.locationInputText, !propertyDetails.location && styles.placeholder]}>
-              {propertyDetails.location || 'Select location'}
+          <Text style={styles.sectionTitle}>Property Location</Text>
+
+          <Text style={styles.formLabel}>Emirate *</Text>
+          <Pressable
+            style={styles.locationInput}
+            onPress={() => setLocationPicker('emirate')}
+          >
+            <Text style={[styles.locationInputText, !propertyDetails.emirateId && styles.placeholder]}>
+              {propertyDetails.emirateName || 'Select emirate'}
             </Text>
             <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
           </Pressable>
+
+          <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>District *</Text>
+          <Pressable
+            style={[styles.locationInput, !propertyDetails.emirateId && styles.disabledInput]}
+            disabled={!propertyDetails.emirateId}
+            onPress={() => setLocationPicker('district')}
+          >
+            <Text
+              style={[
+                styles.locationInputText,
+                !propertyDetails.districtId && styles.placeholder,
+                !propertyDetails.emirateId && styles.disabledText,
+              ]}
+            >
+              {propertyDetails.districtName || 'Select district'}
+            </Text>
+            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+          </Pressable>
+
+          <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Building</Text>
+          <Pressable
+            style={[styles.locationInput, !propertyDetails.districtId && styles.disabledInput]}
+            disabled={!propertyDetails.districtId}
+            onPress={() => setLocationPicker('building')}
+          >
+            <Text
+              style={[
+                styles.locationInputText,
+                !propertyDetails.building && styles.placeholder,
+                !propertyDetails.districtId && styles.disabledText,
+              ]}
+            >
+              {propertyDetails.building || 'Select building'}
+            </Text>
+            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+          </Pressable>
+
+          <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Area</Text>
+          <Pressable
+            style={[styles.locationInput, !propertyDetails.building && styles.disabledInput]}
+            disabled={!propertyDetails.building}
+            onPress={() => setLocationPicker('area')}
+          >
+            <Text
+              style={[
+                styles.locationInputText,
+                !propertyDetails.area && styles.placeholder,
+                !propertyDetails.building && styles.disabledText,
+              ]}
+            >
+              {propertyDetails.area || 'Select area'}
+            </Text>
+            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+          </Pressable>
+
+          <View style={[styles.formRow, { marginTop: scaleHeight(12) }]}>
+            <View style={styles.formColumn}>
+              <Text style={styles.formLabel}>Longitude</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 55.2708"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numbers-and-punctuation"
+                value={propertyDetails.longitude}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, longitude: text })}
+              />
+            </View>
+            <View style={styles.formColumn}>
+              <Text style={styles.formLabel}>Latitude</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 25.2048"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numbers-and-punctuation"
+                value={propertyDetails.latitude}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, latitude: text })}
+              />
+            </View>
+          </View>
         </View>
+
+        
+        <Modal
+          visible={locationPicker !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLocationPicker(null)}
+        >
+          <View style={{ flex: 1 }}>
+            <Pressable
+              style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
+              onPress={() => {
+                Keyboard.dismiss();
+                setLocationPicker(null);
+              }}
+            >
+              <Pressable
+                style={[styles.modal, { height: windowHeight * 0.7 }]}
+                onPress={() => Keyboard.dismiss()}
+              >
+                <Text style={styles.modalTitle}>
+                  {locationPicker === 'emirate'
+                    ? 'Select Emirate'
+                    : locationPicker === 'district'
+                      ? 'Select District'
+                      : locationPicker === 'building'
+                        ? 'Select Building'
+                        : 'Select Area'}
+                </Text>
+
+              {locationPicker === 'emirate' && (
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  placeholder="Search emirate..."
+                  placeholderTextColor={Colors.textSecondary}
+                  value={emirateSearch}
+                  onChangeText={setEmirateSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                />
+              )}
+
+              {locationPicker === 'district' && (
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  placeholder="Search district..."
+                  placeholderTextColor={Colors.textSecondary}
+                  value={districtSearch}
+                  onChangeText={setDistrictSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                />
+              )}
+
+              {locationPicker === 'emirate' && isEmiratesError && (
+                <Pressable
+                  style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                  onPress={() => refetchEmirates()}
+                >
+                  <Text style={styles.modalButtonText}>Retry loading emirates</Text>
+                </Pressable>
+              )}
+
+              {locationPicker === 'district' && isDistrictsError && (
+                <Pressable
+                  style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                  onPress={() => refetchDistricts()}
+                >
+                  <Text style={styles.modalButtonText}>Retry loading districts</Text>
+                </Pressable>
+              )}
+
+              {locationPicker === 'emirate' ? (
+                <FlatList<Emirate>
+                  data={emirateOptions.filter((e) =>
+                    e.name.toLowerCase().includes(emirateSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => String(item.id)}
+                  ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          emirateId: item.id,
+                          emirateName: item.name,
+                          districtId: null,
+                          districtName: '',
+                          building: '',
+                          area: '',
+                        });
+                        setEmirateSearch('');
+                        setDistrictSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyPickerText}>
+                      {isEmiratesLoading
+                        ? 'Loading emirates...'
+                        : emirateSearch.trim().length
+                          ? 'No emirates match your search'
+                          : 'No emirates'}
+                    </Text>
+                  }
+                />
+              ) : locationPicker === 'district' ? (
+                <FlatList<District>
+                  data={districtOptions.filter((d) =>
+                    d.name.toLowerCase().includes(districtSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => String(item.id)}
+                  ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          districtId: item.id,
+                          districtName: item.name,
+                          building: '',
+                          area: '',
+                        });
+                        setDistrictSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyPickerText}>
+                      {isDistrictsLoading
+                        ? 'Loading districts...'
+                        : districtSearch.trim().length
+                          ? 'No districts match your search'
+                          : 'No districts'}
+                    </Text>
+                  }
+                />
+              ) : (
+                <FlatList<string>
+                  data={
+                    locationPicker === 'building'
+                      ? getBuildingOptions()
+                      : getAreaOptions()
+                  }
+                  keyExtractor={(item) => item}
+                  ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        if (locationPicker === 'building') {
+                          setPropertyDetails({
+                            ...propertyDetails,
+                            building: item,
+                            area: '',
+                          });
+                        }
+                        if (locationPicker === 'area') {
+                          setPropertyDetails({
+                            ...propertyDetails,
+                            area: item,
+                          });
+                        }
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyPickerText}>
+                      {locationPicker === 'building'
+                        ? 'Select a district first'
+                        : locationPicker === 'area'
+                          ? 'Select a building first'
+                          : 'No options'}
+                    </Text>
+                  }
+                />
+              )}
+              </Pressable>
+            </Pressable>
+          </View>
+        </Modal>
 
         <View style={styles.formSection}>
           <Text style={styles.formLabel}>Description</Text>
@@ -1072,6 +1526,114 @@ export default function UploadScreen() {
             onChangeText={(text) => setPropertyDetails({ ...propertyDetails, description: text })}
           />
         </View>
+
+        </>
+        )}
+
+        <Modal
+          visible={offPlanPickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setOffPlanPickerOpen(false)}
+        >
+          <View style={{ flex: 1 }}>
+            <Pressable
+              style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
+              onPress={() => {
+                Keyboard.dismiss();
+                setOffPlanPickerOpen(false);
+              }}
+            >
+              <Pressable
+                style={[styles.modal, { height: windowHeight * 0.5 }]}
+                onPress={() => Keyboard.dismiss()}
+              >
+                <Text style={styles.modalTitle}>Select project</Text>
+
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  placeholder="Search project..."
+                  placeholderTextColor={Colors.textSecondary}
+                  value={offPlanSearch}
+                  onChangeText={setOffPlanSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                />
+
+                {isOffPlanError && (
+                  <Pressable
+                    style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                    onPress={() => refetchOffPlan()}
+                  >
+                    <Text style={styles.modalButtonText}>Retry loading projects</Text>
+                  </Pressable>
+                )}
+
+                <FlatList<OffPlanProjectListItem>
+                  data={offPlanOptions.filter((p) =>
+                    p.title.toLowerCase().includes(offPlanSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => String(item.id)}
+                  ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                  onEndReachedThreshold={0.5}
+                  onEndReached={() => {
+                    // Only paginate when not searching.
+                    if (offPlanSearch.trim().length) return;
+                    if (!hasNextPage || isFetchingNextPage) return;
+                    fetchNextPage();
+                  }}
+                  ListFooterComponent={
+                    isFetchingNextPage ? (
+                      <Text style={styles.emptyPickerText}>Loading more…</Text>
+                    ) : null
+                  }
+                  renderItem={({ item }) => {
+                    const thumbUrl = item.media?.[0]?.upload?.url;
+                    return (
+                      <Pressable
+                        style={styles.offPlanItem}
+                        onPress={() => {
+                          setPropertyDetails({
+                            ...propertyDetails,
+                            offPlanProjectId: item.id,
+                            offPlanProjectTitle: item.title,
+                          });
+                          setOffPlanSearch('');
+                          setOffPlanPickerOpen(false);
+                        }}
+                      >
+                        <View style={styles.offPlanThumb}>
+                          {thumbUrl ? (
+                            <Image
+                              source={{ uri: thumbUrl }}
+                              style={styles.offPlanThumbImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.offPlanThumbPlaceholder} />
+                          )}
+                        </View>
+                        <Text style={styles.offPlanTitle} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyPickerText}>
+                      {isOffPlanLoading
+                        ? 'Loading projects...'
+                        : offPlanSearch.trim().length
+                          ? 'No projects match your search'
+                          : 'No projects'}
+                    </Text>
+                  }
+                />
+              </Pressable>
+            </Pressable>
+          </View>
+        </Modal>
 
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -1442,6 +2004,18 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 999,
   },
+  locationModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    zIndex: 999,
+    elevation: 999,
+  },
   modal: {
     width: '100%',
     backgroundColor: Colors.background,
@@ -1486,6 +2060,62 @@ const styles = StyleSheet.create({
   modalButtonTextSecondary: {
     fontSize: scaleFont(16),
     fontWeight: '700',
+    color: Colors.text,
+  },
+
+  disabledInput: {
+    opacity: 0.7,
+  },
+  pickerItem: {
+    paddingVertical: scaleHeight(14),
+  },
+  pickerItemText: {
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  listSeparator: {
+    height: 1,
+    backgroundColor: Colors.border,
+    opacity: 0.2,
+  },
+  emptyPickerText: {
+    paddingVertical: scaleHeight(16),
+    color: Colors.textSecondary,
+  },
+  searchInput: {
+    marginTop: scaleHeight(12),
+    marginBottom: scaleHeight(8),
+  },
+
+  offPlanItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(12),
+    paddingVertical: scaleHeight(12),
+  },
+  offPlanThumb: {
+    width: scaleWidth(80),
+    height: scaleWidth(80),
+    borderRadius: scaleWidth(10),
+    overflow: 'hidden',
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  offPlanThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  offPlanThumbPlaceholder: {
+    flex: 1,
+    backgroundColor: Colors.border,
+    opacity: 0.25,
+  },
+  offPlanTitle: {
+    flex: 1,
+    fontSize: scaleFont(15),
+    fontWeight: '600',
     color: Colors.text,
   },
 
