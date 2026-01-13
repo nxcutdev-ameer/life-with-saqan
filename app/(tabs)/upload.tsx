@@ -441,10 +441,6 @@ export default function UploadScreen() {
             >
               <Text style={styles.authGateButtonText}>Log in</Text>
             </Pressable>
-
-            <Pressable onPress={() => router.replace('/auth/register' as any)}>
-              <Text style={styles.authGateLink}>Create an account</Text>
-            </Pressable>
           </View>
         </View>
       </View>
@@ -2096,7 +2092,7 @@ const styles = StyleSheet.create({
   },
   offPlanThumb: {
     width: scaleWidth(80),
-    height: scaleWidth(80),
+    height: scaleWidth(68),
     borderRadius: scaleWidth(10),
     overflow: 'hidden',
     backgroundColor: Colors.textLight,

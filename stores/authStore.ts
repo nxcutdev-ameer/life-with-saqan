@@ -4,20 +4,42 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type AuthFlow = 'login' | 'register';
 
+export type AuthTokens = {
+  saqancomToken?: string | null;
+  backofficeToken?: string | null;
+  propertiesToken?: string | null;
+};
+
+export type AuthAgent = {
+  id: number;
+  name: string;
+};
+
+export type AuthSession = {
+  tokens: AuthTokens;
+  agent?: AuthAgent | null;
+};
+
 export interface AuthState {
   isAuthenticated: boolean;
   phoneNumber: string | null;
+
+  /** Backend session details (tokens/agent) */
+  session: AuthSession | null;
+
   pendingPhoneNumber: string | null;
   pendingFlow: AuthFlow | null;
 
   setPendingAuth: (params: { phoneNumber: string; flow: AuthFlow }) => void;
   clearPendingAuth: () => void;
 
+  setSession: (session: AuthSession | null) => void;
+
   /**
-   * Frontend-only stub: mark user as authenticated.
-   * In a real app this would be done after verifying OTP with backend.
+   * Mark user as authenticated.
+   * Optionally accepts a session payload from OTP verify response.
    */
-  completeOtpVerification: () => void;
+  completeOtpVerification: (session?: AuthSession | null) => void;
 
   logout: () => void;
 }
@@ -29,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       isAuthenticated: false,
       phoneNumber: null,
+      session: null,
       pendingPhoneNumber: null,
       pendingFlow: null,
 
@@ -39,11 +62,14 @@ export const useAuthStore = create<AuthState>()(
 
       clearPendingAuth: () => set({ pendingPhoneNumber: null, pendingFlow: null }),
 
-      completeOtpVerification: () => {
+      setSession: (session) => set({ session }),
+
+      completeOtpVerification: (session) => {
         const pending = get().pendingPhoneNumber;
         set({
           isAuthenticated: true,
           phoneNumber: pending ?? get().phoneNumber,
+          session: session ?? get().session,
           pendingPhoneNumber: null,
           pendingFlow: null,
         });
@@ -53,6 +79,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           isAuthenticated: false,
           phoneNumber: null,
+          session: null,
           pendingPhoneNumber: null,
           pendingFlow: null,
         }),
@@ -64,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
         phoneNumber: state.phoneNumber,
+        session: state.session,
       }),
     }
   )

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text,
   View,
@@ -201,14 +201,21 @@ export default function FeedScreen() {
   const router = useRouter();
   const { transactionType, location, lifestyles } = useUserPreferences();
   
-  const filteredProperties = filterProperties(
-    mockProperties,
-    transactionType,
-    location,
-    lifestyles
+  const filteredProperties = useMemo(
+    () => filterProperties(mockProperties, transactionType, location, lifestyles),
+    [transactionType, location, lifestyles]
   );
 
   const [viewableItems, setViewableItems] = useState<string[]>([]);
+
+  const firstItemId = filteredProperties[0]?.id;
+
+  // Ensure the first item is considered viewable when landing on the feed,
+  // so the first video starts playing immediately.
+  useEffect(() => {
+    if (!firstItemId) return;
+    setViewableItems((prev) => (prev.length === 0 ? [firstItemId] : prev));
+  }, [firstItemId]);
   const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);

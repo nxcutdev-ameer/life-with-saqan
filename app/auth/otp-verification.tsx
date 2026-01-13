@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
@@ -19,6 +20,11 @@ import { useNavigation } from '@react-navigation/native';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
+import {
+  authByPhone,
+  verifyLoginPhoneOtp,
+  verifyRegisterPhoneOtp,
+} from '@/utils/authApi';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
@@ -34,6 +40,7 @@ export default function OtpVerificationScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const pendingPhoneNumber = useAuthStore((s) => s.pendingPhoneNumber);
+  const pendingFlow = useAuthStore((s) => s.pendingFlow);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const completeOtpVerification = useAuthStore((s) => s.completeOtpVerification);
   const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
@@ -44,11 +51,12 @@ export default function OtpVerificationScreen() {
 
   const [digits, setDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ''));
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [resendSecondsLeft, setResendSecondsLeft] = useState(RESEND_SECONDS);
 
   const inputsRef = useRef<(TextInput | null)[]>([]);
-  const verifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const ignoreMissingPendingRedirectRef = useRef(false);
 
   const otp = useMemo(() => digits.join(''), [digits]);
   const isComplete = otp.length === OTP_LENGTH && !digits.some((d) => d === '');
@@ -58,7 +66,9 @@ export default function OtpVerificationScreen() {
     // After successful verification we clear pendingPhoneNumber, so only redirect
     // if the user is NOT authenticated.
     if (!pendingPhoneNumber && !isAuthenticated) {
-      router.replace('/auth/login' as any);
+      if (!ignoreMissingPendingRedirectRef.current) {
+        router.replace('/auth/login' as any);
+      }
       return;
     }
 
@@ -71,24 +81,13 @@ export default function OtpVerificationScreen() {
       inputsRef.current[0]?.focus();
     }, 200);
 
-    // Start resend countdown (UI-only).
-    setResendSecondsLeft(RESEND_SECONDS);
-    resendIntervalRef.current && clearInterval(resendIntervalRef.current);
-    resendIntervalRef.current = setInterval(() => {
-      setResendSecondsLeft((prev) => {
-        if (prev <= 1) {
-          resendIntervalRef.current && clearInterval(resendIntervalRef.current);
-          resendIntervalRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    // Start resend countdown.
+    startResendCountdown();
 
     return () => {
       clearTimeout(t);
-      if (verifyTimeoutRef.current) clearTimeout(verifyTimeoutRef.current);
-      if (resendIntervalRef.current) clearInterval(resendIntervalRef.current);
+      const resendInterval = resendIntervalRef.current;
+      if (resendInterval) clearInterval(resendInterval);
     };
   }, [isAuthenticated, pendingPhoneNumber, router]);
 
@@ -110,8 +109,15 @@ export default function OtpVerificationScreen() {
       const nextDigits = Array.from({ length: OTP_LENGTH }, (_, i) => cleaned[i] ?? '');
       setDigits(nextDigits);
 
-      const nextIndex = Math.min(cleaned.length, OTP_LENGTH - 1);
-      inputsRef.current[nextIndex]?.focus();
+      // If user pasted the full code, move focus to the last box and dismiss keyboard.
+      if (cleaned.length >= OTP_LENGTH) {
+        inputsRef.current[OTP_LENGTH - 1]?.blur();
+        Keyboard.dismiss();
+      } else {
+        // Focus the next empty input (index = cleaned.length)
+        const nextIndex = Math.min(cleaned.length, OTP_LENGTH - 1);
+        inputsRef.current[nextIndex]?.focus();
+      }
       return;
     }
 
@@ -136,20 +142,91 @@ export default function OtpVerificationScreen() {
     setDigitAt(index, '');
   };
 
-  const onVerify = () => {
+  const onVerify = async () => {
     if (!isComplete || isVerifying) return;
+    if (!pendingPhoneNumber) {
+      router.replace('/auth/login' as any);
+      return;
+    }
 
     Keyboard.dismiss();
     setIsVerifying(true);
 
-    // UI-only: simulate verification.
-    verifyTimeoutRef.current = setTimeout(() => {
-      // Frontend-only: mark authenticated.
-      completeOtpVerification();
+    try {
+      if (pendingFlow === 'login') {
+        const res: any = await verifyLoginPhoneOtp({ phone: pendingPhoneNumber, otpCode: otp });
+        const payload = res?.payload ?? res?.data ?? res;
+        const hasTokens =
+          !!payload?.saqancom_token || !!payload?.backoffice_token || !!payload?.properties_token;
+        const ok = res?.success === true || res?.success === 'true' || res?.status === true || hasTokens;
+        if (!ok) {
+          throw new Error(res?.message || 'Failed to verify OTP.');
+        }
 
-      // Go back to Upload tab (or anywhere you want post-auth).
-      router.replace('/(tabs)/upload' as any);
-    }, 1000);
+        completeOtpVerification({
+          tokens: {
+            saqancomToken: payload?.saqancom_token ?? null,
+            backofficeToken: payload?.backoffice_token ?? null,
+            propertiesToken: payload?.properties_token ?? null,
+          },
+          agent: payload?.agent ?? null,
+        });
+        router.replace('/(tabs)/upload' as any);
+        return;
+      }
+
+      // Default: register flow
+      const res = await verifyRegisterPhoneOtp({ phone: pendingPhoneNumber, otpCode: otp });
+
+      const brokerExist = res?.payload?.brokerExist;
+
+      if (res?.success !== true) {
+        throw new Error(res?.message || 'Failed to verify OTP.');
+      }
+
+      // Store session details after successful OTP.
+      completeOtpVerification({
+        tokens: {
+          saqancomToken: res?.payload?.saqancom_token ?? null,
+          backofficeToken: res?.payload?.backoffice_token ?? null,
+          propertiesToken: res?.payload?.properties_token ?? null,
+        },
+        agent: res?.payload?.agent ?? null,
+      });
+
+      // If broker exists, go straight to upload. Otherwise show broker question.
+      if (brokerExist === true) {
+        router.replace('/(tabs)/upload' as any);
+      } else {
+        router.replace('/auth/broker-question' as any);
+      }
+    } catch (e: any) {
+      let msg =
+        e?.body && typeof e.body === 'object'
+          ? // Try to show first validation error if present
+            ((): string => {
+              const body: any = e.body;
+              if (typeof body?.message === 'string' && body.message.trim()) return body.message;
+              const errors = body?.errors;
+              if (errors && typeof errors === 'object') {
+                const firstKey = Object.keys(errors)[0];
+                const firstVal = firstKey ? errors[firstKey] : null;
+                if (Array.isArray(firstVal) && typeof firstVal[0] === 'string') return firstVal[0];
+                if (typeof firstVal === 'string') return firstVal;
+              }
+              return e?.message ?? 'Failed to verify OTP. Please try again.';
+            })()
+          : e?.message ?? 'Failed to verify OTP. Please try again.';
+
+      // Avoid leaking generic backend codes to users.
+      if (msg === 'validation_error' || msg === 'validation error') {
+        msg = 'Invalid OTP. Please check the code and try again.';
+      }
+
+      Alert.alert('Verification failed', msg);
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const onChangeNumber = () => {
@@ -158,10 +235,7 @@ export default function OtpVerificationScreen() {
     router.replace('/auth/login' as any);
   };
 
-  const onResendOtp = () => {
-    if (isVerifying || resendSecondsLeft > 0) return;
-
-    // restart the countdown.
+  const startResendCountdown = () => {
     setResendSecondsLeft(RESEND_SECONDS);
     resendIntervalRef.current && clearInterval(resendIntervalRef.current);
     resendIntervalRef.current = setInterval(() => {
@@ -176,10 +250,29 @@ export default function OtpVerificationScreen() {
     }, 1000);
   };
 
-  useEffect(() => {
-    if (isComplete && !isVerifying) onVerify();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isComplete, isVerifying]);
+  const onResendOtp = async () => {
+    if (isVerifying || isResending || resendSecondsLeft > 0) return;
+    if (!pendingPhoneNumber) return;
+
+    setIsResending(true);
+
+    try {
+      // Unified auth endpoint will decide action server-side.
+      const res = await authByPhone(pendingPhoneNumber);
+
+      if (!res?.success) {
+        throw new Error(res?.message || 'Failed to resend OTP.');
+      }
+
+      startResendCountdown();
+      Alert.alert('OTP sent', res?.message || 'A new OTP has been sent.');
+    } catch (e: any) {
+      Alert.alert('Resend failed', e?.message ?? 'Failed to resend OTP. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
 
   return (
     <ImageBackground
@@ -264,15 +357,16 @@ export default function OtpVerificationScreen() {
                     </Text>
                     <Pressable
                       onPress={onResendOtp}
-                      disabled={isVerifying || resendSecondsLeft > 0}
+                      disabled={isVerifying || isResending || resendSecondsLeft > 0}
                     >
                       <Text
                         style={[
                           styles.resendLink,
-                          (isVerifying || resendSecondsLeft > 0) && styles.resendLinkDisabled,
+                          (isVerifying || isResending || resendSecondsLeft > 0) &&
+                            styles.resendLinkDisabled,
                         ]}
                       >
-                        Resend OTP
+                        {isResending ? 'Resending…' : 'Resend OTP'}
                       </Text>
                     </Pressable>
                   </View>

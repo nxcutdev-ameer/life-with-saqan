@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import { PhoneField } from '@/components/PhoneField';
 import {
   ActivityIndicator,
+  Alert,
   ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
@@ -9,7 +11,6 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
@@ -19,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
+import { authByPhone } from '@/utils/authApi';
 
 function normalizePhone(input: string) {
   // Keep leading + if user uses international format.
@@ -35,26 +37,38 @@ export default function LoginScreen() {
   const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
 
   const [phone, setPhone] = useState('');
+  const [formattedPhone, setFormattedPhone] = useState('');
+  const [isValidPhone, setIsValidPhone] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-  const normalized = useMemo(() => normalizePhone(phone), [phone]);
-  const isValid = normalized.length >= 8;
+  const normalized = useMemo(() => normalizePhone(formattedPhone), [formattedPhone]);
 
   React.useEffect(() => {
     navigation.setOptions({ gestureEnabled: false } as any);
   }, [navigation]);
 
-  const onContinue = () => {
-    if (!isValid || isSendingOtp) return;
+  const onContinue = async () => {
+    if (!isValidPhone || isSendingOtp) return;
 
     Keyboard.dismiss();
     setIsSendingOtp(true);
-    setPendingAuth({ phoneNumber: normalized, flow: 'login' });
 
-    // UI-only: simulate sending OTP.
-    setTimeout(() => {
+    try {
+      const res = await authByPhone(normalized);
+      if (!res?.success) {
+        throw new Error(res?.message || 'Failed to send OTP');
+      }
+
+      const action = (res?.payload?.action || 'login').toString();
+      const flow = action === 'register' ? 'register' : 'login';
+
+      setPendingAuth({ phoneNumber: normalized, flow });
       router.replace('/auth/otp-verification' as any);
-    }, 1000);
+    } catch (e: any) {
+      Alert.alert('Login failed', e?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setIsSendingOtp(false);
+    }
   };
 
   const onContinueWithoutLogin = () => {
@@ -89,25 +103,23 @@ export default function LoginScreen() {
                 </View>
 
                 <View style={styles.card}>
-                  <Text style={styles.label}>Mobile Number</Text>
-                  <TextInput
-                    style={styles.input}
+                  <PhoneField
+                    label="Mobile Number"
                     value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
-                    placeholder="e.g. +971501234567"
-                    placeholderTextColor={Colors.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
+                    onChangeValue={setPhone}
+                    onChange={({ formattedPhone, isValid }) => {
+                      setFormattedPhone(formattedPhone);
+                      setIsValidPhone(isValid);
+                    }}
                   />
 
                   <Pressable
                     style={[
                       styles.primaryButton,
-                      (!isValid || isSendingOtp) && styles.primaryButtonDisabled,
+                      (!isValidPhone || isSendingOtp) && styles.primaryButtonDisabled,
                     ]}
                     onPress={onContinue}
-                    disabled={!isValid || isSendingOtp}
+                    disabled={!isValidPhone || isSendingOtp}
                   >
                     <View style={styles.primaryButtonContent}>
                       {isSendingOtp ? (
@@ -119,14 +131,7 @@ export default function LoginScreen() {
                     </View>
                   </Pressable>
 
-                  <View style={styles.footerRow}>
-                    <Text style={styles.footerText}>Don’t have an account?</Text>
-                    <Pressable onPress={() => router.replace('/auth/register' as any)}>
-                      <Text style={styles.link}>Register</Text>
-                    </Pressable>
-                  </View>
                 </View>
-
                 <Pressable
                   style={[styles.secondaryButton, isSendingOtp && styles.primaryButtonDisabled]}
                   onPress={onContinueWithoutLogin}
@@ -195,15 +200,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text,
     marginBottom: scaleHeight(8),
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(12),
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleHeight(12),
-    fontSize: scaleFont(16),
-    color: Colors.text,
   },
   primaryButton: {
     marginTop: scaleHeight(14),
