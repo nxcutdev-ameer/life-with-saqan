@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
 import { Text, View, Pressable } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { scaleHeight } from '@/utils/responsive';
@@ -54,6 +55,7 @@ export default function PropertyFooter({
   onSeek,
   onNavigateToProperty,
 }: PropertyFooterProps) {
+  const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
 
@@ -81,7 +83,11 @@ export default function PropertyFooter({
             languages={translations}
             onLanguageSelect={setSelectedLanguage}
           />
-          <Pressable style={styles.footerActionButton}>
+          <Pressable
+            style={styles.footerActionButton}
+            onPress={() => router.push('/(tabs)/profile' as any)}
+            hitSlop={10}
+          >
             <View style={styles.agentAvatarContainer}>
               <View style={styles.agentAvatar}>
                 <Text style={styles.agentInitial}>{item.agentName.charAt(0)}</Text>

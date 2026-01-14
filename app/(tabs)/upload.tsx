@@ -63,6 +63,7 @@ export default function UploadScreen() {
     navigation.setOptions({ gestureEnabled: false } as any);
   }, [navigation]);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
@@ -199,6 +200,13 @@ export default function UploadScreen() {
 
   const offPlanOptions: OffPlanProjectListItem[] =
     offPlanPages?.pages.flatMap((p) => p.data) ?? [];
+
+  useEffect(() => {
+    if (step !== 'details') return;
+    if (!offPlanPages) return;
+    // Debug: log off-plan API response when entering Property Details step
+    console.log('[Upload][OffPlan] offPlanPages:', offPlanPages);
+  }, [step, offPlanPages]);
 
   // TODO: Replace Building/Area static lists with API endpoints when available.
 
@@ -422,7 +430,9 @@ export default function UploadScreen() {
     );
   };
 
-  if (!isAuthenticated) {
+  // Note: upload requires an authenticated session + tokens from OTP verification.
+  // Tokens are stored globally via `useAuthStore` and persisted with AsyncStorage.
+  if (!isAuthenticated || !sessionTokens?.backofficeToken) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>

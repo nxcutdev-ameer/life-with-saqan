@@ -34,7 +34,6 @@ export default function LoginScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const setPendingAuth = useAuthStore((s) => s.setPendingAuth);
-  const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
 
   const [phone, setPhone] = useState('');
   const [formattedPhone, setFormattedPhone] = useState('');
@@ -69,13 +68,6 @@ export default function LoginScreen() {
     } finally {
       setIsSendingOtp(false);
     }
-  };
-
-  const onContinueWithoutLogin = () => {
-    if (isSendingOtp) return;
-    Keyboard.dismiss();
-    clearPendingAuth();
-    router.replace('/(tabs)/upload' as any);
   };
 
   return (
@@ -132,13 +124,13 @@ export default function LoginScreen() {
                   </Pressable>
 
                 </View>
-                <Pressable
+                {/* <Pressable
                   style={[styles.secondaryButton, isSendingOtp && styles.primaryButtonDisabled]}
-                  onPress={onContinueWithoutLogin}
+                  onPress={() => router.replace('/(tabs)/feed' as any)}
                   disabled={isSendingOtp}
                 >
                   <Text style={styles.secondaryButtonText}>Continue without login</Text>
-                </Pressable>
+                </Pressable> */}
               </View>
             </SafeAreaView>
           </KeyboardAvoidingView>

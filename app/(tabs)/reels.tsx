@@ -6,6 +6,7 @@ import {
   ViewToken,
   Animated,
   Pressable,
+  PanResponder,
 } from 'react-native';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ import LocationsModal from '@/components/LocationsModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
 import PropertyFooter from '@/components/PropertyFooter';
+import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -122,13 +124,17 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     });
   };
 
+  const [isSpeeding, setIsSpeeding] = useState(false);
+
   const startSpeed = () => {
     isSpeedingRef.current = true;
+    setIsSpeeding(true);
     setPlaybackRate(2);
   };
 
   const stopSpeed = () => {
     isSpeedingRef.current = false;
+    setIsSpeeding(false);
     setPlaybackRate(1);
   };
 
@@ -142,8 +148,33 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     } catch {}
   };
 
+  const swipeHandledRef = useRef(false);
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        const { dx, dy } = gestureState;
+        return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.8;
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const { dx } = gestureState;
+        if (dx < -60 && !swipeHandledRef.current) {
+          swipeHandledRef.current = true;
+          player.pause();
+          setIsPaused(true);
+          onNavigateToProperty(item.id);
+        }
+        setTimeout(() => {
+          swipeHandledRef.current = false;
+        }, 250);
+      },
+      onPanResponderTerminate: () => {
+        swipeHandledRef.current = false;
+      },
+    })
+  ).current;
+
   return (
-      <View style={styles.propertyContainer}>
+      <View style={styles.propertyContainer} {...panResponder.panHandlers}>
         <View style={styles.videoTouchArea}>
           <VideoView
             player={player}
@@ -207,6 +238,9 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
             onPressOut={stopSpeed}
           />
         </View>
+
+        {/* Centered just above the progress bar */}
+        <SpeedBoostOverlay visible={isSpeeding} bottom={bottomTabBarHeight + scaleHeight(10)} />
 
         <PropertyFooter
           item={item}

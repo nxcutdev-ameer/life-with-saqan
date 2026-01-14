@@ -51,6 +51,7 @@ export default function AppHeader({ onSearchPress, onSelectionsPress }: AppHeade
             {lifestyleDisplay}
           </Text>
           <View style={styles.lifestyleUnderline} />
+          <View style={styles.lifestyleDot} />
         </View>
       </Pressable>
 
@@ -106,11 +107,23 @@ const styles = StyleSheet.create({
   lifestyleUnderline: {
     position: 'absolute' as const,
     bottom: -scaleHeight(4),
-    left: 0,
-    right: 0,
+    left: '50%',
     height: scaleHeight(3),
     backgroundColor: Colors.textLight,
     borderRadius: scaleWidth(2),
+    width: scaleWidth(26),
+    transform: [{ translateX: -scaleWidth(13) }],
+  },
+  lifestyleDot: {
+    position: 'absolute' as const,
+    top: -scaleHeight(6), //-scaleHeight(10)
+    right: -scaleWidth(6),  //scaleWidth(45)
+    width: scaleWidth(8),
+    height: scaleWidth(8),
+    borderRadius: scaleWidth(4),
+    backgroundColor: '#E53935',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.67)',
   },
   iconButton: {
     padding: scaleWidth(8),

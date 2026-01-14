@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Property } from '@/types';
 import { formatEngagementMetric } from '@/utils/formatters';
 import { feedStyles as styles } from '@/constants/feedStyles';
+import Colors from '@/constants/colors';
 
 interface EngagementButtonsProps {
   item: Property;
@@ -144,7 +145,7 @@ export default function EngagementButtons({
         <MaterialCommunityIcons
           name={isSaved ? 'bookmark' : 'bookmark-outline'}
           size={25}
-          color="#FFFFFF"
+          color={isSaved ?Colors.bronze: "#ffff"}
         />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.savesCount)}

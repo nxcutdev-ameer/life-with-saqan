@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   SafeAreaView,
+  Switch,
   StyleSheet,
   Text,
   TextInput,
@@ -35,6 +36,7 @@ export default function BrokerQuestionScreen() {
   const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken) ?? null;
 
   const [step, setStep] = useState<'question' | 'brokerNumber'>('question');
+  const [isBroker, setIsBroker] = useState(true);
   const [brokerNumber, setBrokerNumber] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +53,7 @@ export default function BrokerQuestionScreen() {
     ],
     []
   );
-  const [selectedEmirate, setSelectedEmirate] = useState<string | null>(null);
+  const [selectedEmirate, setSelectedEmirate] = useState<string | null>('Dubai');
   const [emirateModalVisible, setEmirateModalVisible] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
 
@@ -64,19 +66,12 @@ export default function BrokerQuestionScreen() {
     navigation.setOptions({ gestureEnabled: false } as any);
   }, [navigation]);
 
-  const onNo = () => {
-    Keyboard.dismiss();
-    Alert.alert('Registration restricted', 'Only brokers are allowed to register.', [
-      {
-        text: 'OK',
-        onPress: () => {
-          // Ensure we don't keep an authenticated session for non-brokers.
-          logout();
-          router.replace('/(tabs)/feed' as any);
-        },
-      },
-    ]);
-  };
+  // Ensure keyboard is dismissed on the question step (no inputs there)
+  useEffect(() => {
+    if (step === 'question') {
+      Keyboard.dismiss();
+    }
+  }, [step]);
 
   const onYes = () => {
     Keyboard.dismiss();
@@ -168,6 +163,7 @@ export default function BrokerQuestionScreen() {
     if (isAnimating || step !== 'brokerNumber') return;
 
     setEmirateModalVisible(false);
+    setPhotoUri(null);
 
     setIsAnimating(true);
     Animated.parallel([
@@ -251,25 +247,34 @@ export default function BrokerQuestionScreen() {
                 },
               ]}
             >
-                <Text style={styles.cardTitle}>Are You Broker?</Text>
-
-                <View style={styles.buttonsRow}>
-                  <Pressable
-                    style={[styles.buttonBase, styles.primaryButton, (isAnimating || step !== 'question') && styles.buttonDisabled]}
-                    onPress={onYes}
-                    disabled={isAnimating || step !== 'question'}
-                  >
-                    <Text style={styles.primaryButtonText}>Yes</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[styles.buttonBase, styles.secondaryButton, (isAnimating || step !== 'question') && styles.buttonDisabled]}
-                    onPress={onNo}
-                    disabled={isAnimating || step !== 'question'}
-                  >
-                    <Text style={styles.secondaryButtonText}>No</Text>
-                  </Pressable>
+                <View style={styles.questionRow}>
+                  <Text style={styles.cardTitleInline}>Are You Broker?</Text>
+                  <Switch
+                    nativeID="isBroker"
+                    testID="isBroker"
+                    accessibilityLabel="Are you broker"
+                    value={isBroker}
+                    onValueChange={(v) => setIsBroker(v)}
+                    trackColor={{ false: Colors.border, true: Colors.bronze }}
+                    thumbColor={Colors.background}
+                  />
                 </View>
+
+                <Pressable
+                  style={[styles.buttonBase, styles.primaryButton, (isAnimating || step !== 'question') && styles.buttonDisabled]}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    if (isBroker) {
+                      onYes();
+                    } else {
+                      // Allow continuing without broker details.
+                      router.replace('/(tabs)/upload' as any);
+                    }
+                  }}
+                  disabled={isAnimating || step !== 'question'}
+                >
+                  <Text style={styles.primaryButtonText}>Continue</Text>
+                </Pressable>
               </Animated.View>
 
             {/* Step 2: Broker number */}
@@ -284,7 +289,8 @@ export default function BrokerQuestionScreen() {
                 },
               ]}
             >
-                <Text style={styles.cardTitle}>Broker Number</Text>
+                <Text style={styles.cardTitle}>Broker Information </Text>
+                <Text style={styles.sectionLabel}>Broker Number *</Text>
 
                 <TextInput
                   value={brokerNumber}
@@ -308,7 +314,7 @@ export default function BrokerQuestionScreen() {
                     transform: [{ translateY: detailsTranslateY }],
                   }}
                 >
-                  <Text style={styles.sectionLabel}>Emirate</Text>
+                  <Text style={styles.sectionLabel}>Emirate *</Text>
                   <Pressable
                     style={styles.dropdownButton}
                     onPress={() => setEmirateModalVisible(true)}
@@ -319,7 +325,6 @@ export default function BrokerQuestionScreen() {
                     </Text>
                     <Text style={styles.dropdownChevron}>▼</Text>
                   </Pressable>
-
                   <Modal
                     transparent
                     visible={emirateModalVisible}
@@ -332,30 +337,44 @@ export default function BrokerQuestionScreen() {
                     >
                       <Pressable style={styles.modalSheet} onPress={() => {}}>
                         <Text style={styles.modalTitle}>Select Emirate</Text>
-                        {EMIRATES.map((e) => (
-                          <Pressable
-                            key={e}
-                            style={styles.modalItem}
-                            onPress={() => {
-                              setSelectedEmirate(e);
-                              setEmirateModalVisible(false);
-                            }}
-                          >
-                            <Text style={styles.modalItemText}>{e}</Text>
-                          </Pressable>
-                        ))}
+                        {EMIRATES.map((e) => {
+                          const selected = selectedEmirate === e;
+                          return (
+                            <Pressable
+                              key={e}
+                              style={[styles.modalItem, selected && styles.modalItemSelected]}
+                              onPress={() => {
+                                setSelectedEmirate(e);
+                                // Reset uploaded photo if Dubai is selected (photo section hidden for Dubai)
+                                if (e === 'Dubai') {
+                                  setPhotoUri(null);
+                                }
+                                setEmirateModalVisible(false);
+                              }}
+                            >
+                              <Text style={[styles.modalItemText, selected && styles.modalItemTextSelected]}>
+                                {e}
+                              </Text>
+                              {selected ? <Text style={styles.checkmark}>✓</Text> : <View style={styles.checkmarkSpacer} />}
+                            </Pressable>
+                          );
+                        })}
                       </Pressable>
                     </Pressable>
                   </Modal>
 
-                  <Text style={[styles.sectionLabel, { marginTop: scaleHeight(12) }]}>Upload Photo</Text>
-                  <Pressable style={styles.uploadBox} onPress={pickPhoto} disabled={isSubmitting}>
-                    {photoUri ? (
-                      <Image source={{ uri: photoUri }} style={styles.uploadPreview} contentFit="cover" />
-                    ) : (
-                      <Text style={styles.uploadHint}>Tap to upload a photo</Text>
-                    )}
-                  </Pressable>
+                  {selectedEmirate && selectedEmirate !== 'Dubai' ? (
+                    <>
+                      <Text style={[styles.sectionLabel, { marginTop: scaleHeight(12) }]}>Upload Card</Text>
+                      <Pressable style={styles.uploadBox} onPress={pickPhoto} disabled={isSubmitting}>
+                        {photoUri ? (
+                          <Image source={{ uri: photoUri }} style={styles.uploadPreview} contentFit="cover" />
+                        ) : (
+                          <Text style={styles.uploadHint}>Tap to upload a photo</Text>
+                        )}
+                      </Pressable>
+                    </>
+                  ) : null}
                 </Animated.View>
 
                 <View style={styles.buttonsRow}>
@@ -470,11 +489,28 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(14),
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.06)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalItemSelected: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
   },
   modalItemText: {
     fontSize: scaleFont(15),
     fontWeight: '700',
     color: Colors.text,
+  },
+  modalItemTextSelected: {
+    fontWeight: '900',
+  },
+  checkmark: {
+    fontSize: scaleFont(16),
+    fontWeight: '900',
+    color: Colors.text,
+  },
+  checkmarkSpacer: {
+    width: scaleWidth(18),
   },
 
   container: { flex: 1 },
@@ -542,7 +578,19 @@ const styles = StyleSheet.create({
   buttonsRow: {
     flexDirection: 'row-reverse',
     gap: scaleWidth(12),
-    marginTop:scaleHeight(16),
+    marginTop: scaleHeight(16),
+  },
+  questionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: scaleHeight(16),
+    paddingHorizontal: scaleWidth(6),
+  },
+  cardTitleInline: {
+    fontSize: scaleFont(22),
+    fontWeight: '800',
+    color: Colors.text,
   },
   buttonBase: {
     flex: 1,

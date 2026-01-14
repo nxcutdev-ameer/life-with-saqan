@@ -127,7 +127,6 @@ export const feedStyles = StyleSheet.create({
   },
   agentAvatarContainer: {
     position: 'absolute' as const, //relative
-    // Use height-based scaling so the offset stays proportional across screen sizes.
     bottom: -(SCREEN_HEIGHT * 0.41),
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
