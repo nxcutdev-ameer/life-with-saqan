@@ -38,6 +38,7 @@ import {
   Sun,
   Mountain,
 } from 'lucide-react-native';
+import { uploadVideoWithProperty } from '@/utils/videosApi';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { PropertyType, TransactionType } from '@/types';
@@ -81,6 +82,9 @@ export default function UploadScreen() {
   const [highlightSteps, setHighlightSteps] = useState<HighlightStep[]>([...DEFAULT_HIGHLIGHT_OPTIONS]);
   const [activeHighlightStepIndex, setActiveHighlightStepIndex] = useState(0);
   const [highlightsByRoom, setHighlightsByRoom] = useState<Partial<Record<HighlightStep, number>>>({});
+  const [highlightTimestamps, setHighlightTimestamps] = useState<
+    { room: string; start_time: string; end_time: number }[]
+  >([]);
 
   const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
 
@@ -132,6 +136,7 @@ export default function UploadScreen() {
 
     // If OFF_PLAN, user selects an existing off-plan project.
     offPlanProjectId: null as number | null,
+    offPlanProjectReferenceId: '' as string,
     offPlanProjectTitle: '',
 
     // Property Location (READY only)
@@ -205,7 +210,6 @@ export default function UploadScreen() {
     if (step !== 'details') return;
     if (!offPlanPages) return;
     // Debug: log off-plan API response when entering Property Details step
-    console.log('[Upload][OffPlan] offPlanPages:', offPlanPages);
   }, [step, offPlanPages]);
 
   // TODO: Replace Building/Area static lists with API endpoints when available.
@@ -329,6 +333,74 @@ export default function UploadScreen() {
   const handlePublish = async () => {
     if (!checkSubscription()) return;
 
+    // OFF_PLAN: upload video + timestamps and link to selected project.
+    if (propertyDetails.developmentStatus === 'OFF_PLAN') {
+      if (!selectedVideoUri) {
+        Alert.alert('Missing video', 'Please record or select a video first.');
+        return;
+      }
+      if (!propertyDetails.offPlanProjectReferenceId) {
+        Alert.alert('Missing project', 'Please select an off-plan project.');
+        return;
+      }
+
+      // If user never tapped “Set <room>”, fall back to whatever is stored in highlightsByRoom.
+      const timestampsFromMap = Object.entries(highlightsByRoom)
+        .filter(([, value]) => value != null)
+        .map(([room, value]) => ({
+          room,
+          start_time: formatTimeMmSs(value as number),
+          end_time: 0,
+        }));
+
+      const roomTimestamps = highlightTimestamps.length ? highlightTimestamps : timestampsFromMap;
+
+      if (!roomTimestamps.length) {
+        Alert.alert('Missing highlights', 'Please select at least one highlight timestamp.');
+        return;
+      }
+
+      try {
+        const fileName = selectedVideoUri.split('/').pop() || 'video.mp4';
+        const res = await uploadVideoWithProperty({
+          videoFile: { uri: selectedVideoUri, name: fileName, type: 'video/mp4' },
+          propertyReference: propertyDetails.offPlanProjectReferenceId,
+          roomTimestamps,
+          uploadToCloudflare: true,
+          generateSubtitles: true,
+          agentId: 1,
+        });
+
+        if (res?.success) {
+          Alert.alert('Success', res?.message || 'Uploaded successfully.');
+          return;
+        }
+
+        Alert.alert('Upload failed', res?.message || 'Something went wrong.');
+      } catch (err: any) {
+        const body = err?.body as any;
+        const message =
+          body?.message ||
+          err?.message ||
+          'Upload failed. Please try again.';
+
+        const errors = body?.errors;
+        if (errors && typeof errors === 'object') {
+          const lines: string[] = [];
+          for (const [field, msgs] of Object.entries(errors)) {
+            if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
+          }
+          Alert.alert(message, lines.join('\n'));
+          return;
+        }
+
+        Alert.alert('Upload failed', message);
+      }
+
+      return;
+    }
+
+    // READY: existing mock publish flow
     const currentMonth = new Date().toISOString().slice(0, 7);
     const current = parseInt(await AsyncStorage.getItem(`@posts_used_${currentMonth}`) || '0');
     await AsyncStorage.setItem(`@posts_used_${currentMonth}`, (current + 1).toString());
@@ -357,6 +429,7 @@ export default function UploadScreen() {
               sizeSqft: '',
 
               offPlanProjectId: null,
+              offPlanProjectReferenceId: '',
               offPlanProjectTitle: '',
 
               emirateId: null,
@@ -385,6 +458,7 @@ export default function UploadScreen() {
     setShowShareModal(false);
     // Reset highlights and start the highlight picker flow.
     setHighlightsByRoom({});
+    setHighlightTimestamps([]);
     setActiveHighlightStepIndex(0);
     setIsHighlightsMuted(false);
     setIsHighlightsVideoLoaded(false);
@@ -555,6 +629,16 @@ export default function UploadScreen() {
 
    const handleSelectThisHighlight = () => {
      setHighlightsByRoom((prev) => ({ ...prev, [activeRoom]: videoCurrentTimeSec }));
+
+     const start_time = formatTimeMmSs(videoCurrentTimeSec);
+     setHighlightTimestamps((prev) => {
+       const next = [...prev];
+       const idx = next.findIndex((t) => t.room === activeRoom);
+       const item = { room: activeRoom, start_time, end_time: 0 };
+       if (idx >= 0) next[idx] = item;
+       else next.push(item);
+       return next;
+     });
    };
 
    const handleDone = () => {
@@ -1075,6 +1159,7 @@ export default function UploadScreen() {
                   ...propertyDetails,
                   developmentStatus: 'READY',
                   offPlanProjectId: null,
+                  offPlanProjectReferenceId: '',
                   offPlanProjectTitle: '',
                 });
               }}
@@ -1561,6 +1646,16 @@ export default function UploadScreen() {
                 style={[styles.modal, { height: windowHeight * 0.55 }]}
                 onPress={() => Keyboard.dismiss()}
               >
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setOffPlanPickerOpen(false)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <X size={scaleWidth(18)} color={Colors.text} />
+                </Pressable>
+
                 <Text style={styles.modalTitle}>Select project</Text>
 
                 <TextInput
@@ -1610,6 +1705,7 @@ export default function UploadScreen() {
                           setPropertyDetails({
                             ...propertyDetails,
                             offPlanProjectId: item.id,
+                            offPlanProjectReferenceId: item.reference_id ?? '',
                             offPlanProjectTitle: item.title,
                           });
                           setOffPlanSearch('');
@@ -2036,6 +2132,17 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(24),
     borderTopLeftRadius: scaleWidth(20),
     borderTopRightRadius: scaleWidth(20),
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: scaleHeight(16),
+    right: scaleWidth(16),
+    width: scaleWidth(32),
+    height: scaleWidth(32),
+    borderRadius: scaleWidth(16),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.04)',
   },
   modalTitle: {
     fontSize: scaleFont(18),

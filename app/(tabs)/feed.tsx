@@ -7,14 +7,15 @@ import {
   ViewToken,
   Animated,
   PanResponder,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { mockProperties, filterProperties } from '@/mocks/properties';
 import { Property } from '@/types';
+import { fetchPublicVideos } from '@/utils/publicVideosApi';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
@@ -26,8 +27,10 @@ import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+type FeedVideoItem = Property;
+
 interface FeedItemProps {
-  item: Property;
+  item: FeedVideoItem;
   index: number;
   isViewable: boolean;
   isLiked: boolean;
@@ -68,7 +71,14 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         (player as any).rate = 1;
       } catch {}
 
-      player.pause();
+      // Hard-stop when leaving viewport.
+      try {
+        player.pause();
+        player.currentTime = 0;
+      } catch {}
+
+      // Ensure next time it becomes active, it will play from start unless user paused.
+      setIsPaused(false);
     }
   }, [isPaused, isViewable, player]);
 
@@ -174,12 +184,19 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   return (
     <View style={styles.propertyContainer} {...panResponder.panHandlers}>
       <View style={styles.videoTouchArea}>
-        <VideoView
-          player={player}
-          style={styles.video}
-          contentFit="cover"
-          nativeControls={false}
-        />
+        {item.videoUrl ? (
+          <VideoView
+            player={player}
+            style={styles.video}
+            contentFit="cover"
+            nativeControls={false}
+          />
+        ) : (
+          <View style={[styles.video, { alignItems: 'center', justifyContent: 'center' }]}>
+            <Text style={{ color: '#fff', opacity: 0.9, fontWeight: '600' }}>Video unavailable</Text>
+          </View>
+        )}
+
       </View>
 
       {/* Overlay touch zones: left/right hold = 2x speed, center tap = pause/play */}
@@ -239,22 +256,124 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
 export default function FeedScreen() {
   const router = useRouter();
-  const { transactionType, location, lifestyles } = useUserPreferences();
-  
-  const filteredProperties = useMemo(
-    () => filterProperties(mockProperties, transactionType, location, lifestyles),
-    [transactionType, location, lifestyles]
-  );
+  useUserPreferences();
 
-  const [viewableItems, setViewableItems] = useState<string[]>([]);
+  const [items, setItems] = useState<FeedVideoItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMorePages, setHasMorePages] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
+  const endReachedCalledDuringMomentum = useRef(false);
+
+  // NOTE: Backend videos don't currently include the fields our local filters expect
+  // (listingType/location/lifestyle). For now, we display the fetched videos as-is.
+  const filteredProperties = useMemo(() => items, [items]);
+
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
 
   const firstItemId = filteredProperties[0]?.id;
+
+  const toAbsoluteUrl = (maybePath: string) => {
+    if (!maybePath) return '';
+    if (maybePath.startsWith('http://') || maybePath.startsWith('https://')) return maybePath;
+    if (maybePath.startsWith('/')) return `https://api.saqan.com${maybePath}`;
+    return `https://api.saqan.com/${maybePath}`;
+  };
+
+  const pickPlaybackUrl = (v: any): { url: string } => {
+    // Prefer HLS when backend says it can stream.
+    if (v?.playback?.can_stream && v?.playback?.stream_url) {
+      return { url: v.playback.stream_url };
+    }
+
+    // Cloudflare fallback (if present and not signed).
+    if (
+      v?.cloudflare?.playback_url &&
+      v?.cloudflare?.requires_signed_urls === false &&
+      v?.cloudflare?.status === 'READY'
+    ) {
+      return { url: v.cloudflare.playback_url };
+    }
+
+    // Local MP4 fallback (API returns relative path).
+    if (v?.playback?.local_url) {
+      return { url: toAbsoluteUrl(v.playback.local_url) };
+    }
+
+    return { url: '' };
+  };
+
+  const mapVideoToProperty = (v: any): FeedVideoItem => {
+    const picked = pickPlaybackUrl(v);
+    const videoUrl = picked.url;
+    const thumbUrl = v?.cloudflare?.thumbnail_url || v?.playback?.thumbnail_url;
+
+    return {
+      id: String(v.video_id),
+      title: v.title || 'Untitled',
+      description: v.description || '',
+      price: 0,
+      currency: 'AED',
+      listingType: 'BUY',
+      propertyType: 'apartment',
+      bedrooms: 0,
+      bathrooms: 0,
+      sizeSqft: 0,
+      location: { city: '', area: '', latitude: 0, longitude: 0 },
+      videoUrl,
+      thumbnailUrl: thumbUrl || '',
+      images: [],
+      amenities: [],
+      lifestyle: [],
+      agent: {
+        id: '1',
+        name: 'Saqan',
+        agency: 'Saqan',
+        photo: '',
+        phone: '',
+        email: '',
+        isVerified: true,
+      },
+      agentName: 'Saqan',
+      agentPhoto: '',
+      likesCount: v?.engagement?.likes_count ?? 0,
+      savesCount: 0,
+      sharesCount: v?.engagement?.shares_count ?? 0,
+      commentsCount: v?.engagement?.comments_count ?? 0,
+    };
+  };
+
+  const loadPage = async (nextPage: number) => {
+    if (isFetching) return;
+    if (!hasMorePages && nextPage !== 1) return;
+
+    try {
+      setIsFetching(true);
+      const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
+      const newItems = (res?.data ?? [])
+        .map(mapVideoToProperty);
+
+      setHasMorePages(Boolean(res?.meta?.has_more_pages));
+      setPage(nextPage);
+      setItems((prev) => (nextPage === 1 ? newItems : [...prev, ...newItems]));
+    } catch (err: any) {
+      // Keep existing items on error.
+      const message = err?.message || 'Failed to load videos.';
+      Alert.alert('Error', message);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Ensure the first item is considered viewable when landing on the feed,
   // so the first video starts playing immediately.
   useEffect(() => {
     if (!firstItemId) return;
-    setViewableItems((prev) => (prev.length === 0 ? [firstItemId] : prev));
+    setActiveItemId((prev) => prev ?? firstItemId);
   }, [firstItemId]);
   const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
@@ -268,7 +387,9 @@ export default function FeedScreen() {
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: items }: { viewableItems: ViewToken[] }) => {
-    setViewableItems(items.map(item => item.key as string));
+    // With pagingEnabled, at most one item should be predominantly visible.
+    const active = items.find((it) => it.isViewable);
+    setActiveItemId((active?.key as string) || null);
   }).current;
 
   const toggleLike = (propertyId: string) => {
@@ -297,12 +418,12 @@ export default function FeedScreen() {
     });
   };
 
-  const renderProperty = ({ item, index }: { item: Property; index: number }) => {
+  const renderProperty = ({ item, index }: { item: FeedVideoItem; index: number }) => {
     return (
       <FeedItem
         item={item}
         index={index}
-        isViewable={viewableItems.includes(item.id)}
+        isViewable={activeItemId === item.id}
         isLiked={likedProperties.has(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
@@ -317,13 +438,20 @@ export default function FeedScreen() {
     );
   };
 
-  if (filteredProperties.length === 0) {
+  if (isFetching && filteredProperties.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No properties found</Text>
-        <Text style={styles.emptyText}>
-          Try adjusting your filters or select different lifestyles
-        </Text>
+        <Text style={styles.emptyTitle}>Loading…</Text>
+        <Text style={styles.emptyText}>Fetching videos</Text>
+      </View>
+    );
+  }
+
+  if (!isFetching && filteredProperties.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle}>No videos found</Text>
+        <Text style={styles.emptyText}>Please try again later.</Text>
       </View>
     );
   }
@@ -353,6 +481,18 @@ export default function FeedScreen() {
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
+        onMomentumScrollBegin={() => {
+          endReachedCalledDuringMomentum.current = false;
+        }}
+        onEndReached={() => {
+          if (endReachedCalledDuringMomentum.current) return;
+          endReachedCalledDuringMomentum.current = true;
+
+          if (hasMorePages && !isFetching) {
+            loadPage(page + 1);
+          }
+        }}
+        onEndReachedThreshold={0.6}
       />
       <CommentsModal
         visible={commentsModalVisible}
