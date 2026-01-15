@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type AuthFlow = 'login' | 'register';
+export type AuthFlow = 'login' | 'register' | 'broker_update';
 
 export type AuthTokens = {
   saqancomToken?: string | null;
@@ -29,9 +29,20 @@ export interface AuthState {
 
   pendingPhoneNumber: string | null;
   pendingFlow: AuthFlow | null;
+  pendingMessage: string | null;
+  pendingBrokerUpdate: {
+    brokerNumber: string;
+    emirate: string;
+  } | null;
 
-  setPendingAuth: (params: { phoneNumber: string; flow: AuthFlow }) => void;
+  setPendingAuth: (params: {
+    phoneNumber: string;
+    flow: AuthFlow;
+    message?: string | null;
+    brokerUpdate?: { brokerNumber: string; emirate: string } | null;
+  }) => void;
   clearPendingAuth: () => void;
+  setPendingMessage: (message: string | null) => void;
 
   setSession: (session: AuthSession | null) => void;
 
@@ -54,13 +65,28 @@ export const useAuthStore = create<AuthState>()(
       session: null,
       pendingPhoneNumber: null,
       pendingFlow: null,
+      pendingMessage: null,
+      pendingBrokerUpdate: null,
 
-      setPendingAuth: ({ phoneNumber, flow }) => {
+      setPendingAuth: ({ phoneNumber, flow, message, brokerUpdate }) => {
         const normalized = phoneNumber.replace(/\s+/g, '');
-        set({ pendingPhoneNumber: normalized, pendingFlow: flow });
+        set({
+          pendingPhoneNumber: normalized,
+          pendingFlow: flow,
+          pendingMessage: message ?? null,
+          pendingBrokerUpdate: brokerUpdate ?? null,
+        });
       },
 
-      clearPendingAuth: () => set({ pendingPhoneNumber: null, pendingFlow: null }),
+      clearPendingAuth: () =>
+        set({
+          pendingPhoneNumber: null,
+          pendingFlow: null,
+          pendingMessage: null,
+          pendingBrokerUpdate: null,
+        }),
+
+      setPendingMessage: (message) => set({ pendingMessage: message }),
 
       setSession: (session) => set({ session }),
 
@@ -72,6 +98,8 @@ export const useAuthStore = create<AuthState>()(
           session: session ?? get().session,
           pendingPhoneNumber: null,
           pendingFlow: null,
+          pendingMessage: null,
+          pendingBrokerUpdate: null,
         });
       },
 
@@ -82,6 +110,8 @@ export const useAuthStore = create<AuthState>()(
           session: null,
           pendingPhoneNumber: null,
           pendingFlow: null,
+          pendingMessage: null,
+          pendingBrokerUpdate: null,
         }),
     }),
     {

@@ -7,7 +7,6 @@ import {
   ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
   Platform,
   Modal,
   SafeAreaView,
@@ -26,17 +25,18 @@ import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
-import { updateBrokerId } from '@/utils/profileApi';
+import { requestBrokerIdUpdate } from '@/utils/brokerApi';
 import { ApiError } from '@/utils/api';
 
 export default function BrokerQuestionScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const logout = useAuthStore((s) => s.logout);
+  const setPendingAuth = useAuthStore((s) => s.setPendingAuth);
   const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken) ?? null;
 
   const [step, setStep] = useState<'question' | 'brokerNumber'>('question');
-  const [isBroker, setIsBroker] = useState(true);
+  const [isBroker, setIsBroker] = useState(false);
   const [brokerNumber, setBrokerNumber] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -130,8 +130,8 @@ export default function BrokerQuestionScreen() {
   const onContinue = async () => {
     Keyboard.dismiss();
     const cleaned = brokerNumber.replace(/[^0-9]/g, '');
-    if (cleaned.length !== 5) {
-      Alert.alert('Invalid broker number', 'Broker number must be exactly 5 digits.');
+    if (!cleaned) {
+      Alert.alert('Invalid broker number', 'Please enter your broker number.');
       return;
     }
 
@@ -143,12 +143,75 @@ export default function BrokerQuestionScreen() {
     }
 
     try {
+      const emirateRaw = selectedEmirate ?? 'Dubai';
+      const emirate = emirateRaw.toLowerCase().replace(/\s+/g, '_');
+
+      // File is required when emirate is not dubai.
+      if (emirate !== 'dubai' && !photoUri) {
+        Alert.alert('Missing document', 'Please upload your card photo for the selected emirate.');
+        return;
+      }
+
+      const file =
+        photoUri && emirate !== 'dubai'
+          ? {
+              uri: photoUri,
+              name: 'broker_card.jpg',
+              type: 'image/jpeg',
+            }
+          : null;
+
       setIsSubmitting(true);
-      const res = await updateBrokerId({ brokerNumber: cleaned, backofficeToken });
+      const res = await requestBrokerIdUpdate({
+        backofficeToken,
+        brokerNumber: cleaned,
+        emirate,
+        file,
+      });
+
       if (res?.success) {
-        router.replace('/(tabs)/upload' as any);
+        // Dubai triggers OTP verification to broker phone.
+        if (emirate === 'dubai') {
+          const suffix = res?.payload?.phone ?? '';
+          setPendingAuth({
+            phoneNumber: suffix || '••••',
+            flow: 'broker_update',
+            message: res?.message ?? null,
+            brokerUpdate: {
+              brokerNumber: cleaned,
+              emirate,
+            },
+          });
+          Alert.alert('Verification required', res?.message || 'OTP sent to your broker phone.');
+          router.replace('/auth/otp-verification' as any);
+        } else {
+          // Non-dubai: treat as completed.
+          router.replace('/(tabs)/upload' as any);
+        }
+        return;
+      }
+
+      const message = res?.message || 'Unable to update broker number.';
+      // If a request is already pending, show message then continue to upload.
+      if (message.toLowerCase().includes('already pending')) {
+        Alert.alert('Broker update pending', message, [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)/upload' as any),
+          },
+        ]);
+        return;
+      }
+
+      if (emirate === 'dubai') {
+        Alert.alert('Unable to update broker number', message);
       } else {
-        Alert.alert('Unable to update broker number', res?.message || 'Please try again.');
+        Alert.alert('Unable to update broker number', message, [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)/upload' as any),
+          },
+        ]);
       }
     } catch (e: any) {
       const body = e instanceof ApiError ? (e.body as any) : null;
@@ -229,7 +292,8 @@ export default function BrokerQuestionScreen() {
         style={styles.gradient}
       >
         <SafeAreaView style={styles.safeArea}>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          {/* Non-blocking backdrop to dismiss keyboard without breaking TextInput editing */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={Keyboard.dismiss} />
           <KeyboardAvoidingView
             style={styles.content}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -294,18 +358,15 @@ export default function BrokerQuestionScreen() {
 
                 <TextInput
                   value={brokerNumber}
-                  onChangeText={(t) => setBrokerNumber(t.replace(/[^0-9]/g, '').slice(0, 5))}
-                  placeholder="Enter your 5-digit broker number"
+                  onChangeText={(t) => setBrokerNumber(t.replace(/[^0-9]/g, ''))}
+                  placeholder="Enter your broker number"
                   placeholderTextColor={Colors.overlayLight}
                   keyboardType="number-pad"
-                  maxLength={5}
+                 // maxLength={5}
                   style={styles.input}
                   autoFocus
                 />
 
-                {brokerNumber.length > 0 && brokerNumber.length !== 5 ? (
-                  <Text style={styles.helperText}>Broker number must be 5 digits.</Text>
-                ) : null}
 
                 {/* Only shown when user clicked YES (broker flow) */}
                 <Animated.View
@@ -382,10 +443,10 @@ export default function BrokerQuestionScreen() {
                   style={[
                     styles.buttonBase,
                     styles.primaryButton,
-                    (brokerNumber.trim().length !== 5 || isAnimating || isSubmitting) && styles.buttonDisabled,
+                    (!brokerNumber.trim() || isAnimating || isSubmitting) && styles.buttonDisabled,
                   ]}
                   onPress={onContinue}
-                  disabled={brokerNumber.trim().length !== 5 || isAnimating || isSubmitting}
+                  disabled={!brokerNumber.trim() || isAnimating || isSubmitting}
                 >
                   {isSubmitting ? (
                     <ActivityIndicator size="small" color={Colors.textLight} />
@@ -405,7 +466,6 @@ export default function BrokerQuestionScreen() {
               </Animated.View>
             </View>
           </KeyboardAvoidingView>
-          </TouchableWithoutFeedback>
         </SafeAreaView>
       </LinearGradient>
     </ImageBackground>

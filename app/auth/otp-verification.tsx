@@ -25,6 +25,7 @@ import {
   verifyLoginPhoneOtp,
   verifyRegisterPhoneOtp,
 } from '@/utils/authApi';
+import { requestBrokerIdUpdate, validateBrokerOtp } from '@/utils/brokerApi';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
@@ -41,6 +42,10 @@ export default function OtpVerificationScreen() {
   const navigation = useNavigation();
   const pendingPhoneNumber = useAuthStore((s) => s.pendingPhoneNumber);
   const pendingFlow = useAuthStore((s) => s.pendingFlow);
+  const pendingMessage = useAuthStore((s) => s.pendingMessage);
+  const pendingBrokerUpdate = useAuthStore((s) => s.pendingBrokerUpdate);
+  const setPendingMessage = useAuthStore((s) => s.setPendingMessage);
+  const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken) ?? null;
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const completeOtpVerification = useAuthStore((s) => s.completeOtpVerification);
   const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
@@ -153,6 +158,21 @@ export default function OtpVerificationScreen() {
     setIsVerifying(true);
 
     try {
+      if (pendingFlow === 'broker_update') {
+        if (!backofficeToken) {
+          throw new Error('Missing backoffice token. Please login again.');
+        }
+
+        const res = await validateBrokerOtp({ backofficeToken, otpCode: otp });
+        if (res?.success) {
+          clearPendingAuth();
+          router.replace('/(tabs)/upload' as any);
+          return;
+        }
+
+        throw new Error(res?.message || 'Invalid OTP.');
+      }
+
       if (pendingFlow === 'login') {
         const res: any = await verifyLoginPhoneOtp({ phone: pendingPhoneNumber, otpCode: otp });
         const payload = res?.payload ?? res?.data ?? res;
@@ -257,6 +277,33 @@ export default function OtpVerificationScreen() {
     setIsResending(true);
 
     try {
+      if (pendingFlow === 'broker_update') {
+        if (!backofficeToken) {
+          throw new Error('Missing backoffice token. Please login again.');
+        }
+        if (!pendingBrokerUpdate) {
+          throw new Error('Missing broker update request details.');
+        }
+
+        const res = await requestBrokerIdUpdate({
+          backofficeToken,
+          brokerNumber: pendingBrokerUpdate.brokerNumber,
+          emirate: pendingBrokerUpdate.emirate,
+          file: null,
+        });
+
+        // For broker update resend, even failure can be informative.
+        if (!res?.success) {
+          throw new Error(res?.message || 'Failed to resend OTP.');
+        }
+
+        // Update banner message
+        setPendingMessage(res?.message ?? null);
+        startResendCountdown();
+        Alert.alert('OTP sent', res?.message || 'A new OTP has been sent.');
+        return;
+      }
+
       // Unified auth endpoint will decide action server-side.
       const res = await authByPhone(pendingPhoneNumber);
 
@@ -298,6 +345,12 @@ export default function OtpVerificationScreen() {
                   <Text style={styles.subtitle}>
                     Enter the 6-digit code sent to {maskPhone(pendingPhoneNumber)}
                   </Text>
+
+                  {pendingFlow === 'broker_update' && pendingMessage ? (
+                    <View style={styles.infoBanner}>
+                      <Text style={styles.infoBannerText}>{pendingMessage}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.card}>
@@ -418,6 +471,22 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  infoBanner: {
+    marginTop: scaleHeight(12),
+    paddingVertical: scaleHeight(10),
+    paddingHorizontal: scaleWidth(12),
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  infoBannerText: {
+    color: Colors.text,
+    fontSize: scaleFont(13),
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: scaleFont(18),
   },
   card: {
     width: '100%',

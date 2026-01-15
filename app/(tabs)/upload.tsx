@@ -1036,28 +1036,32 @@ export default function UploadScreen() {
       </View>
 
       <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Title *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Luxury 2BR Marina View Apartment"
-            placeholderTextColor={Colors.textSecondary}
-            value={propertyDetails.title}
-            onChangeText={(text) => setPropertyDetails({ ...propertyDetails, title: text })}
-          />
-        </View>
+        {propertyDetails.developmentStatus !== 'OFF_PLAN' ? (
+          <>
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Title *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Luxury 2BR Marina View Apartment"
+                placeholderTextColor={Colors.textSecondary}
+                value={propertyDetails.title}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, title: text })}
+              />
+            </View>
 
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Price (AED) *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 2300000"
-            placeholderTextColor={Colors.textSecondary}
-            keyboardType="numeric"
-            value={propertyDetails.price}
-            onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
-          />
-        </View>
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Price (AED) *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 2300000"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numeric"
+                value={propertyDetails.price}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
+              />
+            </View>
+          </>
+        ) : null}
 
         <View style={styles.formSection}>
           <Text style={styles.formLabel}>Property Status *</Text>
@@ -1095,6 +1099,9 @@ export default function UploadScreen() {
                 setPropertyDetails({
                   ...propertyDetails,
                   developmentStatus: 'OFF_PLAN',
+                  // Clear READY-only fields when switching to OFF_PLAN
+                  title: '',
+                  price: '',
                   listingType: 'BUY',
                   emirateId: null,
                   emirateName: '',
@@ -1551,7 +1558,7 @@ export default function UploadScreen() {
               }}
             >
               <Pressable
-                style={[styles.modal, { height: windowHeight * 0.5 }]}
+                style={[styles.modal, { height: windowHeight * 0.55 }]}
                 onPress={() => Keyboard.dismiss()}
               >
                 <Text style={styles.modalTitle}>Select project</Text>
