@@ -8,14 +8,16 @@ import {
   Animated,
   PanResponder,
   Alert,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Property } from '@/types';
-import { fetchPublicVideos } from '@/utils/publicVideosApi';
+import { fetchPublicVideos, setPublicVideoLike, sharePublicVideo } from '@/utils/publicVideosApi';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
@@ -39,10 +41,11 @@ interface FeedItemProps {
   onToggleLike: (id: string) => void;
   onToggleSave: (id: string) => void;
   onOpenComments: (id: string) => void;
-  onNavigateToProperty: (id: string) => void;
+  onNavigateToProperty: (propertyReference: string) => void;
+  onShare: (id: string) => void;
 }
 
-function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: FeedItemProps) {
+function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare }: FeedItemProps) {
   const [isPaused, setIsPaused] = useState(false);
 
   const player = useVideoPlayer(item.videoUrl, (player) => {
@@ -160,7 +163,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
       onMoveShouldSetPanResponder: (_evt, gestureState) => {
         const { dx, dy } = gestureState;
         // Capture mostly-horizontal swipes so we don't fight the vertical feed scroll.
-        return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.8;
+        return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 5; //1.8
       },
       onPanResponderRelease: (_evt, gestureState) => {
         const { dx } = gestureState;
@@ -169,7 +172,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           swipeHandledRef.current = true;
           player.pause();
           setIsPaused(true);
-          onNavigateToProperty(item.id);
+          onNavigateToProperty(item.propertyReference || item.id);
         }
         setTimeout(() => {
           swipeHandledRef.current = false;
@@ -243,11 +246,12 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         onToggleLike={onToggleLike}
         onToggleSave={onToggleSave}
         onOpenComments={onOpenComments}
+        onShare={onShare}
         onSeek={handleSeek}
         onNavigateToProperty={() => {
           player.pause();
           setIsPaused(true);
-          onNavigateToProperty(item.id);
+          onNavigateToProperty(item.propertyReference || item.id);
         }}
       />
     </View>
@@ -262,6 +266,12 @@ export default function FeedScreen() {
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
+
+  // Refs to avoid stale closures inside FlatList callbacks.
+  const pageRef = useRef(1);
+  const hasMorePagesRef = useRef(true);
+  const isFetchingRef = useRef(false);
+
   const endReachedCalledDuringMomentum = useRef(false);
 
   // NOTE: Backend videos don't currently include the fields our local filters expect
@@ -279,46 +289,116 @@ export default function FeedScreen() {
     return `https://api.saqan.com/${maybePath}`;
   };
 
+  const isDirectMediaUrl = (url?: string | null) => {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    // We only want URLs that point to actual media, not Cloudflare's HTML watch page.
+    return u.endsWith('.m3u8') || u.endsWith('.mp4') || u.includes('/manifest/') || u.includes('manifest/video.m3u8');
+  };
+
   const pickPlaybackUrl = (v: any): { url: string } => {
-    // Prefer HLS when backend says it can stream.
-    if (v?.playback?.can_stream && v?.playback?.stream_url) {
+    // 1) Prefer HLS manifest URLs.
+    if (v?.playback?.can_stream && isDirectMediaUrl(v?.playback?.stream_url)) {
       return { url: v.playback.stream_url };
     }
 
-    // Cloudflare fallback (if present and not signed).
     if (
-      v?.cloudflare?.playback_url &&
+      v?.cloudflare?.status === 'READY' &&
       v?.cloudflare?.requires_signed_urls === false &&
-      v?.cloudflare?.status === 'READY'
+      isDirectMediaUrl(v?.cloudflare?.stream_url)
+    ) {
+      return { url: v.cloudflare.stream_url };
+    }
+
+    if (
+      v?.cloudflare?.status === 'READY' &&
+      v?.cloudflare?.requires_signed_urls === false &&
+      isDirectMediaUrl(v?.cloudflare?.playback_url)
     ) {
       return { url: v.cloudflare.playback_url };
     }
 
-    // Local MP4 fallback (API returns relative path).
+    // 2) MP4 fallback.
+    if (isDirectMediaUrl(v?.playback?.local_url)) {
+      return { url: toAbsoluteUrl(v.playback.local_url) };
+    }
+
+    // If local_url exists, it's mp4 even if it doesn't match the above checks.
     if (v?.playback?.local_url) {
       return { url: toAbsoluteUrl(v.playback.local_url) };
     }
 
+    // 3) As a last resort, if playback.stream_url exists but is a /watch URL, it will likely NOT play in-app.
+    // Return empty so we show the "Video unavailable" placeholder instead of a broken player.
     return { url: '' };
+  };
+
+  const prettifyRoomKey = (key: string) => {
+    if (!key) return '';
+    return key
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .trim()
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  };
+
+  const mapRoomTimestampsToRooms = (roomTimestamps: any): { name: string; timestamp: number }[] => {
+    if (!roomTimestamps || typeof roomTimestamps !== 'object') return [];
+    return Object.entries(roomTimestamps)
+      .map(([key, value]: any) => ({
+        name: prettifyRoomKey(String(key)),
+        timestamp: Number(value?.start ?? 0),
+      }))
+      .filter((r) => Number.isFinite(r.timestamp) && r.timestamp >= 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  };
+
+  const toNumberOrZero = (value: any) => {
+    const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
+    return Number.isFinite(n) ? n : 0;
   };
 
   const mapVideoToProperty = (v: any): FeedVideoItem => {
     const picked = pickPlaybackUrl(v);
     const videoUrl = picked.url;
     const thumbUrl = v?.cloudflare?.thumbnail_url || v?.playback?.thumbnail_url;
+    const rooms = mapRoomTimestampsToRooms(v?.property_video_metadata?.room_timestamps);
+
+    const backendProperty = v?.property;
+    const meta = backendProperty?.meta;
+
+    const title = backendProperty?.title || backendProperty?.name || v.title || 'Untitled';
+    const defaultPricing = backendProperty?.default_pricing || 'month';
+    const priceField =
+      defaultPricing === 'week'
+        ? meta?.week_price
+        : defaultPricing === 'year'
+          ? meta?.year_price
+          : meta?.month_price;
+    const price = toNumberOrZero(priceField);
+
+    const bedrooms = toNumberOrZero(meta?.bedrooms);
+    const bathrooms = toNumberOrZero(meta?.bathrooms);
+    const sizeSqft = toNumberOrZero(meta?.size);
+
+    const city = backendProperty?.emirate?.name || '';
+    const area = backendProperty?.district?.name || '';
 
     return {
       id: String(v.video_id),
-      title: v.title || 'Untitled',
-      description: v.description || '',
-      price: 0,
+      propertyReference: v?.property_reference,
+      title,
+      description: backendProperty?.description || v.description || '',
+      rooms,
+      defaultPricing,
+      price,
       currency: 'AED',
-      listingType: 'BUY',
+      listingType: backendProperty?.type === 'rent' ? 'RENT' : 'BUY',
       propertyType: 'apartment',
-      bedrooms: 0,
-      bathrooms: 0,
-      sizeSqft: 0,
-      location: { city: '', area: '', latitude: 0, longitude: 0 },
+      bedrooms,
+      bathrooms,
+      sizeSqft,
+      location: { city, area, latitude: 0, longitude: 0 },
       videoUrl,
       thumbnailUrl: thumbUrl || '',
       images: [],
@@ -343,23 +423,40 @@ export default function FeedScreen() {
   };
 
   const loadPage = async (nextPage: number) => {
-    if (isFetching) return;
-    if (!hasMorePages && nextPage !== 1) return;
+    if (isFetchingRef.current) return;
+    if (!hasMorePagesRef.current && nextPage !== 1) return;
 
     try {
+      isFetchingRef.current = true;
       setIsFetching(true);
       const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
       const newItems = (res?.data ?? [])
         .map(mapVideoToProperty);
 
-      setHasMorePages(Boolean(res?.meta?.has_more_pages));
+      const nextHasMore = Boolean(res?.meta?.has_more_pages);
+      hasMorePagesRef.current = nextHasMore;
+      pageRef.current = nextPage;
+      setHasMorePages(nextHasMore);
       setPage(nextPage);
-      setItems((prev) => (nextPage === 1 ? newItems : [...prev, ...newItems]));
+      setItems((prev) => {
+        if (nextPage === 1) return newItems;
+        // De-dupe by id (video_id) to avoid key collisions that prevent rendering.
+        const seen = new Set(prev.map((p) => p.id));
+        const merged = [...prev];
+        for (const it of newItems) {
+          if (!seen.has(it.id)) {
+            seen.add(it.id);
+            merged.push(it);
+          }
+        }
+        return merged;
+      });
     } catch (err: any) {
       // Keep existing items on error.
       const message = err?.message || 'Failed to load videos.';
       Alert.alert('Error', message);
     } finally {
+      isFetchingRef.current = false;
       setIsFetching(false);
     }
   };
@@ -376,6 +473,33 @@ export default function FeedScreen() {
     setActiveItemId((prev) => prev ?? firstItemId);
   }, [firstItemId]);
   const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
+  const likesHydratedRef = useRef(false);
+
+  // Hydrate liked videos from local storage.
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('@liked_videos_v1');
+        if (!raw) return;
+        const ids = JSON.parse(raw);
+        if (Array.isArray(ids)) {
+          setLikedProperties(new Set(ids.map(String)));
+        }
+      } catch {
+        // ignore
+      } finally {
+        likesHydratedRef.current = true;
+      }
+    })();
+  }, []);
+
+  // Persist liked videos whenever they change (after initial hydration).
+  useEffect(() => {
+    if (!likesHydratedRef.current) return;
+    AsyncStorage.setItem('@liked_videos_v1', JSON.stringify(Array.from(likedProperties))).catch(() => {
+      // ignore
+    });
+  }, [likedProperties]);
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
@@ -386,23 +510,56 @@ export default function FeedScreen() {
     itemVisiblePercentThreshold: 80,
   }).current;
 
-  const onViewableItemsChanged = useRef(({ viewableItems: items }: { viewableItems: ViewToken[] }) => {
+  const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
     // With pagingEnabled, at most one item should be predominantly visible.
-    const active = items.find((it) => it.isViewable);
-    setActiveItemId((active?.key as string) || null);
+    const active = viewable.find((it) => it.isViewable);
+    const activeId = (active?.key as string) || null;
+    setActiveItemId(activeId);
+
+    // Prefetch the next page when the user is within the last ~3 items.
+    if (!activeId) return;
+    const activeIndex = items.findIndex((p) => p.id === activeId);
+    if (activeIndex >= 0 && items.length - activeIndex <= 4) {
+      if (hasMorePagesRef.current && !isFetchingRef.current) {
+        loadPage(pageRef.current + 1);
+      }
+    }
   }).current;
 
-  const toggleLike = (propertyId: string) => {
+  const toggleLike = async (propertyId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLikedProperties(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(propertyId)) {
-        newSet.delete(propertyId);
-      } else {
-        newSet.add(propertyId);
-      }
-      return newSet;
+
+    const wasLiked = likedProperties.has(propertyId);
+    const nextLiked = !wasLiked;
+
+    // Optimistic UI update.
+    setLikedProperties((prev) => {
+      const next = new Set(prev);
+      if (nextLiked) next.add(propertyId);
+      else next.delete(propertyId);
+      return next;
     });
+
+    try {
+      const res = await setPublicVideoLike({ videoId: propertyId, liked: nextLiked });
+      const likesCount = res?.data?.likes_count;
+      if (typeof likesCount === 'number') {
+        setItems((prev) =>
+          prev.map((it) => (it.id === propertyId ? { ...it, likesCount } : it))
+        );
+      }
+    } catch (err: any) {
+      // Revert on failure.
+      setLikedProperties((prev) => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(propertyId);
+        else next.delete(propertyId);
+        return next;
+      });
+
+      const message = err?.message || 'Failed to update like.';
+      Alert.alert('Error', message);
+    }
   };
 
   const toggleSave = (propertyId: string) => {
@@ -416,6 +573,34 @@ export default function FeedScreen() {
       }
       return newSet;
     });
+  };
+
+  const handleShare = async (id: string) => {
+    const item = items.find((p) => p.id === id);
+    const url = item?.videoUrl;
+    if (!url) {
+      Alert.alert('Error', 'No shareable video URL found.');
+      return;
+    }
+
+    try {
+      const title = item?.title || 'Video';
+     // const thumb = item?.thumbnailUrl ? toAbsoluteUrl(item.thumbnailUrl) : '';
+      const message = `${title}\n${url}`;
+      const result = await Share.share({ message, title });
+
+      // If the user dismissed the share sheet, don't record it.
+      if ((result as any)?.action === (Share as any).dismissedAction) return;
+
+      const res = await sharePublicVideo({ videoId: id });
+      const sharesCount = res?.data?.shares_count;
+      if (typeof sharesCount === 'number') {
+        setItems((prev) => prev.map((it) => (it.id === id ? { ...it, sharesCount } : it)));
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Failed to share.';
+      Alert.alert('Error', message);
+    }
   };
 
   const renderProperty = ({ item, index }: { item: FeedVideoItem; index: number }) => {
@@ -433,7 +618,21 @@ export default function FeedScreen() {
           setSelectedPropertyId(id);
           setCommentsModalVisible(true);
         }}
-        onNavigateToProperty={(id) => router.push(`/property/${id}`)}
+        onNavigateToProperty={async (propertyReference) => {
+          // Cache item data for the details screen (until a dedicated property endpoint is wired).
+          try {
+            const current = items.find((p) => p.propertyReference === propertyReference || p.id === propertyReference);
+            if (current?.propertyReference) {
+              await AsyncStorage.setItem(
+                `@property_cache_${current.propertyReference}`,
+                JSON.stringify(current)
+              );
+            }
+          } catch {}
+
+          router.push(`/property/${propertyReference}`);
+        }}
+        onShare={handleShare}
       />
     );
   };
@@ -474,8 +673,10 @@ export default function FeedScreen() {
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         removeClippedSubviews
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        updateCellsBatchingPeriod={50}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
@@ -488,8 +689,8 @@ export default function FeedScreen() {
           if (endReachedCalledDuringMomentum.current) return;
           endReachedCalledDuringMomentum.current = true;
 
-          if (hasMorePages && !isFetching) {
-            loadPage(page + 1);
+          if (hasMorePagesRef.current && !isFetchingRef.current) {
+            loadPage(pageRef.current + 1);
           }
         }}
         onEndReachedThreshold={0.6}

@@ -2,10 +2,10 @@ import { scaleFont, scaleHeight } from '@/utils/responsive';
 import { Tabs } from 'expo-router';
 import { Home, Play, Bookmark, User, Plus } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
-
+// fill="#F3EDDF"
 const IconWithShadow = ({ Icon, color, size }: { Icon: any; color: string; size: number }) => (
   <View style={styles.iconShadow}>
-    <Icon size={size} color={color} fill="#F3EDDF" />
+    <Icon size={size} color={color} fill="#ffffffff" />
   </View>
 );
 
@@ -20,7 +20,7 @@ export default function TabsLayout() {
           backgroundColor: '#141414',
           borderTopColor: 'transparent',
           borderTopWidth: 0,
-          height: scaleHeight(70),
+          height: scaleHeight(75), //70
           paddingBottom: scaleHeight(12),
           paddingTop: scaleHeight(4),
           elevation: 0,

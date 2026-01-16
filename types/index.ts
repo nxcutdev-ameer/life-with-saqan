@@ -28,8 +28,11 @@ export interface Agent {
 
 export interface Property {
   id: string;
+  propertyReference?: string;
   title: string;
   description: string;
+  rooms?: { name: string; timestamp: number }[];
+  defaultPricing?: string;
   price: number;
   currency: string;
   listingType: TransactionType;

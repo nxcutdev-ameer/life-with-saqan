@@ -29,12 +29,13 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
         </View>
       )}
       
-      <Text style={styles.footerTitle} numberOfLines={1}>
+      <Text style={styles.footerTitle} numberOfLines={2}>
         {item.title}
       </Text>
       
       <Text style={styles.footerPrice}>
         {formatPrice(item.price, item.currency, item.listingType)}
+        {item.defaultPricing ? `/${item.defaultPricing}` : ''}
       </Text>
       
       <View style={styles.footerLocationRow}>
@@ -55,7 +56,9 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
         </View>
         <View style={styles.footerDetailItem}>
           <Ruler size={12} color="#FFFFFF" fill="#FFFFFF" />
-          <Text style={styles.footerSmallText}>{item.sizeSqft.toLocaleString()} sqft</Text>
+          <Text style={styles.footerSmallText}>
+            {item.sizeSqft ? `${item.sizeSqft.toLocaleString()} sqft` : '—'}
+          </Text>
         </View>
       </View>
     </View>

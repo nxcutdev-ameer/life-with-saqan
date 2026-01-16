@@ -49,7 +49,7 @@ export default function PaywallScreen() {
   const PricingCard = ({
     badge,
     badgeColor,
-    icon,
+   // icon,
     title,
     price,
     priceSubtext,
@@ -74,7 +74,7 @@ export default function PaywallScreen() {
         <Text style={styles.badgeText}>{badge}</Text>
       </View>
 
-      <Text style={styles.cardIcon}>{icon}</Text>
+      {/* <Text style={styles.cardIcon}>{icon}</Text> */}
       <Text style={styles.cardTitle}>{title}</Text>
 
       <View style={styles.priceContainer}>

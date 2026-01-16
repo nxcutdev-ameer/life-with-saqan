@@ -130,7 +130,7 @@ export default function EngagementButtons({
           />
         </Animated.View>
         <Text style={styles.footerActionText}>
-          {formatEngagementMetric(item.likesCount + (isLiked ? 1 : 0))}
+          {formatEngagementMetric(item.likesCount)}
         </Text>
       </Pressable>
 

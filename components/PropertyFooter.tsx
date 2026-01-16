@@ -90,10 +90,11 @@ export default function PropertyFooter({
           >
             <View style={styles.agentAvatarContainer}>
               <View style={styles.agentAvatar}>
-                <Text style={styles.agentInitial}>{item.agentName.charAt(0)}</Text>
+               <Text style={styles.agentInitial}>{item.agentName.charAt(0)}</Text>
               </View>
+              {/* size 14 */}
               <View style={styles.agentPlusIcon}>
-                <Plus size={14} color={Colors.textLight} strokeWidth={3} />
+                <Plus size={12} color={Colors.textLight} strokeWidth={2.5} />
               </View>
             </View>
           </Pressable>
@@ -109,7 +110,7 @@ export default function PropertyFooter({
           onShare={onShare}
         />
 
-        <VideoPlayerOverlay onSeek={onSeek} />
+        <VideoPlayerOverlay onSeek={onSeek} rooms={item.rooms} />
       </View>
 
       {/* Black footer bar with progress and property info (sits above bottom tabs) */}

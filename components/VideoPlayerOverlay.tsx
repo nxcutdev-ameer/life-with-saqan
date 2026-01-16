@@ -134,7 +134,7 @@ export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: Vid
             <Text style={styles.modalTitle}>Skip to Highlights</Text>
             
             <View style={styles.roomsContainer}>
-              {rooms.slice(0, 7).map((room, index) => (
+              {rooms.map((room, index) => (
                 <Pressable
                   key={index}
                   style={styles.roomButton}

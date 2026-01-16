@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -36,7 +37,21 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function PropertyDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const property = mockProperties.find(p => p.id === id);
+  const [property, setProperty] = useState<any>(
+    mockProperties.find((p) => p.id === id) || null
+  );
+
+  React.useEffect(() => {
+    (async () => {
+      // Try to hydrate from cache when navigating from feed using property_reference.
+      try {
+        const cached = await AsyncStorage.getItem(`@property_cache_${id}`);
+        if (cached) {
+          setProperty(JSON.parse(cached));
+        }
+      } catch {}
+    })();
+  }, [id]);
 
   const [isLiked, setIsLiked] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -258,7 +273,7 @@ export default function PropertyDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Amenities</Text>
             <View style={styles.amenitiesGrid}>
-              {property.amenities.map((amenity, index) => (
+              {property.amenities.map((amenity: string, index: number) => (
                 <View key={index} style={styles.amenityChip}>
                   <Text style={styles.amenityText}>{amenity}</Text>
                 </View>
@@ -269,7 +284,7 @@ export default function PropertyDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Lifestyle</Text>
             <View style={styles.lifestyleRow}>
-              {property.lifestyle.map((lifestyle, index) => (
+              {property.lifestyle.map((lifestyle: string, index: number) => (
                 <View key={index} style={styles.lifestyleBadge}>
                   <Text style={styles.lifestyleBadgeText}>{lifestyle.replace('_', ' ')}</Text>
                 </View>
