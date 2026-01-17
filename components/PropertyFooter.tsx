@@ -24,6 +24,7 @@ interface PropertyFooterProps {
   onOpenComments: (id: string) => void;
   onShare?: (id: string) => void;
   onSeek: (timestamp: number) => void;
+  onSubtitleSelect?: (subtitleUrl: string) => void;
   /** Navigate to property details (only triggered from the footer tap area). */
   onNavigateToProperty?: () => void;
 }
@@ -32,6 +33,7 @@ interface LanguageTranslation {
   code: string;
   name: string;
   translation: string;
+  subtitleUrl?: string;
 }
 
 /**
@@ -53,20 +55,36 @@ export default function PropertyFooter({
   onOpenComments,
   onShare,
   onSeek,
+  onSubtitleSelect,
   onNavigateToProperty,
 }: PropertyFooterProps) {
   const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
 
-  const translations: LanguageTranslation[] = [
-    { code: 'en', name: 'English', translation: item.description },
-    { code: 'ar', name: 'Arabic', translation: 'شقة فاخرة على شاطئ البحر مع إطلالات بانورامية رائعة' },
-    { code: 'fr', name: 'French', translation: 'Appartement de luxe en bord de mer avec des vues panoramiques' },
-    { code: 'es', name: 'Spanish', translation: 'Apartamento de lujo frente al mar con vistas panorámicas' },
-    { code: 'ru', name: 'Russian', translation: 'Роскошная квартира на берегу моря с панорамным видом' },
-    { code: 'zh', name: 'Chinese', translation: '豪华海滨公寓，享有全景海景' },
-  ];
+  const toAbsoluteUrl = (maybePath?: string | null) => {
+    if (!maybePath) return '';
+    if (maybePath.startsWith('http://') || maybePath.startsWith('https://')) return maybePath;
+    if (maybePath.startsWith('/')) return `https://api.saqan.com${maybePath}`;
+    return `https://api.saqan.com/${maybePath}`;
+  };
+
+  const translations: LanguageTranslation[] = item.subtitles?.length
+    ? item.subtitles.map((s) => ({
+        code: s.code,
+        // label is already expected to be native script (Arabic/Chinese/etc)
+        name: s.label || s.code,
+        translation: '',
+        subtitleUrl: toAbsoluteUrl(s.url || s.filePath || null),
+      }))
+    : [
+        { code: 'en', name: 'English', translation: item.description },
+        { code: 'ar', name: 'العربية', translation: '' },
+        { code: 'fr', name: 'Français', translation: '' },
+        { code: 'es', name: 'Español', translation: '' },
+        { code: 'ru', name: 'Русский', translation: '' },
+        { code: 'zh', name: '中文', translation: '' },
+      ];
 
   return (
     <>
@@ -81,7 +99,12 @@ export default function PropertyFooter({
           <TranslationOverlay
             agentName={item.agentName}
             languages={translations}
-            onLanguageSelect={setSelectedLanguage}
+            onLanguageSelect={(lang) => {
+              setSelectedLanguage(lang);
+              if (lang.subtitleUrl) {
+                onSubtitleSelect?.(lang.subtitleUrl);
+              }
+            }}
           />
           <Pressable
             style={styles.footerActionButton}

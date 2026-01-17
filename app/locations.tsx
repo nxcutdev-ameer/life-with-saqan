@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/colors';
 import { TransactionType } from '@/types';
 import { cities } from '@/mocks/properties';
+import { Platform } from 'react-native';
 
 export default function LocationsScreen() {
   const router = useRouter();
@@ -87,7 +88,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   title: {
-    fontSize: 42,
+    fontSize: Platform.select({ ios: 42, android: 32 }),
     fontWeight: '600',
     color: Colors.text,
     marginBottom: 32,

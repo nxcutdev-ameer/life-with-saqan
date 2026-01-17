@@ -36,7 +36,7 @@ export default function TabsLayout() {
         name="feed"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Home} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Home} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
@@ -49,28 +49,28 @@ export default function TabsLayout() {
         name="reels"
         options={{
           title: 'Reels',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Play} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Play} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="upload"
         options={{
           title: 'Upload',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Plus} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Plus} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="saved"
         options={{
           title: 'Saved',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Bookmark} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Bookmark} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={User} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={User} color={color} size={20} />,
         }}
       />
       <Tabs.Screen

@@ -10,6 +10,7 @@ interface Language {
   code: string;
   name: string;
   translation: string;
+  subtitleUrl?: string;
 }
 
 interface TranslationOverlayProps {

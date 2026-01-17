@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: scaleHeight(12),
     paddingBottom: scaleHeight(16),
-    paddingHorizontal: scaleWidth(20),
+    paddingHorizontal: scaleWidth(15), //20
   },
   selectionsContainer: {
     flex: 1,

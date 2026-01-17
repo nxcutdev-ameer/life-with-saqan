@@ -9,6 +9,7 @@ import {
   Image,
   FlatList,
   Linking,
+  Alert,
 } from 'react-native';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,6 +32,8 @@ import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import { useEngagementStore } from '@/stores/engagementStore';
+import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -53,9 +56,26 @@ export default function PropertyDetailScreen() {
     })();
   }, [id]);
 
-  const [isLiked, setIsLiked] = useState(false);
+  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
+  const likeVideoId = property?.id ? String(property.id) : null;
+  const isLiked = useEngagementStore((s) => (likeVideoId ? s.isLiked(likeVideoId) : false));
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const flatListRef = useRef<FlatList<string>>(null);
+
+  React.useEffect(() => {
+    if (!likesHydrated) hydrateLikes();
+  }, [hydrateLikes, likesHydrated]);
+
+  const toggleLike = async () => {
+    if (!likeVideoId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await toggleLikeGlobal(likeVideoId);
+    } catch {
+      // ignore
+    }
+  };
 
   if (!property) {
     return (
@@ -69,11 +89,6 @@ export default function PropertyDetailScreen() {
   }
 
   const allMedia = [property.videoUrl, ...property.images];
-
-  const toggleLike = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsLiked(!isLiked);
-  };
 
   const agentPhoneRaw = property.agent?.phone ?? '+971501234567';
   const agentEmail = property.agent?.email ?? `${property.agentName.toLowerCase().replace(' ', '.')}@saqan.com`;
@@ -311,10 +326,24 @@ export default function PropertyDetailScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-            <Pressable
+        <ScheduleVisitModal
+          visible={scheduleVisitOpen}
+          onClose={() => setScheduleVisitOpen(false)}
+          propertyTitle={property.title}
+          onSchedule={(date, time) => {
+            setScheduleVisitOpen(false);
+            Alert.alert(
+              'Visit Scheduled',
+              `Your visit to "${property.title}" has been scheduled for ${date.toLocaleDateString()} at ${time.toLocaleTimeString()}.`
+            );
+          }}
+        />
+
+        <Pressable
           style={styles.scheduleButton}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setScheduleVisitOpen(true);
           }}
         >
           <Calendar size={scaleWidth(20)} color={Colors.textLight} />

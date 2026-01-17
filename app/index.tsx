@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Menu } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Platform } from 'react-native';
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -83,7 +84,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   heroTitle: {
-    fontSize: 48,
+    fontSize: Platform.select({ ios: 48, android: 36 }),
     fontWeight: '700',
     color: Colors.text,
     textAlign: 'center',

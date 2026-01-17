@@ -32,6 +32,7 @@ export interface Property {
   title: string;
   description: string;
   rooms?: { name: string; timestamp: number }[];
+  subtitles?: { code: string; label?: string; url?: string | null; filePath?: string | null }[];
   defaultPricing?: string;
   price: number;
   currency: string;

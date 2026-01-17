@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,8 @@ import {
   Modal,
   Pressable,
   Platform,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { X, Calendar, Clock } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -26,8 +28,13 @@ export default function ScheduleVisitModal({
 }: ScheduleVisitModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedTime, setSelectedTime] = useState<Date>(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
 
   const handleConfirm = () => {
     onSchedule(selectedDate, selectedTime);
@@ -80,7 +87,10 @@ export default function ScheduleVisitModal({
 
             <Pressable
               style={styles.selector}
-              onPress={() => setShowDatePicker(true)}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setPickerMode((prev) => (prev === 'date' ? null : 'date'));
+              }}
             >
               <View style={styles.selectorLeft}>
                 <View style={styles.selectorIcon}>
@@ -97,7 +107,10 @@ export default function ScheduleVisitModal({
 
             <Pressable
               style={styles.selector}
-              onPress={() => setShowTimePicker(true)}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setPickerMode((prev) => (prev === 'time' ? null : 'time'));
+              }}
             >
               <View style={styles.selectorLeft}>
                 <View style={styles.selectorIcon}>
@@ -113,28 +126,24 @@ export default function ScheduleVisitModal({
             </Pressable>
           </View>
 
-          {showDatePicker && (
+          {pickerMode && (
             <DateTimePicker
-              value={selectedDate}
-              mode="date"
+              value={pickerMode === 'date' ? selectedDate : selectedTime}
+              mode={pickerMode}
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(event, date) => {
-                setShowDatePicker(Platform.OS === 'ios');
-                if (date) setSelectedDate(date);
-              }}
-              minimumDate={new Date()}
-            />
-          )}
+              textColor={Platform.OS === 'ios' ? '#000000' : undefined}
+              onChange={(event, value) => {
+                // On Android, picker is a dialog; close after selection/cancel.
+                if (Platform.OS !== 'ios') {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setPickerMode(null);
+                }
 
-          {showTimePicker && (
-            <DateTimePicker
-              value={selectedTime}
-              mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(event, time) => {
-                setShowTimePicker(Platform.OS === 'ios');
-                if (time) setSelectedTime(time);
+                if (!value) return;
+                if (pickerMode === 'date') setSelectedDate(value);
+                else setSelectedTime(value);
               }}
+              minimumDate={pickerMode === 'date' ? new Date() : undefined}
             />
           )}
 

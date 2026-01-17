@@ -17,7 +17,9 @@ import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Property } from '@/types';
-import { fetchPublicVideos, setPublicVideoLike, sharePublicVideo } from '@/utils/publicVideosApi';
+import { fetchPublicVideos, sharePublicVideo } from '@/utils/publicVideosApi';
+import { useEngagementStore } from '@/stores/engagementStore';
+import { findActiveCue, parseVtt } from '@/utils/vtt';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
@@ -58,6 +60,9 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  const [selectedSubtitleUrl, setSelectedSubtitleUrl] = useState<string>('');
+  const [subtitleCues, setSubtitleCues] = useState<Array<{ start: number; end: number; text: string }>>([]);
+  const [activeSubtitle, setActiveSubtitle] = useState('');
   React.useEffect(() => {
     if (isViewable) {
       if (isPaused) {
@@ -95,8 +100,15 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
       // Update the progress bar animates between updates for smoothness.
       if (t - lastUpdate >= 100) {
         lastUpdate = t;
-        setCurrentTime(player.currentTime);
+        const ct = player.currentTime;
+        setCurrentTime(ct);
         setDuration(player.duration);
+
+        if (subtitleCues.length) {
+          setActiveSubtitle(findActiveCue(subtitleCues, ct));
+        } else {
+          setActiveSubtitle('');
+        }
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -111,7 +123,43 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     player.currentTime = timestamp;
     // Keep UI in sync immediately on manual seeks.
     setCurrentTime(timestamp);
+    if (subtitleCues.length) {
+      setActiveSubtitle(findActiveCue(subtitleCues, timestamp));
+    }
   };
+
+  React.useEffect(() => {
+    if (!isViewable) return;
+
+    // No subtitle selected.
+    if (!selectedSubtitleUrl) {
+      setSubtitleCues([]);
+      setActiveSubtitle('');
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(selectedSubtitleUrl);
+        if (cancelled) return;
+        const text = await res.text();
+        if (cancelled) return;
+
+        const cues = parseVtt(text);
+        setSubtitleCues(cues);
+        setActiveSubtitle(findActiveCue(cues, player.currentTime));
+      } catch (e: any) {
+        // backend may have missing/bad urls for now
+        setSubtitleCues([]);
+        setActiveSubtitle('');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isViewable, selectedSubtitleUrl, player]);
 
   const insets = useSafeAreaInsets();
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
@@ -200,6 +248,34 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           </View>
         )}
 
+         {activeSubtitle ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 16,
+              right: 16,
+              bottom: 180 + bottomTabBarHeight,
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: '#fff',
+                fontSize: 16,
+                fontWeight: '700',
+                textAlign: 'center',
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 10,
+              }}
+            >
+              {activeSubtitle}
+            </Text>
+          </View>
+        ) : null}
+
       </View>
 
       {/* Overlay touch zones: left/right hold = 2x speed, center tap = pause/play */}
@@ -248,6 +324,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         onOpenComments={onOpenComments}
         onShare={onShare}
         onSeek={handleSeek}
+        onSubtitleSelect={(subtitleUrl) => {
+          // handled inside FeedItem below
+          setSelectedSubtitleUrl(subtitleUrl);
+        }}
         onNavigateToProperty={() => {
           player.pause();
           setIsPaused(true);
@@ -363,6 +443,14 @@ export default function FeedScreen() {
     const videoUrl = picked.url;
     const thumbUrl = v?.cloudflare?.thumbnail_url || v?.playback?.thumbnail_url;
     const rooms = mapRoomTimestampsToRooms(v?.property_video_metadata?.room_timestamps);
+    const subtitles = (v?.cloudflare?.subtitles ?? [])
+      .map((s: any) => ({
+        code: String(s?.language_code || ''),
+        label: s?.label,
+        url: s?.url ?? null,
+        filePath: s?.file_path ?? null,
+      }))
+      .filter((s: any) => Boolean(s.code));
 
     const backendProperty = v?.property;
     const meta = backendProperty?.meta;
@@ -390,6 +478,7 @@ export default function FeedScreen() {
       title,
       description: backendProperty?.description || v.description || '',
       rooms,
+      subtitles,
       defaultPricing,
       price,
       currency: 'AED',
@@ -472,34 +561,13 @@ export default function FeedScreen() {
     if (!firstItemId) return;
     setActiveItemId((prev) => prev ?? firstItemId);
   }, [firstItemId]);
-  const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
-  const likesHydratedRef = useRef(false);
+  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal, isLiked: isLikedGlobal } = useEngagementStore();
 
-  // Hydrate liked videos from local storage.
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem('@liked_videos_v1');
-        if (!raw) return;
-        const ids = JSON.parse(raw);
-        if (Array.isArray(ids)) {
-          setLikedProperties(new Set(ids.map(String)));
-        }
-      } catch {
-        // ignore
-      } finally {
-        likesHydratedRef.current = true;
-      }
-    })();
-  }, []);
-
-  // Persist liked videos whenever they change (after initial hydration).
-  useEffect(() => {
-    if (!likesHydratedRef.current) return;
-    AsyncStorage.setItem('@liked_videos_v1', JSON.stringify(Array.from(likedProperties))).catch(() => {
-      // ignore
-    });
-  }, [likedProperties]);
+    if (!likesHydrated) {
+      hydrateLikes();
+    }
+  }, [hydrateLikes, likesHydrated]);
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
@@ -529,34 +597,13 @@ export default function FeedScreen() {
   const toggleLike = async (propertyId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const wasLiked = likedProperties.has(propertyId);
-    const nextLiked = !wasLiked;
-
-    // Optimistic UI update.
-    setLikedProperties((prev) => {
-      const next = new Set(prev);
-      if (nextLiked) next.add(propertyId);
-      else next.delete(propertyId);
-      return next;
-    });
-
     try {
-      const res = await setPublicVideoLike({ videoId: propertyId, liked: nextLiked });
-      const likesCount = res?.data?.likes_count;
+      const res = await toggleLikeGlobal(propertyId);
+      const likesCount = res?.likesCount;
       if (typeof likesCount === 'number') {
-        setItems((prev) =>
-          prev.map((it) => (it.id === propertyId ? { ...it, likesCount } : it))
-        );
+        setItems((prev) => prev.map((it) => (it.id === propertyId ? { ...it, likesCount } : it)));
       }
     } catch (err: any) {
-      // Revert on failure.
-      setLikedProperties((prev) => {
-        const next = new Set(prev);
-        if (wasLiked) next.add(propertyId);
-        else next.delete(propertyId);
-        return next;
-      });
-
       const message = err?.message || 'Failed to update like.';
       Alert.alert('Error', message);
     }
@@ -609,7 +656,7 @@ export default function FeedScreen() {
         item={item}
         index={index}
         isViewable={activeItemId === item.id}
-        isLiked={likedProperties.has(item.id)}
+        isLiked={isLikedGlobal(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
         onToggleLike={toggleLike}
@@ -636,15 +683,6 @@ export default function FeedScreen() {
       />
     );
   };
-
-  if (isFetching && filteredProperties.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>Loading…</Text>
-        <Text style={styles.emptyText}>Fetching videos</Text>
-      </View>
-    );
-  }
 
   if (!isFetching && filteredProperties.length === 0) {
     return (

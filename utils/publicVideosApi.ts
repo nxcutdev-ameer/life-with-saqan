@@ -64,6 +64,15 @@ export interface PublicVideo {
     stream_url?: string | null;
     thumbnail_url?: string | null;
     requires_signed_urls?: boolean;
+    subtitles?: Array<{
+      subtitle_id?: number;
+      language_code?: string;
+      language_name?: string | null;
+      label?: string;
+      url?: string | null;
+      file_path?: string | null;
+      status?: string;
+    }>;
   };
 }
 

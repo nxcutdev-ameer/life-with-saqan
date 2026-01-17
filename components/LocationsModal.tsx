@@ -216,6 +216,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingBottom: 12,
+    paddingTop: 12,
     position: 'relative' as const,
   },
   tabActive: {
