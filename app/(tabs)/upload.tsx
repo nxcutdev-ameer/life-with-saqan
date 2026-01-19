@@ -13,6 +13,7 @@ import {
   Keyboard,
   useWindowDimensions,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -37,6 +38,7 @@ import {
   Eye,
   Sun,
   Mountain,
+  Check,
 } from 'lucide-react-native';
 import { uploadVideoWithProperty } from '@/utils/videosApi';
 import { Colors } from '@/constants/colors';
@@ -47,12 +49,20 @@ import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuthStore } from '@/stores/authStore';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
+  Amenity,
+  Area,
+  Building,
   District,
   Emirate,
   OffPlanProjectListItem,
+  createDraftProperty,
+  fetchAmenities,
+  fetchAreas,
+  fetchBuildings,
   fetchDistricts,
   fetchEmirates,
   fetchOffPlanProjects,
+  updateProperty,
 } from '@/utils/propertiesApi';
 
 export default function UploadScreen() {
@@ -67,7 +77,21 @@ export default function UploadScreen() {
   const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
+
+  // Segment 3: lightweight toast UI (will be used for save/update feedback)
+  const [toast, setToast] = useState<{ visible: boolean; message: string }>(
+    { visible: false, message: '' }
+  );
+  const showToast = (message: string) => {
+    setToast({ visible: true, message });
+    setTimeout(() => setToast({ visible: false, message: '' }), 1200);
+  };
+
+  const [isSavingProperty, setIsSavingProperty] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [overlayText, setOverlayText] = useState('');
   const [overlayTextSize, setOverlayTextSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [overlayTextColor, setOverlayTextColor] = useState<'white' | 'black' | 'yellow'>('white');
@@ -119,9 +143,19 @@ export default function UploadScreen() {
   >(null);
   const [emirateSearch, setEmirateSearch] = useState('');
   const [districtSearch, setDistrictSearch] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
 
   const [offPlanPickerOpen, setOffPlanPickerOpen] = useState(false);
   const [offPlanSearch, setOffPlanSearch] = useState('');
+
+  const [draftPropertyReferenceId, setDraftPropertyReferenceId] = useState<string | null>(null);
+  const [isCreatingDraftProperty, setIsCreatingDraftProperty] = useState(false);
+
+  const [amenitiesModalVisible, setAmenitiesModalVisible] = useState(false);
+  const [amenitiesSearch, setAmenitiesSearch] = useState('');
+  const [selectedAmenityIds, setSelectedAmenityIds] = useState<number[]>([]);
+
+  const [selectedImages, setSelectedImages] = useState<{ uri: string }[]>([]);
 
   const [propertyDetails, setPropertyDetails] = useState({
     title: '',
@@ -146,8 +180,15 @@ export default function UploadScreen() {
     districtName: '',
     building: '',
     area: '',
-    longitude: '',
-    latitude: '',
+
+    // Segment 3 fields
+    defaultPricing: 'month' as 'day' | 'week' | 'month' | 'year',
+    dayPrice: '',
+    weekPrice: '',
+    monthPrice: '',
+    yearPrice: '',
+    builtYear: '',
+    floor: '',
 
     description: '',
   });
@@ -181,6 +222,72 @@ export default function UploadScreen() {
 
   const districtOptions: District[] = districts ?? [];
 
+  const backofficeToken = sessionTokens?.backofficeToken;
+  const {
+    data: amenities,
+    isLoading: isAmenitiesLoading,
+    isError: isAmenitiesError,
+    refetch: refetchAmenities,
+  } = useQuery({
+    queryKey: ['properties', 'amenities'],
+    queryFn: () => fetchAmenities({ backofficeToken: backofficeToken as string }),
+    enabled: amenitiesModalVisible && typeof backofficeToken === 'string',
+    staleTime: 1000 * 60 * 60,
+    gcTime: 1000 * 60 * 60 * 24,
+  });
+
+  const amenitiesOptions: Amenity[] = amenities ?? [];
+  const filteredAmenities = amenitiesOptions.filter((a) =>
+    a.name.toLowerCase().includes(amenitiesSearch.trim().toLowerCase())
+  );
+
+  const {
+    data: buildingsPages,
+    isLoading: isBuildingsLoading,
+    isError: isBuildingsError,
+    fetchNextPage: fetchNextBuildingsPage,
+    hasNextPage: hasNextBuildingsPage,
+    isFetchingNextPage: isFetchingNextBuildingsPage,
+    refetch: refetchBuildings,
+  } = useInfiniteQuery({
+    queryKey: ['properties', 'buildings'],
+    enabled: locationPicker === 'building' && typeof backofficeToken === 'string',
+    queryFn: async ({ pageParam }) => {
+      const res = await fetchBuildings({ backofficeToken: backofficeToken as string, page: pageParam });
+      if (!res.success) throw new Error(res.message || 'Failed to load buildings');
+      return res.payload;
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const nextUrl = lastPage.next_page_url;
+      if (!nextUrl) return undefined;
+      const match = nextUrl.match(/page=(\d+)/);
+      return match ? Number(match[1]) : undefined;
+    },
+    staleTime: 1000 * 60 * 60,
+    gcTime: 1000 * 60 * 60 * 24,
+  });
+
+  const buildingsOptions: Building[] = buildingsPages?.pages.flatMap((p) => p.data) ?? [];
+
+  const {
+    data: areasOptions,
+    isLoading: isAreasLoading,
+    isError: isAreasError,
+    refetch: refetchAreas,
+  } = useQuery({
+    queryKey: ['properties', 'areas'],
+    enabled: locationPicker === 'area' && typeof backofficeToken === 'string',
+    queryFn: () => fetchAreas({ backofficeToken: backofficeToken as string, limit: 9999 }),
+    staleTime: 1000 * 60 * 60,
+    gcTime: 1000 * 60 * 60 * 24,
+  });
+
+  const selectedBuildingLabel =
+    propertyDetails.building && buildingsOptions.find((b) => b.slug === propertyDetails.building)?.name;
+  const selectedAreaLabel =
+    propertyDetails.area && (areasOptions ?? []).find((a) => a.slug === propertyDetails.area)?.name;
+
   const {
     data: offPlanPages,
     isLoading: isOffPlanLoading,
@@ -211,6 +318,139 @@ export default function UploadScreen() {
     if (!offPlanPages) return;
     // Debug: log off-plan API response when entering Property Details step
   }, [step, offPlanPages]);
+
+  // Create a draft property on READY details mount.
+  useEffect(() => {
+    if (step !== 'details') return;
+    if (propertyDetails.developmentStatus !== 'READY') return;
+    const backofficeToken = sessionTokens?.backofficeToken;
+    if (!backofficeToken) return;
+    // Prevent duplicate creates.
+    if (draftPropertyReferenceId || isCreatingDraftProperty) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setIsCreatingDraftProperty(true);
+        const res = await createDraftProperty({
+          backofficeToken,
+          type: 'sale',
+          state: 'draft',
+        });
+
+        if (cancelled) return;
+
+        const referenceId = res?.payload?.reference_id;
+        if (!res?.success || !referenceId) {
+          Alert.alert('Failed to create draft property', res?.message || 'Please try again.');
+          return;
+        }
+
+        setDraftPropertyReferenceId(referenceId);
+      } catch (err: any) {
+        if (cancelled) return;
+        Alert.alert('Failed to create draft property', err?.message || 'Please try again.');
+      } finally {
+        if (!cancelled) setIsCreatingDraftProperty(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    step,
+    propertyDetails.developmentStatus,
+    sessionTokens?.backofficeToken,
+    draftPropertyReferenceId,
+    isCreatingDraftProperty,
+  ]);
+
+  // Debounced update to properties.vzite.com whenever READY fields change.
+  useEffect(() => {
+    if (step !== 'details') return;
+    if (propertyDetails.developmentStatus !== 'READY') return;
+
+    const backofficeToken = sessionTokens?.backofficeToken;
+    if (!backofficeToken) return;
+
+    const referenceId = draftPropertyReferenceId;
+    if (!referenceId) return;
+
+    // Prepare payload.
+    const amenitiesCsv = selectedAmenityIds.length ? selectedAmenityIds.join(',') : '';
+    const imagesCsv = selectedImages.length ? selectedImages.map((i) => i.uri).join(',') : '';
+
+    const body: Record<string, unknown> = {
+      reference_id: referenceId,
+      state: 'draft',
+      type: 'sale',
+      default_pricing: propertyDetails.defaultPricing,
+      title: propertyDetails.title || null,
+      description: propertyDetails.description || null,
+
+      emirate_id: propertyDetails.emirateId ? String(propertyDetails.emirateId) : null,
+      district_id: propertyDetails.districtId ? String(propertyDetails.districtId) : null,
+
+      building: propertyDetails.building || null,
+      area: propertyDetails.area || null,
+
+      bedrooms: propertyDetails.bedrooms ? Number(propertyDetails.bedrooms) : null,
+      bathrooms: propertyDetails.bathrooms ? Number(propertyDetails.bathrooms) : null,
+      furnished: Boolean((propertyDetails as any).isFurnished),
+      garage: Boolean((propertyDetails as any).hasParking),
+
+      amenities: amenitiesCsv,
+      images: imagesCsv,
+
+      built_year: propertyDetails.builtYear ? Number(propertyDetails.builtYear) : null,
+      floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
+
+      day_price: propertyDetails.dayPrice ? Number(propertyDetails.dayPrice) : null,
+      week_price: propertyDetails.weekPrice ? Number(propertyDetails.weekPrice) : null,
+      month_price: propertyDetails.monthPrice ? Number(propertyDetails.monthPrice) : null,
+      year_price: propertyDetails.yearPrice ? Number(propertyDetails.yearPrice) : null,
+    };
+
+    // Debounce save.
+    const timeout = setTimeout(async () => {
+      try {
+        setIsSavingProperty(true);
+        setSaveError(null);
+        const res = await updateProperty({
+          backofficeToken,
+          referenceId,
+          body,
+        });
+
+        if (!res?.success) {
+          const msg = res?.message || 'Failed to save changes';
+          setSaveError(msg);
+          showToast(msg);
+          return;
+        }
+
+        setLastSavedAt(Date.now());
+        showToast('Saved');
+      } catch (err: any) {
+        const msg = err?.message || 'Failed to save changes';
+        setSaveError(msg);
+        showToast(msg);
+      } finally {
+        setIsSavingProperty(false);
+      }
+    }, 900);
+
+    return () => clearTimeout(timeout);
+  }, [
+    step,
+    propertyDetails,
+    selectedAmenityIds,
+    selectedImages,
+    draftPropertyReferenceId,
+    sessionTokens?.backofficeToken,
+  ]);
 
   // TODO: Replace Building/Area static lists with API endpoints when available.
 
@@ -330,7 +570,14 @@ export default function UploadScreen() {
     );
   };
 
+  const toggleAmenity = (id: number) => {
+    setSelectedAmenityIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
   const handlePublish = async () => {
+    if (isPublishing) return;
     if (!checkSubscription()) return;
 
     // OFF_PLAN: upload video + timestamps and link to selected project.
@@ -361,8 +608,15 @@ export default function UploadScreen() {
       }
 
       try {
+        const saqanToken = sessionTokens?.saqancomToken;
+        if (!saqanToken) {
+          Alert.alert('Authentication required', 'Missing Saqan token. Please login again.');
+          return;
+        }
+
         const fileName = selectedVideoUri.split('/').pop() || 'video.mp4';
         const res = await uploadVideoWithProperty({
+          saqancomToken: saqanToken,
           videoFile: { uri: selectedVideoUri, name: fileName, type: 'video/mp4' },
           propertyReference: propertyDetails.offPlanProjectReferenceId,
           roomTimestamps,
@@ -400,16 +654,78 @@ export default function UploadScreen() {
       return;
     }
 
-    // READY: existing mock publish flow
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const current = parseInt(await AsyncStorage.getItem(`@posts_used_${currentMonth}`) || '0');
-    await AsyncStorage.setItem(`@posts_used_${currentMonth}`, (current + 1).toString());
-    await refreshSubscription();
+    // READY: publish via saqan upload-with-property
+    try {
+      const saqanToken = sessionTokens?.saqancomToken;
+      if (!saqanToken) {
+        Alert.alert('Authentication required', 'Missing Saqan token. Please login again.');
+        return;
+      }
 
-    Alert.alert(
-      'Property Published!',
-      'Your property has been published successfully.',
-      [
+      if (!selectedVideoUri) {
+        Alert.alert('Video required', 'Please select or record a video first.');
+        return;
+      }
+
+      if (!highlightTimestamps.length) {
+        Alert.alert('Highlights required', 'Please set at least one highlight timestamp to continue.');
+        return;
+      }
+
+      const propertyReference = draftPropertyReferenceId;
+      if (!propertyReference) {
+        Alert.alert('Property not ready', 'Draft property reference is missing. Please wait a moment and try again.');
+        return;
+      }
+
+      if (!propertyDetails.title.trim()) {
+        Alert.alert('Missing title', 'Please enter a title.');
+        return;
+      }
+      if (!propertyDetails.bedrooms.trim() || !propertyDetails.bathrooms.trim()) {
+        Alert.alert('Missing details', 'Please enter bedrooms and bathrooms.');
+        return;
+      }
+      if (!propertyDetails.emirateId || !propertyDetails.districtId) {
+        Alert.alert('Missing location', 'Please select Emirate and District.');
+        return;
+      }
+
+      setIsPublishing(true);
+      showToast('Uploading...');
+
+      const roomTimestamps = highlightTimestamps.map((t) => ({
+        room: t.room,
+        start_time: t.start_time,
+        end_time: 0,
+      }));
+
+      const fileName = `property_${propertyReference}.mp4`;
+      const res = await uploadVideoWithProperty({
+        saqancomToken: saqanToken,
+        videoFile: {
+          uri: selectedVideoUri,
+          name: fileName,
+          type: 'video/mp4',
+        },
+        propertyReference,
+        roomTimestamps,
+        uploadToCloudflare: true,
+        generateSubtitles: true,
+        agentId: 1,
+      });
+
+      if (!res?.success) {
+        Alert.alert('Upload failed', res?.message || 'Upload failed. Please try again.');
+        return;
+      }
+
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const current = parseInt(await AsyncStorage.getItem(`@posts_used_${currentMonth}`) || '0');
+      await AsyncStorage.setItem(`@posts_used_${currentMonth}`, (current + 1).toString());
+      await refreshSubscription();
+
+      Alert.alert('Property Published!', 'Your property has been published successfully.', [
         {
           text: 'View Property',
           onPress: () => router.replace('/(tabs)/profile'),
@@ -418,6 +734,15 @@ export default function UploadScreen() {
           text: 'Upload Another',
           onPress: () => {
             setStep('select');
+            setSelectedVideoUri(null);
+            setOverlayText('');
+            setHighlightsByRoom({});
+            setHighlightTimestamps([]);
+            setActiveHighlightStepIndex(0);
+            setSelectedAmenityIds([]);
+            setSelectedImages([]);
+            setDraftPropertyReferenceId(null);
+            setIsCreatingDraftProperty(false);
             setPropertyDetails({
               title: '',
               price: '',
@@ -438,20 +763,69 @@ export default function UploadScreen() {
               districtName: '',
               building: '',
               area: '',
-              longitude: '',
-              latitude: '',
+
+              defaultPricing: 'month',
+              dayPrice: '',
+              weekPrice: '',
+              monthPrice: '',
+              yearPrice: '',
+              builtYear: '',
+              floor: '',
 
               description: '',
             });
           },
         },
-      ]
-    );
+      ]);
+    } catch (err: any) {
+      const body = err?.body as any;
+      const message = body?.message || err?.message || 'Upload failed. Please try again.';
+      const errors = body?.errors;
+      if (errors && typeof errors === 'object') {
+        const lines: string[] = [];
+        for (const [field, msgs] of Object.entries(errors)) {
+          if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
+        }
+        Alert.alert('Upload failed', `${message}\n\n${lines.join('\n')}`);
+      } else {
+        Alert.alert('Upload failed', message);
+      }
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleShareModalClose = () => {
     setShowShareModal(false);
     setStep('details');
+  };
+
+  const pickImages = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'Please grant photo library permissions to select images.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 1,
+    });
+
+    if (result.canceled) return;
+
+    const next = result.assets.map((a) => ({ uri: a.uri }));
+    setSelectedImages((prev) => {
+      const existing = new Set(prev.map((p) => p.uri));
+      const merged = [...prev];
+      next.forEach((n) => {
+        if (!existing.has(n.uri)) merged.push(n);
+      });
+      return merged;
+    });
+
+    showToast('Images updated');
   };
 
   const handleSkipToHighlights = () => {
@@ -642,6 +1016,12 @@ export default function UploadScreen() {
    };
 
    const handleDone = () => {
+     // Require at least one highlight timestamp before proceeding.
+     if (!highlightTimestamps.length) {
+       Alert.alert('Highlights required', 'Please set at least one highlight timestamp to continue.');
+       return;
+     }
+
      setIsHighlightsPlaying(false);
      setStep('details');
    };
@@ -1110,14 +1490,37 @@ export default function UploadScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => setStep('select')}>
+        <Pressable
+          onPress={() => setStep('select')}
+          disabled={isPublishing}
+          style={isPublishing ? { opacity: 0.4 } : undefined}
+        >
           <X size={scaleWidth(24)} color={Colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Property Details</Text>
-        <Pressable onPress={handlePublish}>
-          <Text style={styles.publishButton}>Publish</Text>
+        <Pressable
+          onPress={handlePublish}
+          disabled={isPublishing}
+          style={[styles.publishButton, isPublishing && styles.publishButtonDisabled]}
+        >
+          {isPublishing ? (
+            <View style={styles.publishButtonContent}>
+              <ActivityIndicator size="small" color={Colors.textLight} />
+              <Text style={styles.publishButtonText}>Uploading   </Text>
+            </View>
+          ) : (
+            <Text style={styles.publishButtonText}>Publish</Text>
+          )}
         </Pressable>
       </View>
+
+      {toast.visible && (
+        <View style={styles.toastContainer} pointerEvents="none">
+          <View style={styles.toastInner}>
+            <Text style={styles.toastText}>{toast.message}</Text>
+          </View>
+        </View>
+      )}
 
       <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
         {propertyDetails.developmentStatus !== 'OFF_PLAN' ? (
@@ -1162,6 +1565,8 @@ export default function UploadScreen() {
                   offPlanProjectReferenceId: '',
                   offPlanProjectTitle: '',
                 });
+                setDraftPropertyReferenceId(null);
+                setIsCreatingDraftProperty(false);
               }}
             >
               <View
@@ -1194,9 +1599,9 @@ export default function UploadScreen() {
                   districtName: '',
                   building: '',
                   area: '',
-                  longitude: '',
-                  latitude: '',
                 });
+                setDraftPropertyReferenceId(null);
+                setIsCreatingDraftProperty(false);
               }}
             >
               <View
@@ -1334,7 +1739,28 @@ export default function UploadScreen() {
             <Text style={[styles.locationInputText, !propertyDetails.emirateId && styles.placeholder]}>
               {propertyDetails.emirateName || 'Select emirate'}
             </Text>
-            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+            <View style={styles.selectRight}>
+              {propertyDetails.emirateId ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    setPropertyDetails({
+                      ...propertyDetails,
+                      emirateId: null,
+                      emirateName: '',
+                      districtId: null,
+                      districtName: '',
+                      building: '',
+                      area: '',
+                    });
+                  }}
+                >
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              ) : (
+                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              )}
+            </View>
           </Pressable>
 
           <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>District *</Text>
@@ -1352,7 +1778,26 @@ export default function UploadScreen() {
             >
               {propertyDetails.districtName || 'Select district'}
             </Text>
-            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+            <View style={styles.selectRight}>
+              {propertyDetails.districtId ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    setPropertyDetails({
+                      ...propertyDetails,
+                      districtId: null,
+                      districtName: '',
+                      building: '',
+                      area: '',
+                    });
+                  }}
+                >
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              ) : (
+                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              )}
+            </View>
           </Pressable>
 
           <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Building</Text>
@@ -1368,9 +1813,26 @@ export default function UploadScreen() {
                 !propertyDetails.districtId && styles.disabledText,
               ]}
             >
-              {propertyDetails.building || 'Select building'}
+              {selectedBuildingLabel || propertyDetails.building || 'Select building'}
             </Text>
-            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+            <View style={styles.selectRight}>
+              {propertyDetails.building ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    setPropertyDetails({
+                      ...propertyDetails,
+                      building: '',
+                      area: '',
+                    });
+                  }}
+                >
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              ) : (
+                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              )}
+            </View>
           </Pressable>
 
           <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Area</Text>
@@ -1386,38 +1848,231 @@ export default function UploadScreen() {
                 !propertyDetails.building && styles.disabledText,
               ]}
             >
-              {propertyDetails.area || 'Select area'}
+              {selectedAreaLabel || propertyDetails.area || 'Select area'}
             </Text>
-            <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+            <View style={styles.selectRight}>
+              {propertyDetails.area ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    setPropertyDetails({
+                      ...propertyDetails,
+                      area: '',
+                    });
+                  }}
+                >
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              ) : (
+                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              )}
+            </View>
           </Pressable>
 
-          <View style={[styles.formRow, { marginTop: scaleHeight(12) }]}>
+        </View>
+
+        <View style={styles.formSection}>
+          <Text style={styles.formLabel}>Amenities</Text>
+          <Pressable
+            style={styles.locationInput}
+            onPress={() => {
+              setAmenitiesSearch('');
+              setAmenitiesModalVisible(true);
+            }}
+          >
+            <Text style={[styles.locationInputText, !selectedAmenityIds.length && styles.placeholder]}>
+              {selectedAmenityIds.length ? `${selectedAmenityIds.length} selected` : 'Select amenities'}
+            </Text>
+            <View style={styles.selectRight}>
+              {selectedAmenityIds.length ? (
+                <Pressable
+                  hitSlop={10}
+                  onPress={() => {
+                    setSelectedAmenityIds([]);
+                    showToast('Amenities cleared');
+                  }}
+                >
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              ) : (
+                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              )}
+            </View>
+          </Pressable>
+
+          {selectedAmenityIds.length > 0 && (
+            <View style={styles.amenitiesChipsWrap}>
+              {selectedAmenityIds
+                .map((id) => amenitiesOptions.find((a) => a.id === id))
+                .filter(Boolean)
+                .map((amenity) => (
+                  <Pressable
+                    key={(amenity as Amenity).id}
+                    style={styles.amenitiesChip}
+                    onPress={() => toggleAmenity((amenity as Amenity).id)}
+                  >
+                    <Text style={styles.amenitiesChipText} numberOfLines={1}>
+                      {(amenity as Amenity).name}
+                    </Text>
+                    <X size={scaleWidth(14)} color={Colors.textSecondary} />
+                  </Pressable>
+                ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.formSection}>
+          <Text style={styles.formLabel}>Images</Text>
+          <Pressable style={styles.imageDropzone} onPress={pickImages}>
+            <Text style={styles.imageDropzoneText}>
+              {selectedImages.length ? 'Add more images' : 'Tap to select images'}
+            </Text>
+            <Text style={styles.imageDropzoneHint}>Select property images</Text>
+          </Pressable>
+
+          {selectedImages.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageThumbRow}>
+              {selectedImages.map((img) => (
+                <View key={img.uri} style={styles.imageThumbWrap}>
+                  <Image source={{ uri: img.uri }} style={styles.imageThumb} />
+                  <Pressable
+                    style={styles.imageThumbRemove}
+                    onPress={() => {
+                      setSelectedImages((prev) => prev.filter((p) => p.uri !== img.uri));
+                      showToast('Image removed');
+                    }}
+                  >
+                    <X size={scaleWidth(14)} color="#fff" />
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        <View style={styles.formSection}>
+          <Text style={styles.formLabel}>Default Pricing</Text>
+          <View style={styles.buttonGroup}>
+            {(['day', 'week', 'month', 'year'] as const).map((p) => (
+              <Pressable
+                key={p}
+                style={[
+                  styles.controlButton,
+                  propertyDetails.defaultPricing === p && styles.controlButtonSelected,
+                ]}
+                onPress={() => {
+                  setPropertyDetails({ ...propertyDetails, defaultPricing: p });
+                  showToast('Default pricing updated');
+                }}
+              >
+                <Text
+                  style={[
+                    styles.controlButtonText,
+                    propertyDetails.defaultPricing === p && styles.controlButtonTextSelected,
+                  ]}
+                >
+                  {p.toUpperCase()}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.formSection}>
+          <Text style={styles.formLabel}>Prices</Text>
+          <View style={styles.formRow}>
             <View style={styles.formColumn}>
-              <Text style={styles.formLabel}>Longitude</Text>
+              <Text style={styles.formLabelSmall}>Day</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., 55.2708"
+                placeholder="0"
                 placeholderTextColor={Colors.textSecondary}
-                keyboardType="numbers-and-punctuation"
-                value={propertyDetails.longitude}
-                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, longitude: text })}
+                keyboardType="numeric"
+                value={propertyDetails.dayPrice}
+                onChangeText={(text) => {
+                  setPropertyDetails({ ...propertyDetails, dayPrice: text });
+                  showToast('Day price updated');
+                }}
               />
             </View>
             <View style={styles.formColumn}>
-              <Text style={styles.formLabel}>Latitude</Text>
+              <Text style={styles.formLabelSmall}>Week</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., 25.2048"
+                placeholder="0"
                 placeholderTextColor={Colors.textSecondary}
-                keyboardType="numbers-and-punctuation"
-                value={propertyDetails.latitude}
-                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, latitude: text })}
+                keyboardType="numeric"
+                value={propertyDetails.weekPrice}
+                onChangeText={(text) => {
+                  setPropertyDetails({ ...propertyDetails, weekPrice: text });
+                  showToast('Week price updated');
+                }}
+              />
+            </View>
+          </View>
+          <View style={styles.formRow}>
+            <View style={styles.formColumn}>
+              <Text style={styles.formLabelSmall}>Month</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numeric"
+                value={propertyDetails.monthPrice}
+                onChangeText={(text) => {
+                  setPropertyDetails({ ...propertyDetails, monthPrice: text });
+                  showToast('Month price updated');
+                }}
+              />
+            </View>
+            <View style={styles.formColumn}>
+              <Text style={styles.formLabelSmall}>Year</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numeric"
+                value={propertyDetails.yearPrice}
+                onChangeText={(text) => {
+                  setPropertyDetails({ ...propertyDetails, yearPrice: text });
+                  showToast('Year price updated');
+                }}
               />
             </View>
           </View>
         </View>
 
-        
+        <View style={styles.formRow}>
+          <View style={styles.formColumn}>
+            <Text style={styles.formLabel}>Built year</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., 2024"
+              placeholderTextColor={Colors.textSecondary}
+              keyboardType="numeric"
+              value={propertyDetails.builtYear}
+              onChangeText={(text) => {
+                setPropertyDetails({ ...propertyDetails, builtYear: text });
+                showToast('Built year updated');
+              }}
+            />
+          </View>
+          <View style={styles.formColumn}>
+            <Text style={styles.formLabel}>Floor</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., 10"
+              placeholderTextColor={Colors.textSecondary}
+              keyboardType="numeric"
+              value={propertyDetails.floor}
+              onChangeText={(text) => {
+                setPropertyDetails({ ...propertyDetails, floor: text });
+                showToast('Floor updated');
+              }}
+            />
+          </View>
+        </View>
+
         <Modal
           visible={locationPicker !== null}
           transparent
@@ -1433,18 +2088,24 @@ export default function UploadScreen() {
               }}
             >
               <Pressable
-                style={[styles.modal, { height: windowHeight * 0.7 }]}
+                style={[styles.modal, { height: windowHeight * 0.55 }]}
                 onPress={() => Keyboard.dismiss()}
               >
-                <Text style={styles.modalTitle}>
-                  {locationPicker === 'emirate'
-                    ? 'Select Emirate'
-                    : locationPicker === 'district'
-                      ? 'Select District'
-                      : locationPicker === 'building'
-                        ? 'Select Building'
-                        : 'Select Area'}
-                </Text>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderSpacer} />
+                  <Text style={styles.modalTitle}>
+                    {locationPicker === 'emirate'
+                      ? 'Select Emirate'
+                      : locationPicker === 'district'
+                        ? 'Select District'
+                        : locationPicker === 'building'
+                          ? 'Select Building'
+                          : 'Select Area'}
+                  </Text>
+                  <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
+                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  </Pressable>
+                </View>
 
               {locationPicker === 'emirate' && (
                 <TextInput
@@ -1459,13 +2120,19 @@ export default function UploadScreen() {
                 />
               )}
 
-              {locationPicker === 'district' && (
+              {(locationPicker === 'district' || locationPicker === 'building' || locationPicker === 'area') && (
                 <TextInput
                   style={[styles.input, styles.searchInput]}
-                  placeholder="Search district..."
+                  placeholder={
+                    locationPicker === 'district'
+                      ? 'Search district...'
+                      : locationPicker === 'building'
+                        ? 'Search building...'
+                        : 'Search area...'
+                  }
                   placeholderTextColor={Colors.textSecondary}
-                  value={districtSearch}
-                  onChangeText={setDistrictSearch}
+                  value={locationPicker === 'district' ? districtSearch : locationSearch}
+                  onChangeText={locationPicker === 'district' ? setDistrictSearch : setLocationSearch}
                   autoCorrect={false}
                   autoCapitalize="none"
                   clearButtonMode="while-editing"
@@ -1564,48 +2231,215 @@ export default function UploadScreen() {
                   }
                 />
               ) : (
-                <FlatList<string>
-                  data={
-                    locationPicker === 'building'
-                      ? getBuildingOptions()
-                      : getAreaOptions()
-                  }
-                  keyExtractor={(item) => item}
-                  ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
-                  renderItem={({ item }) => (
+                locationPicker === 'building' ? (
+                  <>
+                    {isBuildingsError && (
+                      <Pressable
+                        style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                        onPress={() => refetchBuildings()}
+                      >
+                        <Text style={styles.modalButtonText}>Retry loading buildings</Text>
+                      </Pressable>
+                    )}
+
+                    {isBuildingsLoading ? (
+                      <View style={{ paddingVertical: scaleHeight(16) }}>
+                        <ActivityIndicator />
+                      </View>
+                    ) : (
+                      <FlatList<Building>
+                        data={buildingsOptions.filter((b) =>
+                          b.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
+                        )}
+                        keyExtractor={(item) => String(item.id)}
+                        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                        onEndReachedThreshold={0.5}
+                        onEndReached={() => {
+                          if (locationSearch.trim().length) return;
+                          if (!hasNextBuildingsPage || isFetchingNextBuildingsPage) return;
+                          fetchNextBuildingsPage();
+                        }}
+                        ListFooterComponent={
+                          isFetchingNextBuildingsPage ? (
+                            <Text style={styles.emptyPickerText}>Loading more…</Text>
+                          ) : null
+                        }
+                        renderItem={({ item }) => (
+                          <Pressable
+                            style={styles.pickerItem}
+                            onPress={() => {
+                              setPropertyDetails({
+                                ...propertyDetails,
+                                building: item.slug,
+                                area: '',
+                              });
+                              setLocationPicker(null);
+                            }}
+                          >
+                            <Text style={styles.pickerItemText}>{item.name}</Text>
+                          </Pressable>
+                        )}
+                        ListEmptyComponent={
+                          <Text style={styles.emptyPickerText}>
+                            {locationSearch.trim().length
+                              ? 'No buildings match your search'
+                              : 'No buildings'}
+                          </Text>
+                        }
+                      />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {isAreasError && (
+                      <Pressable
+                        style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                        onPress={() => refetchAreas()}
+                      >
+                        <Text style={styles.modalButtonText}>Retry loading areas</Text>
+                      </Pressable>
+                    )}
+
+                    {isAreasLoading ? (
+                      <View style={{ paddingVertical: scaleHeight(16) }}>
+                        <ActivityIndicator />
+                      </View>
+                    ) : (
+                      <FlatList<Area>
+                        data={(areasOptions ?? []).filter((a) =>
+                          a.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
+                        )}
+                        keyExtractor={(item) => String(item.id)}
+                        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                        renderItem={({ item }) => (
+                          <Pressable
+                            style={styles.pickerItem}
+                            onPress={() => {
+                              setPropertyDetails({
+                                ...propertyDetails,
+                                area: item.slug,
+                              });
+                              setLocationPicker(null);
+                            }}
+                          >
+                            <Text style={styles.pickerItemText}>{item.name}</Text>
+                          </Pressable>
+                        )}
+                        ListEmptyComponent={
+                          <Text style={styles.emptyPickerText}>
+                            {locationSearch.trim().length
+                              ? 'No areas match your search'
+                              : 'No areas'}
+                          </Text>
+                        }
+                      />
+                    )}
+                  </>
+                )
+              )}
+              </Pressable>
+            </Pressable>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={amenitiesModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAmenitiesModalVisible(false)}
+        >
+          <View style={{ flex: 1 }}>
+            <Pressable
+              style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
+              onPress={() => {
+                Keyboard.dismiss();
+                setAmenitiesModalVisible(false);
+              }}
+            >
+              <Pressable style={[styles.modal, { height: windowHeight * 0.55 }]} onPress={() => Keyboard.dismiss()}>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderSpacer} />
+                  <Text style={styles.modalTitle}>Select Amenities</Text>
+                  <Pressable
+                    style={styles.modalHeaderCloseButton}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setAmenitiesModalVisible(false);
+                    }}
+                  >
+                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  placeholder="Search amenities..."
+                  placeholderTextColor={Colors.textSecondary}
+                  value={amenitiesSearch}
+                  onChangeText={setAmenitiesSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                />
+
+                {isAmenitiesError && (
+                  <Pressable
+                    style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                    onPress={() => refetchAmenities()}
+                  >
+                    <Text style={styles.modalButtonText}>Retry loading amenities</Text>
+                  </Pressable>
+                )}
+
+                <View style={{ flex: 1 }}>
+                  {isAmenitiesLoading ? (
+                    <View style={{ paddingVertical: scaleHeight(16) }}>
+                      <ActivityIndicator />
+                    </View>
+                  ) : (
+                    <FlatList<Amenity>
+                      data={filteredAmenities}
+                      keyExtractor={(item) => String(item.id)}
+                      ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                      contentContainerStyle={{ paddingBottom: scaleHeight(70) }}
+                      renderItem={({ item }) => {
+                        const selected = selectedAmenityIds.includes(item.id);
+                        return (
+                          <Pressable
+                            style={styles.amenityItem}
+                            onPress={() => {
+                              toggleAmenity(item.id);
+                            }}
+                          >
+                            <View style={styles.amenityLeft}>
+                              <Text style={styles.pickerItemText}>{item.name}</Text>
+                            </View>
+                            <View style={[styles.amenityCheck, selected && styles.amenityCheckSelected]}>
+                              {selected ? <Check size={scaleWidth(14)} color="#fff" /> : null}
+                            </View>
+                          </Pressable>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        <Text style={styles.emptyPickerText}>
+                          {amenitiesSearch.trim().length ? 'No results' : 'No amenities'}
+                        </Text>
+                      }
+                    />
+                  )}
+
+                  <View style={styles.modalFooter}>
                     <Pressable
-                      style={styles.pickerItem}
+                      style={styles.modalDoneButton}
                       onPress={() => {
-                        if (locationPicker === 'building') {
-                          setPropertyDetails({
-                            ...propertyDetails,
-                            building: item,
-                            area: '',
-                          });
-                        }
-                        if (locationPicker === 'area') {
-                          setPropertyDetails({
-                            ...propertyDetails,
-                            area: item,
-                          });
-                        }
-                        setLocationPicker(null);
+                        setAmenitiesModalVisible(false);
+                        showToast('Amenities updated');
                       }}
                     >
-                      <Text style={styles.pickerItemText}>{item}</Text>
+                      <Text style={styles.modalDoneButtonText}>Done</Text>
                     </Pressable>
-                  )}
-                  ListEmptyComponent={
-                    <Text style={styles.emptyPickerText}>
-                      {locationPicker === 'building'
-                        ? 'Select a district first'
-                        : locationPicker === 'area'
-                          ? 'Select a building first'
-                          : 'No options'}
-                    </Text>
-                  }
-                />
-              )}
+                  </View>
+                </View>
               </Pressable>
             </Pressable>
           </View>
@@ -1646,17 +2480,13 @@ export default function UploadScreen() {
                 style={[styles.modal, { height: windowHeight * 0.55 }]}
                 onPress={() => Keyboard.dismiss()}
               >
-                <Pressable
-                  style={styles.modalCloseButton}
-                  onPress={() => setOffPlanPickerOpen(false)}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <X size={scaleWidth(18)} color={Colors.text} />
-                </Pressable>
-
-                <Text style={styles.modalTitle}>Select project</Text>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderSpacer} />
+                  <Text style={styles.modalTitle}>Select project</Text>
+                  <Pressable style={styles.modalHeaderCloseButton} onPress={() => setOffPlanPickerOpen(false)}>
+                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  </Pressable>
+                </View>
 
                 <TextInput
                   style={[styles.input, styles.searchInput]}
@@ -1771,9 +2601,26 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   publishButton: {
-    fontSize: scaleFont(16),
-    fontWeight: '600',
-    color: Colors.bronze,
+    backgroundColor: Colors.bronze,
+    borderRadius: scaleWidth(12),
+    paddingHorizontal: scaleWidth(14),
+    paddingVertical: scaleHeight(10),
+    minWidth: scaleWidth(110),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  publishButtonDisabled: {
+    opacity: 0.6,
+  },
+  publishButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(10),
+  },
+  publishButtonText: {
+    fontSize: scaleFont(14),
+    fontWeight: '800',
+    color: Colors.textLight,
   },
   content: {
     flex: 1,
@@ -1875,11 +2722,107 @@ const styles = StyleSheet.create({
   formSection: {
     marginBottom: scaleHeight(24),
   },
+  imageDropzone: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    borderRadius: scaleWidth(12),
+    paddingVertical: scaleHeight(16),
+    paddingHorizontal: scaleWidth(12),
+    backgroundColor: Colors.textLight,
+  },
+  imageDropzoneText: {
+    fontSize: scaleFont(14),
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  imageDropzoneHint: {
+    marginTop: scaleHeight(6),
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+  },
+  imageThumbRow: {
+    marginTop: scaleHeight(10),
+  },
+  imageThumbWrap: {
+    marginRight: scaleWidth(10),
+    borderRadius: scaleWidth(10),
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  imageThumb: {
+    width: scaleWidth(80),
+    height: scaleWidth(80),
+  },
+  imageThumbRemove: {
+    position: 'absolute',
+    top: scaleWidth(6),
+    right: scaleWidth(6),
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    borderRadius: scaleWidth(11),
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  amenitiesChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: scaleWidth(8),
+    marginTop: scaleHeight(10),
+  },
+  amenitiesChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(6),
+    paddingVertical: scaleHeight(8),
+    paddingHorizontal: scaleWidth(10),
+    borderRadius: scaleWidth(999),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.textLight,
+    maxWidth: '100%',
+  },
+  amenitiesChipText: {
+    color: Colors.text,
+    fontSize: scaleFont(12),
+    fontWeight: '700',
+    maxWidth: scaleWidth(220),
+  },
+  modalFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: scaleWidth(14),
+    paddingVertical: scaleHeight(12),
+    backgroundColor: Colors.textLight,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  modalDoneButton: {
+    backgroundColor: Colors.bronze,
+    borderRadius: scaleWidth(12),
+    paddingVertical: scaleHeight(12),
+    alignItems: 'center',
+  },
+  modalDoneButtonText: {
+    color: Colors.textLight,
+    fontSize: scaleFont(14),
+    fontWeight: '800',
+  },
   formLabel: {
     fontSize: scaleFont(15),
     fontWeight: '600',
     color: Colors.text,
     marginBottom: scaleHeight(8),
+  },
+  formLabelSmall: {
+    fontSize: scaleFont(13),
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: scaleHeight(6),
   },
   input: {
     backgroundColor: Colors.textLight,
@@ -1975,6 +2918,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  selectRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: scaleWidth(10),
+  },
   locationInputText: {
     fontSize: scaleFont(16),
     color: Colors.text,
@@ -1982,6 +2930,27 @@ const styles = StyleSheet.create({
   placeholder: {
     color: Colors.textSecondary,
   },
+  toastContainer: {
+    position: 'absolute',
+    top: scaleHeight(64),
+    left: scaleWidth(16),
+    right: scaleWidth(16),
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  toastInner: {
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingVertical: scaleHeight(10),
+    paddingHorizontal: scaleWidth(14),
+    borderRadius: scaleWidth(10),
+    maxWidth: '100%',
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: scaleFont(13),
+    fontWeight: '800',
+  },
+
   bottomPadding: {
     height: scaleHeight(120),
   },
@@ -2025,6 +2994,21 @@ const styles = StyleSheet.create({
   },
   controlSection: {
     marginBottom: scaleHeight(20),
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: scaleHeight(12),
+  },
+  modalHeaderSpacer: {
+    width: scaleWidth(24),
+  },
+  modalHeaderCloseButton: {
+    width: scaleWidth(24),
+    height: scaleWidth(24),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   controlTitle: {
     fontSize: scaleFont(18),
@@ -2133,17 +3117,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: scaleWidth(20),
     borderTopRightRadius: scaleWidth(20),
   },
-  modalCloseButton: {
-    position: 'absolute',
-    top: scaleHeight(16),
-    right: scaleWidth(16),
-    width: scaleWidth(32),
-    height: scaleWidth(32),
-    borderRadius: scaleWidth(16),
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-  },
   modalTitle: {
     fontSize: scaleFont(18),
     fontWeight: '700',
@@ -2175,7 +3148,7 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: scaleFont(16),
     fontWeight: '700',
-    color: Colors.textLight,
+    color: Colors.textLight, 
   },
   modalButtonTextSecondary: {
     fontSize: scaleFont(16),
@@ -2202,6 +3175,44 @@ const styles = StyleSheet.create({
   emptyPickerText: {
     paddingVertical: scaleHeight(16),
     color: Colors.textSecondary,
+  },
+  amenityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: scaleHeight(12),
+    paddingHorizontal: scaleWidth(12),
+  },
+  amenityLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(10),
+    flexShrink: 1,
+  },
+  amenityIcon: {
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    resizeMode: 'contain',
+  },
+  amenityIconFallback: {
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    borderRadius: scaleWidth(6),
+    backgroundColor: Colors.border,
+  },
+  amenityCheck: {
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    borderRadius: scaleWidth(6),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.textLight,
+  },
+  amenityCheckSelected: {
+    backgroundColor: Colors.bronze,
+    borderColor: Colors.bronze,
   },
   searchInput: {
     marginTop: scaleHeight(12),

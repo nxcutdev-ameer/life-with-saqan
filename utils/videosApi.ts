@@ -26,6 +26,7 @@ export async function uploadVideoWithProperty(params: {
   uploadToCloudflare?: boolean;
   generateSubtitles?: boolean;
   agentId?: number;
+  saqancomToken: string;
 }): Promise<UploadWithPropertySuccessResponse> {
   const form = new FormData();
 
@@ -45,6 +46,9 @@ export async function uploadVideoWithProperty(params: {
   return fetchJson<UploadWithPropertySuccessResponse>(`${BASE_URL}/upload-with-property`, {
     method: 'POST',
     timeoutMs: 120000,
+    headers: {
+      Authorization: `Bearer ${params.saqancomToken}`,
+    },
     // Do NOT set Content-Type for FormData; RN will add boundary.
     body: form as any,
   });

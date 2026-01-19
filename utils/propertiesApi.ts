@@ -96,6 +96,105 @@ export async function fetchDistricts(emirateId: number): Promise<District[]> {
   return res.payload.data;
 }
 
+export type Amenity = {
+  id: number;
+  name: string;
+  icon?: string;
+  category?: string;
+};
+
+export async function fetchAmenities(params: { backofficeToken: string }): Promise<Amenity[]> {
+  const url = `${BASE_URL}/amenities`;
+  const res = await fetchJson<ApiResponse<Amenity[]>>(url, {
+    headers: {
+      Authorization: `Bearer ${params.backofficeToken}`,
+    },
+  });
+  return res.payload;
+}
+
+export type Building = {
+  id: number;
+  name: string;
+  slug: string;
+};
+
+export async function fetchBuildings(params: {
+  backofficeToken: string;
+  page?: number;
+}): Promise<ApiResponse<PaginatedPayload<Building>>> {
+  const page = params.page ?? 1;
+  const url = `${BASE_URL}/buildings?page=${encodeURIComponent(String(page))}`;
+  return fetchJson<ApiResponse<PaginatedPayload<Building>>>(url, {
+    headers: {
+      Authorization: `Bearer ${params.backofficeToken}`,
+    },
+  });
+}
+
+export type Area = {
+  id: number;
+  name: string;
+  slug: string;
+};
+
+export async function fetchAreas(params: {
+  backofficeToken: string;
+  limit?: number;
+}): Promise<Area[]> {
+  const limit = params.limit ?? 9999;
+  const url = `${BASE_URL}/areas?limit=${encodeURIComponent(String(limit))}`;
+  const res = await fetchJson<ApiResponse<PaginatedPayload<Area>>>(url, {
+    headers: {
+      Authorization: `Bearer ${params.backofficeToken}`,
+    },
+  });
+  return res.payload.data;
+}
+
+export type CreateDraftPropertyResponse = ApiResponse<{ reference_id: string }>;
+
+export type UpdatePropertyResponse = ApiResponse<unknown>;
+
+export type UpdatePropertyPayload = Record<string, unknown>;
+
+export async function updateProperty(params: {
+  backofficeToken: string;
+  referenceId: string;
+  body: UpdatePropertyPayload;
+}): Promise<UpdatePropertyResponse> {
+  const url = `${BASE_URL}/properties/${encodeURIComponent(params.referenceId)}`;
+  return fetchJson<UpdatePropertyResponse>(url, {
+    method: 'PUT',
+    timeoutMs: 30000,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.backofficeToken}`,
+    },
+    body: JSON.stringify(params.body),
+  });
+}
+
+export async function createDraftProperty(params: {
+  backofficeToken: string;
+  type: 'sale' | 'rent' | 'stay';
+  state: 'draft' | 'published';
+}): Promise<CreateDraftPropertyResponse> {
+  const url = `${BASE_URL}/properties`;
+  return fetchJson<CreateDraftPropertyResponse>(url, {
+    method: 'POST',
+    timeoutMs: 30000,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.backofficeToken}`,
+    },
+    body: JSON.stringify({
+      type: params.type,
+      state: params.state,
+    }),
+  });
+}
+
 export async function fetchOffPlanProjects(options?: {
   page?: number;
   limit?: number;
