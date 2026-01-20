@@ -16,7 +16,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [state, setState] = useState<SubscriptionState>({
     tier: 'free',
     postsUsed: 0,
-    postsLimit: 1,
+    postsLimit: 5,
     canPost: true,
     loading: true,
     refreshSubscription: async () => {},

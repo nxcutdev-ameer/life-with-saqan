@@ -3,9 +3,10 @@ import { fetchJson } from '@/utils/api';
 const BASE_URL = 'https://api.saqan.com/api/videos';
 
 export type UploadWithPropertySuccessResponse = {
-  success: boolean;
+  success?: boolean;
   message?: string;
   payload?: unknown;
+  data?: any;
 };
 
 export type UploadWithPropertyErrorResponse = {
@@ -15,8 +16,8 @@ export type UploadWithPropertyErrorResponse = {
 
 export type RoomTimestampInput = {
   room: string;
-  start_time: string;
-  end_time: number;
+  start_time: number; // seconds
+  end_time: number; // seconds
 };
 
 export async function uploadVideoWithProperty(params: {
@@ -39,7 +40,7 @@ export async function uploadVideoWithProperty(params: {
 
   params.roomTimestamps.forEach((item, idx) => {
     form.append(`room_timestamps[${idx}][room]`, item.room);
-    form.append(`room_timestamps[${idx}][start_time]`, item.start_time);
+    form.append(`room_timestamps[${idx}][start_time]`, String(Math.trunc(item.start_time)));
     form.append(`room_timestamps[${idx}][end_time]`, String(item.end_time));
   });
 

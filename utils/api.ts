@@ -1,12 +1,17 @@
 export class ApiError extends Error {
   status?: number;
   body?: unknown;
+  validationErrors?: Record<string, string[]>;
 
-  constructor(message: string, options?: { status?: number; body?: unknown }) {
+  constructor(
+    message: string,
+    options?: { status?: number; body?: unknown; validationErrors?: Record<string, string[]> }
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = options?.status;
     this.body = options?.body;
+    this.validationErrors = options?.validationErrors;
   }
 }
 
@@ -34,9 +39,19 @@ export async function fetchJson<T>(
     if (!res.ok) {
       const messageFromBody =
         typeof body === 'object' && body && 'message' in body ? (body as any).message : undefined;
-      throw new ApiError(messageFromBody || `Request failed (${res.status})`, {
+
+      const errorsFromBody =
+        typeof body === 'object' && body && 'errors' in body && typeof (body as any).errors === 'object'
+          ? ((body as any).errors as Record<string, string[]>)
+          : undefined;
+
+      const details = errorsFromBody ? formatValidationErrors(errorsFromBody) : '';
+      const message = `${messageFromBody || `Request failed (${res.status})`}${details ? `\n\n${details}` : ''}`;
+
+      throw new ApiError(message, {
         status: res.status,
         body,
+        validationErrors: errorsFromBody,
       });
     }
 
@@ -68,4 +83,13 @@ function safeJsonParse(value: string): unknown {
   } catch {
     return value;
   }
+}
+
+function formatValidationErrors(errors: Record<string, string[]>): string {
+  const lines: string[] = [];
+  for (const [field, msgs] of Object.entries(errors)) {
+    if (!Array.isArray(msgs) || !msgs.length) continue;
+    lines.push(`${field}: ${msgs.join(', ')}`);
+  }
+  return lines.join('\n');
 }

@@ -9,6 +9,7 @@ import {
   PanResponder,
   Alert,
   Share,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -341,9 +342,11 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 export default function FeedScreen() {
   const router = useRouter();
   useUserPreferences();
+  const insets = useSafeAreaInsets();
 
   const [items, setItems] = useState<FeedVideoItem[]>([]);
   const [page, setPage] = useState(1);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
 
@@ -550,6 +553,24 @@ export default function FeedScreen() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    if (isFetchingRef.current) return;
+
+    try {
+      setIsRefreshing(true);
+      // Reset pagination so the feed truly refreshes from the first page.
+      hasMorePagesRef.current = true;
+      setHasMorePages(true);
+      pageRef.current = 1;
+      setPage(1);
+      setActiveItemId(null);
+      await loadPage(1);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     loadPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -705,6 +726,16 @@ export default function FeedScreen() {
         keyExtractor={(item) => item.id}
         pagingEnabled
         showsVerticalScrollIndicator={false}
+        // Offset the spinner so it doesn't sit under the absolute AppHeader.
+        progressViewOffset={insets.top + scaleHeight(75)}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#FFFFFF"
+            progressViewOffset={insets.top + scaleHeight(75)}
+          />
+        }
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"

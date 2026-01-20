@@ -65,10 +65,14 @@ import {
   updateProperty,
 } from '@/utils/propertiesApi';
 
-export default function UploadScreen() {
+type HighlightStep = string;
+const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
+
+export default function UploadScreen() { 
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const navigation = useNavigation();
+  const shouldResetOnNextFocus = React.useRef(false);
 
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: false } as any);
@@ -87,9 +91,9 @@ export default function UploadScreen() {
     setTimeout(() => setToast({ visible: false, message: '' }), 1200);
   };
 
-  const [isSavingProperty, setIsSavingProperty] = useState(false);
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [, setIsSavingProperty] = useState(false);
+  const [, setLastSavedAt] = useState<number | null>(null);
+  const [, setSaveError] = useState<string | null>(null);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [overlayText, setOverlayText] = useState('');
@@ -98,16 +102,13 @@ export default function UploadScreen() {
   const [overlayTextPosition, setOverlayTextPosition] = useState<'top' | 'center' | 'bottom'>('center');
   const [showShareModal, setShowShareModal] = useState(false);
 
-  type HighlightStep = string;
-
-  const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
   type HighlightOption = (typeof DEFAULT_HIGHLIGHT_OPTIONS)[number];
 
   const [highlightSteps, setHighlightSteps] = useState<HighlightStep[]>([...DEFAULT_HIGHLIGHT_OPTIONS]);
   const [activeHighlightStepIndex, setActiveHighlightStepIndex] = useState(0);
   const [highlightsByRoom, setHighlightsByRoom] = useState<Partial<Record<HighlightStep, number>>>({});
   const [highlightTimestamps, setHighlightTimestamps] = useState<
-    { room: string; start_time: string; end_time: number }[]
+    { room: string; start_time: number; end_time: number }[]
   >([]);
 
   const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
@@ -167,6 +168,8 @@ export default function UploadScreen() {
     bedrooms: '',
     bathrooms: '',
     sizeSqft: '',
+    isFurnished: false,
+    hasParking: false,
 
     // If OFF_PLAN, user selects an existing off-plan project.
     offPlanProjectId: null as number | null,
@@ -222,7 +225,7 @@ export default function UploadScreen() {
 
   const districtOptions: District[] = districts ?? [];
 
-  const backofficeToken = sessionTokens?.backofficeToken;
+  const propertiesToken = sessionTokens?.propertiesToken;
   const {
     data: amenities,
     isLoading: isAmenitiesLoading,
@@ -230,8 +233,8 @@ export default function UploadScreen() {
     refetch: refetchAmenities,
   } = useQuery({
     queryKey: ['properties', 'amenities'],
-    queryFn: () => fetchAmenities({ backofficeToken: backofficeToken as string }),
-    enabled: amenitiesModalVisible && typeof backofficeToken === 'string',
+    queryFn: () => fetchAmenities({ propertiesToken: propertiesToken as string }),
+    enabled: amenitiesModalVisible && typeof propertiesToken === 'string',
     staleTime: 1000 * 60 * 60,
     gcTime: 1000 * 60 * 60 * 24,
   });
@@ -251,9 +254,9 @@ export default function UploadScreen() {
     refetch: refetchBuildings,
   } = useInfiniteQuery({
     queryKey: ['properties', 'buildings'],
-    enabled: locationPicker === 'building' && typeof backofficeToken === 'string',
+    enabled: locationPicker === 'building' && typeof propertiesToken === 'string',
     queryFn: async ({ pageParam }) => {
-      const res = await fetchBuildings({ backofficeToken: backofficeToken as string, page: pageParam });
+      const res = await fetchBuildings({ propertiesToken: propertiesToken as string, page: pageParam });
       if (!res.success) throw new Error(res.message || 'Failed to load buildings');
       return res.payload;
     },
@@ -277,8 +280,8 @@ export default function UploadScreen() {
     refetch: refetchAreas,
   } = useQuery({
     queryKey: ['properties', 'areas'],
-    enabled: locationPicker === 'area' && typeof backofficeToken === 'string',
-    queryFn: () => fetchAreas({ backofficeToken: backofficeToken as string, limit: 9999 }),
+    enabled: locationPicker === 'area' && typeof propertiesToken === 'string',
+    queryFn: () => fetchAreas({ propertiesToken: propertiesToken as string, limit: 9999 }),
     staleTime: 1000 * 60 * 60,
     gcTime: 1000 * 60 * 60 * 24,
   });
@@ -323,8 +326,8 @@ export default function UploadScreen() {
   useEffect(() => {
     if (step !== 'details') return;
     if (propertyDetails.developmentStatus !== 'READY') return;
-    const backofficeToken = sessionTokens?.backofficeToken;
-    if (!backofficeToken) return;
+    const propertiesToken = sessionTokens?.propertiesToken;
+    if (!propertiesToken) return;
     // Prevent duplicate creates.
     if (draftPropertyReferenceId || isCreatingDraftProperty) return;
 
@@ -334,7 +337,7 @@ export default function UploadScreen() {
       try {
         setIsCreatingDraftProperty(true);
         const res = await createDraftProperty({
-          backofficeToken,
+          propertiesToken: propertiesToken as string,
           type: 'sale',
           state: 'draft',
         });
@@ -346,7 +349,6 @@ export default function UploadScreen() {
           Alert.alert('Failed to create draft property', res?.message || 'Please try again.');
           return;
         }
-
         setDraftPropertyReferenceId(referenceId);
       } catch (err: any) {
         if (cancelled) return;
@@ -362,7 +364,7 @@ export default function UploadScreen() {
   }, [
     step,
     propertyDetails.developmentStatus,
-    sessionTokens?.backofficeToken,
+    sessionTokens?.propertiesToken,
     draftPropertyReferenceId,
     isCreatingDraftProperty,
   ]);
@@ -372,8 +374,8 @@ export default function UploadScreen() {
     if (step !== 'details') return;
     if (propertyDetails.developmentStatus !== 'READY') return;
 
-    const backofficeToken = sessionTokens?.backofficeToken;
-    if (!backofficeToken) return;
+    const propertiesToken = sessionTokens?.propertiesToken;
+    if (!propertiesToken) return;
 
     const referenceId = draftPropertyReferenceId;
     if (!referenceId) return;
@@ -419,7 +421,7 @@ export default function UploadScreen() {
         setIsSavingProperty(true);
         setSaveError(null);
         const res = await updateProperty({
-          backofficeToken,
+          propertiesToken,
           referenceId,
           body,
         });
@@ -449,25 +451,10 @@ export default function UploadScreen() {
     selectedAmenityIds,
     selectedImages,
     draftPropertyReferenceId,
-    sessionTokens?.backofficeToken,
+    sessionTokens?.propertiesToken,
   ]);
 
   // TODO: Replace Building/Area static lists with API endpoints when available.
-
-  const BUILDINGS_BY_DISTRICT: Record<string, string[]> = {
-    'Downtown Dubai': ['Burj Khalifa', 'Address Downtown', 'South Ridge'],
-    'Dubai Marina': ['Marina Gate', 'Cayan Tower', 'Princess Tower'],
-    Jumeirah: ['City Walk', 'La Mer'],
-    'Business Bay': ['Damac Towers', 'The Opus'],
-  };
-
-  const AREAS_BY_BUILDING: Record<string, string[]> = {
-    'Marina Gate': ['Marina Gate 1', 'Marina Gate 2'],
-    'Burj Khalifa': ['Downtown'],
-  };
-
-  const getBuildingOptions = () => BUILDINGS_BY_DISTRICT[propertyDetails.districtName] ?? [];
-  const getAreaOptions = () => AREAS_BY_BUILDING[propertyDetails.building] ?? [];
 
   const formatTimeMmSs = (totalSeconds: number) => {
     if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '00:00';
@@ -517,7 +504,11 @@ export default function UploadScreen() {
     }
   };
 
+  const DISABLE_SUBSCRIPTION_GUARD = true; // TODO: re-enable when backend subscription is ready
+
   const checkSubscription = () => {
+    if (DISABLE_SUBSCRIPTION_GUARD) return true;
+
     if (!canPost) {
       if (tier === 'free') {
         Alert.alert(
@@ -570,6 +561,103 @@ export default function UploadScreen() {
     );
   };
 
+  const resetUploadFlow = React.useCallback(() => {
+    // Core flow
+    setStep('select');
+    setSelectedVideoUri(null);
+
+    // Editor/UI
+    setOverlayText('');
+    setOverlayTextSize('medium');
+    setOverlayTextColor('white');
+    setOverlayTextPosition('center');
+
+    setShowShareModal(false);
+    setShowAddHighlightModal(false);
+
+    // Save/draft state
+    setIsSavingProperty(false);
+    setLastSavedAt(null);
+    setSaveError(null);
+    setIsCreatingDraftProperty(false);
+    setDraftPropertyReferenceId(null);
+
+    // Highlights
+    setHighlightSteps([...DEFAULT_HIGHLIGHT_OPTIONS]);
+    setHighlightsByRoom({});
+    setHighlightTimestamps([]);
+    setActiveHighlightStepIndex(0);
+    setVideoCurrentTimeSec(0);
+    setVideoDurationSec(0);
+    setIsHighlightsMuted(false);
+    setIsHighlightsVideoLoaded(false);
+    setIsHighlightsPlaying(false);
+
+    // Pickers/modals/search
+    setLocationPicker(null);
+    setEmirateSearch('');
+    setDistrictSearch('');
+    setLocationSearch('');
+
+    setOffPlanPickerOpen(false);
+    setOffPlanSearch('');
+
+    setAmenitiesModalVisible(false);
+    setAmenitiesSearch('');
+    setSelectedAmenityIds([]);
+    setSelectedImages([]);
+
+    // Toast
+    setToast({ visible: false, message: '' });
+
+    // Form fields
+    setPropertyDetails({
+      title: '',
+      price: '',
+      developmentStatus: 'READY',
+      listingType: 'RENT',
+      propertyType: 'apartment',
+      bedrooms: '',
+      bathrooms: '',
+      sizeSqft: '',
+      isFurnished: false,
+      hasParking: false,
+
+      emirateId: null,
+      emirateName: '',
+      districtId: null,
+      districtName: '',
+      building: '',
+      area: '',
+
+      defaultPricing: 'month',
+      dayPrice: '',
+      weekPrice: '',
+      monthPrice: '',
+      yearPrice: '',
+      builtYear: '',
+      floor: '',
+
+      description: '',
+      offPlanProjectId: null,
+      offPlanProjectReferenceId: '',
+      offPlanProjectTitle: '',
+    });
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = (navigation as any).addListener?.('focus', () => {
+      // When user navigates away after a successful upload (e.g. View Property),
+      // reset the upload screen the next time it becomes active.
+      if (shouldResetOnNextFocus.current && !isPublishing) {
+        shouldResetOnNextFocus.current = false;
+        resetUploadFlow();
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, isPublishing, resetUploadFlow]);
+
   const toggleAmenity = (id: number) => {
     setSelectedAmenityIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -591,12 +679,14 @@ export default function UploadScreen() {
         return;
       }
 
+      setIsPublishing(true);
+
       // If user never tapped “Set <room>”, fall back to whatever is stored in highlightsByRoom.
       const timestampsFromMap = Object.entries(highlightsByRoom)
         .filter(([, value]) => value != null)
         .map(([room, value]) => ({
           room,
-          start_time: formatTimeMmSs(value as number),
+          start_time: Math.floor(value as number),
           end_time: 0,
         }));
 
@@ -625,8 +715,15 @@ export default function UploadScreen() {
           agentId: 1,
         });
 
-        if (res?.success) {
-          Alert.alert('Success', res?.message || 'Uploaded successfully.');
+        const isSuccess =
+          res?.success === true ||
+          (typeof res?.message === 'string' && res.message.toLowerCase().includes('uploaded successfully')) ||
+          Boolean((res as any)?.data?.video_id);
+
+        if (isSuccess) {
+          Alert.alert('Success', res?.message || 'Uploaded successfully.', [
+            { text: 'OK', onPress: resetUploadFlow },
+          ]);
           return;
         }
 
@@ -649,6 +746,8 @@ export default function UploadScreen() {
         }
 
         Alert.alert('Upload failed', message);
+      } finally {
+        setIsPublishing(false);
       }
 
       return;
@@ -714,8 +813,12 @@ export default function UploadScreen() {
         generateSubtitles: true,
         agentId: 1,
       });
+      const isSuccess =
+        res?.success === true ||
+        (typeof res?.message === 'string' && res.message.toLowerCase().includes('uploaded successfully')) ||
+        Boolean((res as any)?.data?.video_id);
 
-      if (!res?.success) {
+      if (!isSuccess) {
         Alert.alert('Upload failed', res?.message || 'Upload failed. Please try again.');
         return;
       }
@@ -728,68 +831,20 @@ export default function UploadScreen() {
       Alert.alert('Property Published!', 'Your property has been published successfully.', [
         {
           text: 'View Property',
-          onPress: () => router.replace('/(tabs)/profile'),
+          onPress: () => {
+            shouldResetOnNextFocus.current = true;
+            router.replace('/(tabs)/profile');
+          },
         },
         {
           text: 'Upload Another',
-          onPress: () => {
-            setStep('select');
-            setSelectedVideoUri(null);
-            setOverlayText('');
-            setHighlightsByRoom({});
-            setHighlightTimestamps([]);
-            setActiveHighlightStepIndex(0);
-            setSelectedAmenityIds([]);
-            setSelectedImages([]);
-            setDraftPropertyReferenceId(null);
-            setIsCreatingDraftProperty(false);
-            setPropertyDetails({
-              title: '',
-              price: '',
-              developmentStatus: 'READY',
-              listingType: 'RENT',
-              propertyType: 'apartment',
-              bedrooms: '',
-              bathrooms: '',
-              sizeSqft: '',
-
-              offPlanProjectId: null,
-              offPlanProjectReferenceId: '',
-              offPlanProjectTitle: '',
-
-              emirateId: null,
-              emirateName: '',
-              districtId: null,
-              districtName: '',
-              building: '',
-              area: '',
-
-              defaultPricing: 'month',
-              dayPrice: '',
-              weekPrice: '',
-              monthPrice: '',
-              yearPrice: '',
-              builtYear: '',
-              floor: '',
-
-              description: '',
-            });
-          },
+          onPress: resetUploadFlow,
         },
       ]);
+
+      return;
     } catch (err: any) {
-      const body = err?.body as any;
-      const message = body?.message || err?.message || 'Upload failed. Please try again.';
-      const errors = body?.errors;
-      if (errors && typeof errors === 'object') {
-        const lines: string[] = [];
-        for (const [field, msgs] of Object.entries(errors)) {
-          if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
-        }
-        Alert.alert('Upload failed', `${message}\n\n${lines.join('\n')}`);
-      } else {
-        Alert.alert('Upload failed', message);
-      }
+      Alert.alert('Upload failed', err?.message || 'Upload failed. Please try again.');
     } finally {
       setIsPublishing(false);
     }
@@ -1004,7 +1059,7 @@ export default function UploadScreen() {
    const handleSelectThisHighlight = () => {
      setHighlightsByRoom((prev) => ({ ...prev, [activeRoom]: videoCurrentTimeSec }));
 
-     const start_time = formatTimeMmSs(videoCurrentTimeSec);
+     const start_time = Math.floor(videoCurrentTimeSec);
      setHighlightTimestamps((prev) => {
        const next = [...prev];
        const idx = next.findIndex((t) => t.room === activeRoom);
@@ -1503,14 +1558,7 @@ export default function UploadScreen() {
           disabled={isPublishing}
           style={[styles.publishButton, isPublishing && styles.publishButtonDisabled]}
         >
-          {isPublishing ? (
-            <View style={styles.publishButtonContent}>
-              <ActivityIndicator size="small" color={Colors.textLight} />
-              <Text style={styles.publishButtonText}>Uploading   </Text>
-            </View>
-          ) : (
-            <Text style={styles.publishButtonText}>Publish</Text>
-          )}
+          <Text style={styles.publishButtonText}>Publish</Text>
         </Pressable>
       </View>
 
@@ -1519,6 +1567,13 @@ export default function UploadScreen() {
           <View style={styles.toastInner}>
             <Text style={styles.toastText}>{toast.message}</Text>
           </View>
+        </View>
+      )}
+
+      {isPublishing && (
+        <View style={styles.publishingOverlay}>
+          <ActivityIndicator size="large" color={Colors.bronze} />
+          <Text style={styles.publishingOverlayText}>Uploading...</Text>
         </View>
       )}
 
@@ -1582,7 +1637,7 @@ export default function UploadScreen() {
 
             <Pressable
               style={styles.radioOption}
-              onPress={() => {
+              onPress={async () => {
                 // Clear READY-only fields when switching to OFF_PLAN.
                 setOffPlanPickerOpen(false);
                 setOffPlanSearch('');
@@ -1600,8 +1655,33 @@ export default function UploadScreen() {
                   building: '',
                   area: '',
                 });
-                setDraftPropertyReferenceId(null);
-                setIsCreatingDraftProperty(false);
+
+                const propertiesToken = sessionTokens?.propertiesToken;
+                if (!propertiesToken) {
+                  Alert.alert('Authentication required', 'Missing properties token. Please login again.');
+                  return;
+                }
+
+                try {
+                  setIsCreatingDraftProperty(true);
+                  const res = await createDraftProperty({
+                    propertiesToken,
+                    type: 'offplan',
+                    state: 'draft',
+                  });
+
+                  const referenceId = res?.payload?.reference_id;
+                  if (!res?.success || !referenceId) {
+                    Alert.alert('Failed to create draft property', res?.message || 'Please try again.');
+                    return;
+                  }
+
+                  setDraftPropertyReferenceId(referenceId);
+                } catch (err: any) {
+                  Alert.alert('Failed to create draft property', err?.message || 'Please try again.');
+                } finally {
+                  setIsCreatingDraftProperty(false);
+                }
               }}
             >
               <View
@@ -2612,11 +2692,6 @@ const styles = StyleSheet.create({
   publishButtonDisabled: {
     opacity: 0.6,
   },
-  publishButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(10),
-  },
   publishButtonText: {
     fontSize: scaleFont(14),
     fontWeight: '800',
@@ -2949,6 +3024,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: scaleFont(13),
     fontWeight: '800',
+  },
+
+  publishingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  publishingOverlayText: {
+    marginTop: scaleHeight(12),
+    fontSize: scaleFont(14),
+    fontWeight: '800',
+    color: Colors.text,
   },
 
   bottomPadding: {
