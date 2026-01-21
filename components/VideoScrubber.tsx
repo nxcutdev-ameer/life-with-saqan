@@ -17,6 +17,10 @@ export type VideoScrubberProps = {
   duration: number;
   /** Called when user taps/drags */
   onSeek: (seconds: number) => void;
+  /** Called when user starts dragging */
+  onScrubStart?: () => void;
+  /** Called when user ends dragging */
+  onScrubEnd?: () => void;
   /** Optional styles for outer container */
   style?: ViewStyle | ViewStyle[];
   /** Track color */
@@ -37,17 +41,14 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-/**
- * Lightweight scrubbable progress bar.
- * - Tap to jump
- * - Drag to scrub
- *
- * Uses an Animated.Value for smoothness between updates.
- */
+//Lightweight scrubbable progress bar Uses an Animated.Value for smoothness between updates.
+ 
 export function VideoScrubber({
   currentTime,
   duration,
   onSeek,
+  onScrubStart,
+  onScrubEnd,
   style,
   trackColor = 'rgba(255,255,255,0.25)',
   fillColor = '#FFFFFF',
@@ -61,6 +62,14 @@ export function VideoScrubber({
   const [containerWidth, setContainerWidth] = useState(0);
   const [barLeftX, setBarLeftX] = useState(0);
   const isScrubbingRef = useRef(false);
+
+  const onScrubStartRef = useRef<VideoScrubberProps['onScrubStart']>(onScrubStart);
+  const onScrubEndRef = useRef<VideoScrubberProps['onScrubEnd']>(onScrubEnd);
+
+  useEffect(() => {
+    onScrubStartRef.current = onScrubStart;
+    onScrubEndRef.current = onScrubEnd;
+  }, [onScrubStart, onScrubEnd]);
 
   const progress01 = useMemo(() => {
     if (!Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0) return 0;
@@ -134,6 +143,7 @@ export function VideoScrubber({
       onStartShouldSetPanResponder: shouldSet,
       onMoveShouldSetPanResponder: shouldSet,
       onPanResponderGrant: (_evt, gestureState) => {
+        onScrubStartRef.current?.();
         isScrubbingRef.current = true;
         ensureBarMeasurement();
         updateFromMoveX(gestureState.x0);
@@ -142,10 +152,12 @@ export function VideoScrubber({
         updateFromMoveX(gestureState.moveX);
       },
       onPanResponderRelease: (_evt, gestureState) => {
+        onScrubEndRef.current?.();
         updateFromMoveX(gestureState.moveX);
         isScrubbingRef.current = false;
       },
       onPanResponderTerminate: () => {
+        onScrubEndRef.current?.();
         isScrubbingRef.current = false;
       },
     });

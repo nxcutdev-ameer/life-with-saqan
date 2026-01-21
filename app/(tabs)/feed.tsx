@@ -20,6 +20,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Property } from '@/types';
 import { fetchPublicVideos, sharePublicVideo } from '@/utils/publicVideosApi';
 import { useEngagementStore } from '@/stores/engagementStore';
+import { useSubtitleStore } from '@/stores/subtitleStore';
 import { findActiveCue, parseVtt } from '@/utils/vtt';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
@@ -46,9 +47,11 @@ interface FeedItemProps {
   onOpenComments: (id: string) => void;
   onNavigateToProperty: (propertyReference: string) => void;
   onShare: (id: string) => void;
+  globalSubtitleLanguageCode?: string;
+  onGlobalSubtitleLanguageChange?: (languageCode: string) => void;
 }
 
-function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare }: FeedItemProps) {
+function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange }: FeedItemProps) {
   const [isPaused, setIsPaused] = useState(false);
 
   const player = useVideoPlayer(item.videoUrl, (player) => {
@@ -61,7 +64,24 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  const normalizeSubtitleUrl = (u: string) => (u.startsWith('/') ? `https://api.saqan.com${u}` : u);
+
   const [selectedSubtitleUrl, setSelectedSubtitleUrl] = useState<string>('');
+
+  useEffect(() => {
+    // When global language changes (or video changes), choose the matching subtitle track for this video.
+    if (!globalSubtitleLanguageCode) {
+      setSelectedSubtitleUrl('');
+      return;
+    }
+
+    const match = (item.subtitles ?? []).find((t: any) => t.code === globalSubtitleLanguageCode);
+    if (match?.url) {
+      setSelectedSubtitleUrl(normalizeSubtitleUrl(match.url));
+    } else {
+      setSelectedSubtitleUrl('');
+    }
+  }, [item.id, globalSubtitleLanguageCode]);
   const [subtitleCues, setSubtitleCues] = useState<Array<{ start: number; end: number; text: string }>>([]);
   const [activeSubtitle, setActiveSubtitle] = useState('');
   React.useEffect(() => {
@@ -118,7 +138,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     return () => {
       if (rafId != null) cancelAnimationFrame(rafId);
     };
-  }, [isViewable, player]);
+  }, [isViewable, player, subtitleCues]);
 
   const handleSeek = (timestamp: number) => {
     player.currentTime = timestamp;
@@ -325,9 +345,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         onOpenComments={onOpenComments}
         onShare={onShare}
         onSeek={handleSeek}
-        onSubtitleSelect={(subtitleUrl) => {
-          // handled inside FeedItem below
+        selectedSubtitleCode={globalSubtitleLanguageCode}
+        onSubtitleSelect={(subtitleUrl, languageCode) => {
           setSelectedSubtitleUrl(subtitleUrl);
+          onGlobalSubtitleLanguageChange?.(languageCode);
         }}
         onNavigateToProperty={() => {
           player.pause();
@@ -362,6 +383,9 @@ export default function FeedScreen() {
   const filteredProperties = useMemo(() => items, [items]);
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+
+  const globalSubtitleLanguageCode = useSubtitleStore((st) => st.languageCode);
+  const setGlobalSubtitleLanguageCode = useSubtitleStore((st) => st.setLanguageCode);
 
   const firstItemId = filteredProperties[0]?.id;
 
@@ -701,6 +725,8 @@ export default function FeedScreen() {
           router.push(`/property/${propertyReference}`);
         }}
         onShare={handleShare}
+        globalSubtitleLanguageCode={globalSubtitleLanguageCode}
+        onGlobalSubtitleLanguageChange={(code) => setGlobalSubtitleLanguageCode(code)}
       />
     );
   };

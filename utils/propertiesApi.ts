@@ -212,3 +212,57 @@ export async function fetchOffPlanProjects(options?: {
   const lastPage = res.payload.properties.meta?.last_page ?? null;
   return { data, currentPage, lastPage };
 }
+
+export type PropertyAmenity = {
+  id: number;
+  name: string;
+  icon?: string;
+};
+
+export type PropertyDetailsPayload = {
+  reference_id: string;
+  title: string;
+  description: string;
+  type?: string;
+  state?: string;
+  default_pricing?: string | null;
+  meta?: {
+    week_price?: string | number | null;
+    month_price?: string | number | null;
+    year_price?: string | number | null;
+    bedrooms?: string | number | null;
+    bathrooms?: string | number | null;
+    size?: string | number | null;
+  };
+  agency?: { agency_name?: string | null } | null;
+  agent?: { id?: number | null } | null;
+  district?: { id: number; name: string; description?: string | null } | null;
+  emirate?: { id: number; name: string; description?: string | null } | null;
+  area?: { id: number; name: string; slug?: string; status?: number; is_deleted?: number } | null;
+  building?: { name?: string | null; slug?: string | null } | null;
+  coordinates?: unknown;
+  media?: any[];
+  media_meta?: any[];
+  amenities?: PropertyAmenity[];
+};
+
+export async function fetchPropertyByReferenceResponse(
+  referenceId: string,
+  options?: { timeoutMs?: number; propertiesToken?: string | null }
+): Promise<ApiResponse<PropertyDetailsPayload>> {
+  const url = `${BASE_URL}/properties/${encodeURIComponent(referenceId)}`;
+
+  return fetchJson<ApiResponse<PropertyDetailsPayload>>(url, {
+    timeoutMs: options?.timeoutMs ?? 15000,
+    headers: options?.propertiesToken
+      ? {
+          Authorization: `Bearer ${options.propertiesToken}`,
+        }
+      : undefined,
+  });
+}
+
+export async function fetchPropertyByReference(referenceId: string): Promise<PropertyDetailsPayload> {
+  const res = await fetchPropertyByReferenceResponse(referenceId);
+  return res.payload;
+}

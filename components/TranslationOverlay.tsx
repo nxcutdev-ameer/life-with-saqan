@@ -16,6 +16,7 @@ interface Language {
 interface TranslationOverlayProps {
   agentName: string;
   languages?: Language[];
+  selectedCode?: string;
   onLanguageSelect?: (language: Language) => void;
 }
 
@@ -41,10 +42,11 @@ function getNativeLanguageName(language: Language) {
   return nativeLanguageNameByCode[language.code] ?? language.name;
 }
 
-export default function TranslationOverlay({ 
-  agentName, 
+export default function TranslationOverlay({
+  agentName,
   languages = defaultLanguages,
-  onLanguageSelect 
+  selectedCode,
+  onLanguageSelect
 }: TranslationOverlayProps) {
   const [visible, setVisible] = useState(false);
 
@@ -84,7 +86,7 @@ export default function TranslationOverlay({
               {languages.map((language, index) => (
                 <Pressable
                   key={index}
-                  style={styles.languageButton}
+                  style={[styles.languageButton, selectedCode === language.code ? styles.languageButtonSelected : undefined]}
                   onPress={() => handleLanguagePress(language)}
                 >
                   <LinearGradient
@@ -152,6 +154,10 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  languageButtonSelected: {
+    borderWidth: 2,
+    borderColor: Colors.bronze,
   },
   languageButtonGradient: {
     width: '100%',

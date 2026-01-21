@@ -46,6 +46,7 @@ import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { PropertyType, TransactionType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useSubscription } from '@/contexts/SubscriptionContext';
+import { useUiLockStore } from '@/stores/uiLockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
@@ -72,16 +73,29 @@ export default function UploadScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const navigation = useNavigation();
+  const setUploadLocked = useUiLockStore((s) => s.setUploadLocked);
   const shouldResetOnNextFocus = React.useRef(false);
+  const wasHighlightsPlayingRef = React.useRef(false);
+  const isHighlightsScrubbingRef = React.useRef(false);
+  const pendingSeekSecRef = React.useRef(0);
+  const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
 
   useEffect(() => {
+    // Upload is a multi-step flow; avoid accidental navigation back to previous screens (e.g. Lifestyle)
+    // while user is in the Upload tab.
     navigation.setOptions({ gestureEnabled: false } as any);
-  }, [navigation]);
+
+    // Lock tab switching only during highlight picking.
+    setUploadLocked(step === 'selectHighlights');
+
+    return () => {
+      setUploadLocked(false);
+    };
+  }, [navigation, setUploadLocked, step]);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
-  const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
-
+  
   // Segment 3: lightweight toast UI (will be used for save/update feedback)
   const [toast, setToast] = useState<{ visible: boolean; message: string }>(
     { visible: false, message: '' }
@@ -150,7 +164,50 @@ export default function UploadScreen() {
   const [offPlanSearch, setOffPlanSearch] = useState('');
 
   const [draftPropertyReferenceId, setDraftPropertyReferenceId] = useState<string | null>(null);
+  const createDraftInflightRef = React.useRef<Promise<string | null> | null>(null);
+
   const [isCreatingDraftProperty, setIsCreatingDraftProperty] = useState(false);
+
+  const ensureDraftPropertyReferenceId = async (): Promise<string | null> => {
+    const propertiesToken = sessionTokens?.propertiesToken;
+    if (!propertiesToken) return null;
+    if (propertyDetails.developmentStatus !== 'READY') return null;
+
+    // Already have one
+    if (draftPropertyReferenceId) return draftPropertyReferenceId;
+
+    // Reuse inflight
+    if (createDraftInflightRef.current) {
+      return createDraftInflightRef.current;
+    }
+
+    createDraftInflightRef.current = (async () => {
+      try {
+        setIsCreatingDraftProperty(true);
+        const res = await createDraftProperty({
+          propertiesToken,
+          type: 'sale',
+          state: 'draft',
+        });
+
+        const referenceId = res?.payload?.reference_id ?? null;
+        if (!res?.success || !referenceId) {
+          return null;
+        }
+
+        setDraftPropertyReferenceId(referenceId);
+        return referenceId;
+      } catch {
+        return null;
+      } finally {
+        setIsCreatingDraftProperty(false);
+        createDraftInflightRef.current = null;
+      }
+    })();
+
+    return createDraftInflightRef.current;
+  };
+
 
   const [amenitiesModalVisible, setAmenitiesModalVisible] = useState(false);
   const [amenitiesSearch, setAmenitiesSearch] = useState('');
@@ -322,52 +379,13 @@ export default function UploadScreen() {
     // Debug: log off-plan API response when entering Property Details step
   }, [step, offPlanPages]);
 
-  // Create a draft property on READY details mount.
+  // Create a draft property as soon as READY details step mounts.
   useEffect(() => {
     if (step !== 'details') return;
     if (propertyDetails.developmentStatus !== 'READY') return;
-    const propertiesToken = sessionTokens?.propertiesToken;
-    if (!propertiesToken) return;
-    // Prevent duplicate creates.
-    if (draftPropertyReferenceId || isCreatingDraftProperty) return;
+    void ensureDraftPropertyReferenceId();
+  }, [step, propertyDetails.developmentStatus, sessionTokens?.propertiesToken]);
 
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setIsCreatingDraftProperty(true);
-        const res = await createDraftProperty({
-          propertiesToken: propertiesToken as string,
-          type: 'sale',
-          state: 'draft',
-        });
-
-        if (cancelled) return;
-
-        const referenceId = res?.payload?.reference_id;
-        if (!res?.success || !referenceId) {
-          Alert.alert('Failed to create draft property', res?.message || 'Please try again.');
-          return;
-        }
-        setDraftPropertyReferenceId(referenceId);
-      } catch (err: any) {
-        if (cancelled) return;
-        Alert.alert('Failed to create draft property', err?.message || 'Please try again.');
-      } finally {
-        if (!cancelled) setIsCreatingDraftProperty(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    step,
-    propertyDetails.developmentStatus,
-    sessionTokens?.propertiesToken,
-    draftPropertyReferenceId,
-    isCreatingDraftProperty,
-  ]);
 
   // Debounced update to properties.vzite.com whenever READY fields change.
   useEffect(() => {
@@ -771,7 +789,11 @@ export default function UploadScreen() {
         return;
       }
 
-      const propertyReference = draftPropertyReferenceId;
+      let propertyReference = draftPropertyReferenceId;
+      if (!propertyReference) {
+        // Ensure draft is created before uploading.
+        propertyReference = await ensureDraftPropertyReferenceId();
+      }
       if (!propertyReference) {
         Alert.alert('Property not ready', 'Draft property reference is missing. Please wait a moment and try again.');
         return;
@@ -1038,19 +1060,42 @@ export default function UploadScreen() {
        }
 
        const nextName = maxSuffix === 0 ? base : `${base} ${maxSuffix + 1}`;
-       return [...prev, nextName];
+       const next = [...prev, nextName];
+        setActiveHighlightStepIndex(next.length - 1);
+        showToast(`added ${nextName}`);
+        return next;
      });
-     setActiveHighlightStepIndex((prev) => prev);
      setShowAddHighlightModal(false);
    };
 
    const activeRoom = highlightSteps[activeHighlightStepIndex];
 
+    const snapSec = (sec: number) => {
+      const snapped = Math.round(sec * 2) / 2;
+      const clampedMin = Math.max(0, snapped);
+      // Clamp to duration if known to avoid no-op / invalid seeks.
+      if (Number.isFinite(videoDurationSec) && videoDurationSec > 0) {
+        return Math.min(videoDurationSec, clampedMin);
+      }
+      return clampedMin;
+    };
+
    const seek = async (sec: number) => {
      if (!isHighlightsVideoLoaded) return;
      try {
-       await videoRef.current?.setPositionAsync(Math.max(0, sec * 1000));
-       setVideoCurrentTimeSec(sec);
+       const next = snapSec(sec);
+        // Update UI immediately (so dragging the scrubber updates the displayed time smoothly)
+        setVideoCurrentTimeSec(next);
+        pendingSeekSecRef.current = next;
+
+        // Avoid spamming setPositionAsync during a drag (it causes "Seeking interrupted").
+        if (!isHighlightsScrubbingRef.current) {
+          void videoRef.current
+            ?.setPositionAsync(next * 1000)
+            .catch(() => {
+              // Ignore interruptions during rapid updates.
+            });
+        }
      } catch {
        // ignore seek errors
      }
@@ -1066,6 +1111,8 @@ export default function UploadScreen() {
        const item = { room: activeRoom, start_time, end_time: 0 };
        if (idx >= 0) next[idx] = item;
        else next.push(item);
+
+      showToast(`highlight set for: ${activeRoom} at ${start_time}`);
        return next;
      });
    };
@@ -1089,6 +1136,13 @@ export default function UploadScreen() {
 
    return (
      <View style={styles.container}>
+        {toast.visible && (
+          <View style={styles.toastContainer} pointerEvents="none">
+            <View style={styles.toastInner}>
+              <Text style={styles.toastText}>{toast.message}</Text>
+            </View>
+          </View>
+        )}
        {/* Dimmed background */}
        <View style={styles.highlightsOverlay} />
 
@@ -1131,6 +1185,20 @@ export default function UploadScreen() {
                    setVideoDurationSec((status.durationMillis ?? 0) / 1000);
                  }}
                />
+
+                {/* Invisible nudge zones (tap edges to move -0.5s / +0.5s) */}
+                <Pressable
+                  style={styles.highlightsNudgeZoneLeft}
+                  onPress={() => seek((pendingSeekSecRef.current || videoCurrentTimeSec) - 0.5)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                />
+                <Pressable
+                  style={styles.highlightsNudgeZoneRight}
+                  onPress={() => seek((pendingSeekSecRef.current || videoCurrentTimeSec) + 0.5)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                />
+
+                
                {/* Video controls */}
                <View style={styles.highlightsVideoControls}>
                  <Pressable
@@ -1161,7 +1229,7 @@ export default function UploadScreen() {
 
                {/* Integrated time + movable scrubber overlay */}
                <View style={styles.highlightsScrubberOverlay}>
-                 <View style={styles.highlightsTimeRowOverlay}>
+<View style={styles.highlightsTimeRowOverlay}>
                    <Text style={styles.highlightsTimeTextOverlay}>{formatTimeMmSs(videoCurrentTimeSec)}</Text>
                    <Text style={styles.highlightsTimeTextOverlay}>{formatTimeMmSs(videoDurationSec)}</Text>
                  </View>
@@ -1169,6 +1237,22 @@ export default function UploadScreen() {
                    currentTime={videoCurrentTimeSec}
                    duration={videoDurationSec}
                    onSeek={seek}
+                    onScrubStart={() => {
+                      isHighlightsScrubbingRef.current = true;
+                      wasHighlightsPlayingRef.current = isHighlightsPlaying;
+                      setIsHighlightsPlaying(false);
+                    }}
+                    onScrubEnd={() => {
+                      isHighlightsScrubbingRef.current = false;
+                      const finalSec = pendingSeekSecRef.current;
+                      void videoRef.current?.setPositionAsync(finalSec * 1000).catch(() => {
+                        // Ignore interruptions
+                      });
+
+                      if (wasHighlightsPlayingRef.current) {
+                        setIsHighlightsPlaying(true);
+                      }
+                    }}
                    trackColor={'rgba(255,255,255,0.35)'}
                    fillColor={Colors.textLight}
                    height={3.5}
@@ -1179,8 +1263,9 @@ export default function UploadScreen() {
 
                {/* reuse overlay text preview */}
                {overlayText && (
-                 <View
-                   style={[
+                  <View
+                    pointerEvents="none"
+                    style={[
                      styles.textOverlayPreview,
                      overlayTextPosition === 'top' && styles.textTop,
                      overlayTextPosition === 'center' && styles.textCenter,
@@ -1822,7 +1907,7 @@ export default function UploadScreen() {
             <View style={styles.selectRight}>
               {propertyDetails.emirateId ? (
                 <Pressable
-                  hitSlop={10}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => {
                     setPropertyDetails({
                       ...propertyDetails,
@@ -1861,7 +1946,7 @@ export default function UploadScreen() {
             <View style={styles.selectRight}>
               {propertyDetails.districtId ? (
                 <Pressable
-                  hitSlop={10}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => {
                     setPropertyDetails({
                       ...propertyDetails,
@@ -1898,7 +1983,7 @@ export default function UploadScreen() {
             <View style={styles.selectRight}>
               {propertyDetails.building ? (
                 <Pressable
-                  hitSlop={10}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => {
                     setPropertyDetails({
                       ...propertyDetails,
@@ -1933,7 +2018,7 @@ export default function UploadScreen() {
             <View style={styles.selectRight}>
               {propertyDetails.area ? (
                 <Pressable
-                  hitSlop={10}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => {
                     setPropertyDetails({
                       ...propertyDetails,
@@ -1966,7 +2051,7 @@ export default function UploadScreen() {
             <View style={styles.selectRight}>
               {selectedAmenityIds.length ? (
                 <Pressable
-                  hitSlop={10}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => {
                     setSelectedAmenityIds([]);
                     showToast('Amenities cleared');
@@ -3011,7 +3096,8 @@ const styles = StyleSheet.create({
     left: scaleWidth(16),
     right: scaleWidth(16),
     alignItems: 'center',
-    zIndex: 999,
+    zIndex: 9999,
+    elevation: 9999,
   },
   toastInner: {
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -3187,8 +3273,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    zIndex: 999,
-    elevation: 999,
+    zIndex: 9999,
+    elevation: 9999,
   },
   locationModal: {
     position: 'absolute',
@@ -3199,8 +3285,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    zIndex: 999,
-    elevation: 999,
+    zIndex: 9999,
+    elevation: 9999,
   },
   modal: {
     width: '100%',
@@ -3350,6 +3436,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 0,
   },
   highlightsSheet: {
     position: 'absolute',
@@ -3408,7 +3495,7 @@ const styles = StyleSheet.create({
     left: scaleWidth(10),
     flexDirection: 'row',
     gap: scaleWidth(10),
-    zIndex: 5,
+    zIndex: 8,
   },
   highlightsVideoControlButton: {
     width: scaleWidth(40),
@@ -3474,6 +3561,22 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(10),
     backgroundColor: 'rgba(0,0,0,0.35)',
     zIndex: 4,
+  },
+  highlightsNudgeZoneLeft: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: scaleWidth(20),
+    zIndex: 6,
+  },
+  highlightsNudgeZoneRight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: scaleWidth(20),
+    zIndex: 6,
   },
   highlightsTimeRowOverlay: {
     flexDirection: 'row',

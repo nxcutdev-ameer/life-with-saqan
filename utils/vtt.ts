@@ -22,9 +22,18 @@ export function parseVtt(vttText: string): VttCue[] {
   const cues: VttCue[] = [];
 
   let i = 0;
-  // skip header lines until empty line
-  while (i < lines.length && lines[i].trim() !== '') i++;
-  while (i < lines.length && lines[i].trim() === '') i++;
+  // Skip file header / metadata (WEBVTT, NOTE blocks, X-TIMESTAMP-MAP, etc.)
+  // until we reach the first cue timing line.
+  while (i < lines.length) {
+    const line = lines[i]?.trim() ?? '';
+    if (!line) {
+      i++;
+      continue;
+    }
+    // First timing line marks start of cues.
+    if (line.includes('-->')) break;
+    i++;
+  }
 
   while (i < lines.length) {
     // optional cue identifier

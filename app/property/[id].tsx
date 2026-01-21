@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,7 @@ import {
   FlatList,
   Linking,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,31 +31,151 @@ import {
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
+import {
+  fetchPropertyByReference,
+  fetchPropertyByReferenceResponse,
+  PropertyDetailsPayload,
+} from '@/utils/propertiesApi';
+import type { Property, TransactionType, PropertyType, LifestyleType } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
+import { useAuthStore } from '@/stores/authStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function PropertyDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [property, setProperty] = useState<any>(
-    mockProperties.find((p) => p.id === id) || null
-  );
+  // Route param is treated as the property reference.
+  // expo-router may provide params as string | string[] depending on how navigation was done.
+  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
+  const propertyReference = Array.isArray(id) ? id[0] : id;
+
+  const [property, setProperty] = useState<Property | null>(() => {
+    // Allow mocked items to still work in dev.
+    return (
+      mockProperties.find((p) => p.propertyReference === propertyReference) ||
+      mockProperties.find((p) => p.id === propertyReference) ||
+      null
+    );
+  });
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const propertiesToken = useAuthStore((st) => st.session?.tokens?.propertiesToken) ?? null;
+  const requestSeq = useRef(0);
+
+  const mapApiPayloadToProperty = (payload: PropertyDetailsPayload): Property => {
+    const parseNum = (value: unknown, fallback = 0) => {
+      const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
+      return Number.isFinite(n) ? n : fallback;
+    };
+
+    const listingType: TransactionType = payload.type === 'rent' ? 'RENT' : payload.type === 'stay' ? 'STAY' : 'BUY';
+
+    const pricing = payload.default_pricing ?? 'month';
+    const price =
+      pricing === 'week'
+        ? parseNum(payload.meta?.week_price)
+        : pricing === 'year'
+          ? parseNum(payload.meta?.year_price)
+          : parseNum(payload.meta?.month_price);
+
+    const emirateName = payload.emirate?.name ?? 'UAE';
+    const areaName = payload.area?.name ?? payload.district?.name ?? 'Unknown area';
+
+    // API may return media later; for now keep fallbacks so UI doesn't break.
+    const fallbackThumb =
+      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=80';
+
+    const amenities = (payload.amenities ?? [])
+      .map((a) => (typeof a?.name === 'string' ? a.name : ''))
+      .filter((v) => Boolean(v));
+
+    const mediaUrls = (payload.media ?? [])
+      .map((m: any) => m?.url ?? m?.file ?? m?.path)
+      .filter((u: any) => typeof u === 'string' && u.length > 0) as string[];
+
+    const videoUrl = mediaUrls.find((u) => u.endsWith('.mp4')) ?? '';
+    const images = mediaUrls.filter((u) => !u.endsWith('.mp4'));
+
+    return {
+      id: payload.reference_id,
+      propertyReference: payload.reference_id,
+      title: payload.title ?? 'Untitled property',
+      description: payload.description ?? '',
+      defaultPricing: payload.default_pricing ?? undefined,
+      price,
+      currency: 'AED',
+      listingType,
+      propertyType: 'apartment' as PropertyType,
+      bedrooms: parseNum(payload.meta?.bedrooms),
+      bathrooms: parseNum(payload.meta?.bathrooms),
+      sizeSqft: parseNum(payload.meta?.size),
+      location: {
+        city: emirateName,
+        area: areaName,
+        latitude: 0,
+        longitude: 0,
+      },
+      videoUrl,
+      thumbnailUrl: images[0] ?? fallbackThumb,
+      images,
+      amenities,
+      lifestyle: [] as LifestyleType[],
+      agent: {
+        id: String(payload.agent?.id ?? '0'),
+        name: `Agent ${payload.agent?.id ?? ''}`.trim(),
+        agency: payload.agency?.agency_name ?? 'Agency',
+        photo: fallbackThumb,
+        phone: '+971501234567',
+        email: 'agent@vzite.com',
+        isVerified: true,
+      },
+      agentName: `Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent',
+      agentPhoto: fallbackThumb,
+      likesCount: 0,
+      savesCount: 0,
+      sharesCount: 0,
+      commentsCount: 0,
+    };
+  };
 
   React.useEffect(() => {
+        if (!propertyReference) return;
+
     (async () => {
-      // Try to hydrate from cache when navigating from feed using property_reference.
+      setLoadError(null);
+
+      // 1) Hydrate quickly from cache (if any)
       try {
-        const cached = await AsyncStorage.getItem(`@property_cache_${id}`);
+        const cached = await AsyncStorage.getItem(`@property_cache_${propertyReference}`);
         if (cached) {
           setProperty(JSON.parse(cached));
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
+
+      // 2) Fetch the latest from API
+      try {
+        setLoading(true);
+                const response = await fetchPropertyByReferenceResponse(propertyReference, {
+          timeoutMs: 15000,
+          propertiesToken,
+        });
+
+        const payload = response.payload;
+        const mapped = mapApiPayloadToProperty(payload);
+                setProperty(mapped);
+        await AsyncStorage.setItem(`@property_cache_${propertyReference}`, JSON.stringify(mapped));
+      } catch (e: any) {
+                        setLoadError(e?.message ?? 'Failed to load property');
+      } finally {
+                setLoading(false);
+      }
     })();
-  }, [id]);
+  }, [propertyReference]);
 
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
   const likeVideoId = property?.id ? String(property.id) : null;
@@ -80,7 +201,12 @@ export default function PropertyDetailScreen() {
   if (!property) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Property not found</Text>
+        {loading ? (
+          <ActivityIndicator color={Colors.bronze} />
+        ) : (
+          <Text style={styles.errorText}>Property not found</Text>
+        )}
+        {loadError ? <Text style={[styles.errorText, { marginTop: 12 }]}>{loadError}</Text> : null}
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </Pressable>
@@ -88,7 +214,8 @@ export default function PropertyDetailScreen() {
     );
   }
 
-  const allMedia = [property.videoUrl, ...property.images];
+  const allMedia = [...(property.videoUrl ? [property.videoUrl] : []), ...(property.images ?? [])];
+  const hasMedia = allMedia.length > 0;
 
   const agentPhoneRaw = property.agent?.phone ?? '+971501234567';
   const agentEmail = property.agent?.email ?? `${property.agentName.toLowerCase().replace(' ', '.')}@saqan.com`;
@@ -142,8 +269,10 @@ export default function PropertyDetailScreen() {
     setCurrentImageIndex(index);
   };
 
-  const renderMediaItem = ({ item, index }: { item: string; index: number }) => {
-    if (index === 0) {
+  const renderMediaItem = ({ item }: { item: string }) => {
+    const isVideo = item.endsWith('.mp4') || item.includes('video');
+
+    if (isVideo) {
       return (
         <View style={styles.mediaItem}>
           <Video
@@ -169,28 +298,47 @@ export default function PropertyDetailScreen() {
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.mediaContainer}>
-          <FlatList
-            ref={flatListRef}
-            data={allMedia}
-            renderItem={renderMediaItem}
-            keyExtractor={(item, index) => `${index}`}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={(e) => {
-              const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-              setCurrentImageIndex(index);
-            }}
-            scrollEventThrottle={16}
-            getItemLayout={(data, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
-              index,
-            })}
-          />
+          {loading ? (
+            <View style={[styles.mediaItem, { alignItems: 'center', justifyContent: 'center' }]}>
+              <ActivityIndicator color={Colors.textLight} />
+            </View>
+          ) : !hasMedia ? (
+            <View
+              style={[
+                styles.mediaItem,
+                {
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: Colors.overlayLight,
+                },
+              ]}
+            >
+              <Text style={{ color: Colors.textLight }}>No media available</Text>
+            </View>
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={allMedia}
+              renderItem={renderMediaItem}
+              keyExtractor={(item, index) => `${index}`}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={(e) => {
+                const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                setCurrentImageIndex(index);
+              }}
+              scrollEventThrottle={16}
+              getItemLayout={(data, index) => ({
+                length: SCREEN_WIDTH,
+                offset: SCREEN_WIDTH * index,
+                index,
+              })}
+            />
+          )}
 
           <View style={styles.mediaControls}>
-            {currentImageIndex > 0 && (
+            {hasMedia && currentImageIndex > 0 && (
               <Pressable
                 style={[styles.mediaArrow, styles.mediaArrowLeft]}
                 onPress={() => scrollToImage(currentImageIndex - 1)}
@@ -198,7 +346,7 @@ export default function PropertyDetailScreen() {
                 <ChevronLeft size={scaleWidth(24)} color={Colors.textLight} />
               </Pressable>
             )}
-            {currentImageIndex < allMedia.length - 1 && (
+            {hasMedia && currentImageIndex < allMedia.length - 1 && (
               <Pressable
                 style={[styles.mediaArrow, styles.mediaArrowRight]}
                 onPress={() => scrollToImage(currentImageIndex + 1)}
@@ -207,18 +355,19 @@ export default function PropertyDetailScreen() {
               </Pressable>
             )}
           </View>
-
-          <View style={styles.mediaIndicators}>
-            {allMedia.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.indicator,
-                  index === currentImageIndex && styles.indicatorActive,
-                ]}
-              />
-            ))}
-          </View>
+          {hasMedia ? (
+            <View style={styles.mediaIndicators}>
+              {allMedia.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.indicator,
+                    index === currentImageIndex && styles.indicatorActive,
+                  ]}
+                />
+              ))}
+            </View>
+          ) : null}
 
           <Pressable style={styles.headerBackButton} onPress={() => router.back()}>
             <View style={styles.headerButtonCircle}>
@@ -253,7 +402,7 @@ export default function PropertyDetailScreen() {
           <View style={styles.priceCard}>
             <Text style={styles.price}>
               {property.currency} {property.price.toLocaleString()}
-              {property.listingType === 'RENT' ? '/year' : ''}
+              {property.defaultPricing ? `/${property.defaultPricing}` : property.listingType === 'RENT' ? '/year' : ''}
             </Text>
             <View style={styles.listingTypeBadge}>
               <Text style={styles.listingTypeText}>{property.listingType}</Text>
@@ -296,7 +445,7 @@ export default function PropertyDetailScreen() {
             </View>
           </View>
 
-          <View style={styles.section}>
+          {/* <View style={styles.section}>
             <Text style={styles.sectionTitle}>Lifestyle</Text>
             <View style={styles.lifestyleRow}>
               {property.lifestyle.map((lifestyle: string, index: number) => (
@@ -305,7 +454,7 @@ export default function PropertyDetailScreen() {
                 </View>
               ))}
             </View>
-          </View>
+          </View> */}
 
           <View style={styles.agentCard}>
             <Text style={styles.sectionTitle}>Agent Information</Text>

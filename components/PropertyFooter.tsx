@@ -24,7 +24,8 @@ interface PropertyFooterProps {
   onOpenComments: (id: string) => void;
   onShare?: (id: string) => void;
   onSeek: (timestamp: number) => void;
-  onSubtitleSelect?: (subtitleUrl: string) => void;
+  onSubtitleSelect?: (subtitleUrl: string, languageCode: string) => void;
+  selectedSubtitleCode?: string;
   /** Navigate to property details (only triggered from the footer tap area). */
   onNavigateToProperty?: () => void;
 }
@@ -56,6 +57,7 @@ export default function PropertyFooter({
   onShare,
   onSeek,
   onSubtitleSelect,
+  selectedSubtitleCode,
   onNavigateToProperty,
 }: PropertyFooterProps) {
   const router = useRouter();
@@ -99,10 +101,11 @@ export default function PropertyFooter({
           <TranslationOverlay
             agentName={item.agentName}
             languages={translations}
+            selectedCode={selectedSubtitleCode}
             onLanguageSelect={(lang) => {
               setSelectedLanguage(lang);
               if (lang.subtitleUrl) {
-                onSubtitleSelect?.(lang.subtitleUrl);
+                onSubtitleSelect?.(lang.subtitleUrl, lang.code);
               }
             }}
           />

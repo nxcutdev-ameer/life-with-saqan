@@ -1,5 +1,6 @@
 import { scaleFont, scaleHeight } from '@/utils/responsive';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
+import { useUiLockStore } from '@/stores/uiLockStore';
 import { Home, Play, Bookmark, User, Plus } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 // fill="#F3EDDF"
@@ -10,9 +11,16 @@ const IconWithShadow = ({ Icon, color, size }: { Icon: any; color: string; size:
 );
 
 export default function TabsLayout() {
+  const pathname = usePathname();
+  const uploadLocked = useUiLockStore((s) => s.uploadLocked);
+  const isUploadActive = pathname?.includes('/(tabs)/upload');
   return (
     <Tabs
       screenOptions={{
+        // Block tab switching while the upload flow is locked (e.g. selecting highlights).
+        // This prevents accidental swipe/tab navigation away from upload.
+        // Note: bottom tabs normally don't swipe, but this covers tab taps and any gesture-based tab changes.
+
         headerShown: false,
         tabBarActiveTintColor: '#FFFFFF',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
@@ -34,7 +42,14 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="feed"
-        options={{
+        listeners={{
+            tabPress: (e) => {
+              if (uploadLocked && isUploadActive) {
+                e.preventDefault();
+              }
+            },
+          }}
+          options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Home} color={color} size={20} />,
         }}
@@ -47,28 +62,56 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="reels"
-        options={{
+        listeners={{
+            tabPress: (e) => {
+              if (uploadLocked && isUploadActive) {
+                e.preventDefault();
+              }
+            },
+          }}
+          options={{
           title: 'Reels',
           tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Play} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="upload"
-        options={{
+        listeners={{
+            tabPress: (e) => {
+              if (uploadLocked && isUploadActive) {
+                e.preventDefault();
+              }
+            },
+          }}
+          options={{
           title: 'Upload',
           tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Plus} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="saved"
-        options={{
+        listeners={{
+            tabPress: (e) => {
+              if (uploadLocked && isUploadActive) {
+                e.preventDefault();
+              }
+            },
+          }}
+          options={{
           title: 'Saved',
           tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Bookmark} color={color} size={20} />,
         }}
       />
       <Tabs.Screen
         name="profile"
-        options={{
+        listeners={{
+            tabPress: (e) => {
+              if (uploadLocked && isUploadActive) {
+                e.preventDefault();
+              }
+            },
+          }}
+          options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <IconWithShadow Icon={User} color={color} size={20} />,
         }}

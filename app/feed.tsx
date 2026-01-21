@@ -82,7 +82,7 @@ export default function FeedScreen() {
       <View style={styles.propertyContainer}>
         <Pressable 
           style={styles.videoTouchArea}
-          onPress={() => router.push(`/property/${item.id}`)}
+          onPress={() => router.push(`/property/${item.propertyReference ?? item.id}`)}
         >
           <Video
             source={{ uri: item.videoUrl }}
