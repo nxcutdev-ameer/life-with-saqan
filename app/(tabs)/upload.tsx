@@ -40,7 +40,7 @@ import {
   Mountain,
   Check,
 } from 'lucide-react-native';
-import { uploadVideoWithProperty } from '@/utils/videosApi';
+import { uploadGenericVideo, uploadVideoWithProperty } from '@/utils/videosApi';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { PropertyType, TransactionType } from '@/types';
@@ -166,8 +166,6 @@ export default function UploadScreen() {
   const [draftPropertyReferenceId, setDraftPropertyReferenceId] = useState<string | null>(null);
   const createDraftInflightRef = React.useRef<Promise<string | null> | null>(null);
 
-  const [isCreatingDraftProperty, setIsCreatingDraftProperty] = useState(false);
-
   const ensureDraftPropertyReferenceId = async (): Promise<string | null> => {
     const propertiesToken = sessionTokens?.propertiesToken;
     if (!propertiesToken) return null;
@@ -183,7 +181,6 @@ export default function UploadScreen() {
 
     createDraftInflightRef.current = (async () => {
       try {
-        setIsCreatingDraftProperty(true);
         const res = await createDraftProperty({
           propertiesToken,
           type: 'sale',
@@ -200,7 +197,6 @@ export default function UploadScreen() {
       } catch {
         return null;
       } finally {
-        setIsCreatingDraftProperty(false);
         createDraftInflightRef.current = null;
       }
     })();
@@ -219,7 +215,7 @@ export default function UploadScreen() {
     title: '',
     price: '',
     // Determines whether to show Listing Type (Ready property) or hide it (Off plan)
-    developmentStatus: 'READY' as 'READY' | 'OFF_PLAN',
+    developmentStatus: 'OFF_PLAN' as 'READY' | 'OFF_PLAN' | 'GENERIC',
     listingType: 'RENT' as TransactionType,
     propertyType: 'apartment' as PropertyType,
     bedrooms: '',
@@ -241,7 +237,6 @@ export default function UploadScreen() {
     building: '',
     area: '',
 
-    // Segment 3 fields
     defaultPricing: 'month' as 'day' | 'week' | 'month' | 'year',
     dayPrice: '',
     weekPrice: '',
@@ -288,7 +283,7 @@ export default function UploadScreen() {
     isLoading: isAmenitiesLoading,
     isError: isAmenitiesError,
     refetch: refetchAmenities,
-  } = useQuery({
+  } =  useQuery({
     queryKey: ['properties', 'amenities'],
     queryFn: () => fetchAmenities({ propertiesToken: propertiesToken as string }),
     enabled: amenitiesModalVisible && typeof propertiesToken === 'string',
@@ -406,7 +401,7 @@ export default function UploadScreen() {
       reference_id: referenceId,
       state: 'draft',
       type: 'sale',
-      default_pricing: propertyDetails.defaultPricing,
+      default_pricing: propertyDetails.listingType === 'BUY' ? null : propertyDetails.defaultPricing,
       title: propertyDetails.title || null,
       description: propertyDetails.description || null,
 
@@ -427,10 +422,30 @@ export default function UploadScreen() {
       built_year: propertyDetails.builtYear ? Number(propertyDetails.builtYear) : null,
       floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
 
-      day_price: propertyDetails.dayPrice ? Number(propertyDetails.dayPrice) : null,
-      week_price: propertyDetails.weekPrice ? Number(propertyDetails.weekPrice) : null,
-      month_price: propertyDetails.monthPrice ? Number(propertyDetails.monthPrice) : null,
-      year_price: propertyDetails.yearPrice ? Number(propertyDetails.yearPrice) : null,
+      day_price:
+        propertyDetails.listingType === 'BUY'
+          ? null
+          : propertyDetails.dayPrice
+            ? Number(propertyDetails.dayPrice)
+            : null,
+      week_price:
+        propertyDetails.listingType === 'BUY'
+          ? null
+          : propertyDetails.weekPrice
+            ? Number(propertyDetails.weekPrice)
+            : null,
+      month_price:
+        propertyDetails.listingType === 'BUY'
+          ? null
+          : propertyDetails.monthPrice
+            ? Number(propertyDetails.monthPrice)
+            : null,
+      year_price:
+        propertyDetails.listingType === 'BUY'
+          ? null
+          : propertyDetails.yearPrice
+            ? Number(propertyDetails.yearPrice)
+            : null,
     };
 
     // Debounce save.
@@ -597,7 +612,6 @@ export default function UploadScreen() {
     setIsSavingProperty(false);
     setLastSavedAt(null);
     setSaveError(null);
-    setIsCreatingDraftProperty(false);
     setDraftPropertyReferenceId(null);
 
     // Highlights
@@ -685,6 +699,83 @@ export default function UploadScreen() {
   const handlePublish = async () => {
     if (isPublishing) return;
     if (!checkSubscription()) return;
+
+    // GENERIC: upload video + timestamps without linking to any property.
+    if (propertyDetails.developmentStatus === 'GENERIC') {
+      if (!selectedVideoUri) {
+        Alert.alert('Missing video', 'Please record or select a video first.');
+        return;
+      }
+
+      // If user never tapped “Set <room>”, fall back to whatever is stored in highlightsByRoom.
+      const timestampsFromMap = Object.entries(highlightsByRoom)
+        .filter(([, value]) => value != null)
+        .map(([room, value]) => ({
+          room,
+          start_time: Math.floor(value as number),
+          end_time: 0,
+        }));
+
+      const roomTimestamps = highlightTimestamps.length ? highlightTimestamps : timestampsFromMap;
+
+      if (!roomTimestamps.length) {
+        Alert.alert('Missing highlights', 'Please select at least one highlight timestamp.');
+        return;
+      }
+
+      setIsPublishing(true);
+
+      try {
+        const saqanToken = sessionTokens?.saqancomToken;
+        if (!saqanToken) {
+          Alert.alert('Authentication required', 'Missing Saqan token. Please login again.');
+          return;
+        }
+
+        const fileName = selectedVideoUri.split('/').pop() || 'video.mp4';
+        const res = await uploadGenericVideo({
+          saqancomToken: saqanToken,
+          videoFile: { uri: selectedVideoUri, name: fileName, type: 'video/mp4' },
+          roomTimestamps,
+          uploadToCloudflare: true,
+          generateSubtitles: true,
+          agentId: 1,
+        });
+
+        const isSuccess =
+          res?.success === true ||
+          (typeof res?.message === 'string' && res.message.toLowerCase().includes('uploaded successfully')) ||
+          Boolean((res as any)?.data?.video_id);
+
+        if (isSuccess) {
+          Alert.alert('Success', res?.message || 'Uploaded successfully.', [
+            { text: 'OK', onPress: resetUploadFlow },
+          ]);
+          return;
+        }
+
+        Alert.alert('Upload failed', res?.message || 'Something went wrong.');
+      } catch (err: any) {
+        const body = err?.body as any;
+        const message = body?.message || err?.message || 'Upload failed. Please try again.';
+
+        const errors = body?.errors;
+        if (errors && typeof errors === 'object') {
+          const lines: string[] = [];
+          for (const [field, msgs] of Object.entries(errors)) {
+            if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
+          }
+          Alert.alert(message, lines.join('\n'));
+          return;
+        }
+
+        Alert.alert('Upload failed', message);
+      } finally {
+        setIsPublishing(false);
+      }
+
+      return;
+    }
 
     // OFF_PLAN: upload video + timestamps and link to selected project.
     if (propertyDetails.developmentStatus === 'OFF_PLAN') {
@@ -1663,34 +1754,7 @@ export default function UploadScreen() {
       )}
 
       <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
-        {propertyDetails.developmentStatus !== 'OFF_PLAN' ? (
-          <>
             <View style={styles.formSection}>
-              <Text style={styles.formLabel}>Title *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Luxury 2BR Marina View Apartment"
-                placeholderTextColor={Colors.textSecondary}
-                value={propertyDetails.title}
-                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, title: text })}
-              />
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formLabel}>Price (AED) *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 2300000"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={propertyDetails.price}
-                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
-              />
-            </View>
-          </>
-        ) : null}
-
-        <View style={styles.formSection}>
           <Text style={styles.formLabel}>Property Status *</Text>
           <View style={styles.radioRow}>
             <Pressable
@@ -1706,7 +1770,6 @@ export default function UploadScreen() {
                   offPlanProjectTitle: '',
                 });
                 setDraftPropertyReferenceId(null);
-                setIsCreatingDraftProperty(false);
               }}
             >
               <View
@@ -1722,8 +1785,9 @@ export default function UploadScreen() {
 
             <Pressable
               style={styles.radioOption}
-              onPress={async () => {
+              onPress={() => {
                 // Clear READY-only fields when switching to OFF_PLAN.
+                // Note: For OFF_PLAN we do NOT create a draft property. We will use the selected project's reference_id (picked from the modal) as the property reference.
                 setOffPlanPickerOpen(false);
                 setOffPlanSearch('');
                 setPropertyDetails({
@@ -1741,32 +1805,8 @@ export default function UploadScreen() {
                   area: '',
                 });
 
-                const propertiesToken = sessionTokens?.propertiesToken;
-                if (!propertiesToken) {
-                  Alert.alert('Authentication required', 'Missing properties token. Please login again.');
-                  return;
-                }
-
-                try {
-                  setIsCreatingDraftProperty(true);
-                  const res = await createDraftProperty({
-                    propertiesToken,
-                    type: 'offplan',
-                    state: 'draft',
-                  });
-
-                  const referenceId = res?.payload?.reference_id;
-                  if (!res?.success || !referenceId) {
-                    Alert.alert('Failed to create draft property', res?.message || 'Please try again.');
-                    return;
-                  }
-
-                  setDraftPropertyReferenceId(referenceId);
-                } catch (err: any) {
-                  Alert.alert('Failed to create draft property', err?.message || 'Please try again.');
-                } finally {
-                  setIsCreatingDraftProperty(false);
-                }
+                // Clear any existing READY draft reference and wait for user to pick a project.
+                setDraftPropertyReferenceId(null);
               }}
             >
               <View
@@ -1779,9 +1819,91 @@ export default function UploadScreen() {
               </View>
               <Text style={styles.radioLabel}>Off plan</Text>
             </Pressable>
+
+            <Pressable
+              style={styles.radioOption}
+              onPress={() => {
+                // GENERIC: hide all property fields and clear property state.
+                setOffPlanPickerOpen(false);
+                setOffPlanSearch('');
+                setLocationPicker(null);
+                setEmirateSearch('');
+                setDistrictSearch('');
+                setLocationSearch('');
+
+                setAmenitiesModalVisible(false);
+                setAmenitiesSearch('');
+                setSelectedAmenityIds([]);
+                setSelectedImages([]);
+
+                setDraftPropertyReferenceId(null);
+
+                setPropertyDetails((prev) => ({
+                  ...prev,
+                  developmentStatus: 'GENERIC',
+                  // Clear everything that is related to a property
+                  title: '',
+                  price: '',
+                  listingType: 'BUY',
+                  propertyType: 'apartment',
+                  bedrooms: '',
+                  bathrooms: '',
+                  sizeSqft: '',
+                  isFurnished: false,
+                  hasParking: false,
+
+                  offPlanProjectId: null,
+                  offPlanProjectReferenceId: '',
+                  offPlanProjectTitle: '',
+
+                  emirateId: null,
+                  emirateName: '',
+                  districtId: null,
+                  districtName: '',
+                  building: '',
+                  area: '',
+
+                  defaultPricing: 'month',
+                  dayPrice: '',
+                  weekPrice: '',
+                  monthPrice: '',
+                  yearPrice: '',
+                  builtYear: '',
+                  floor: '',
+
+                  description: '',
+                }));
+              }}
+            >
+              <View
+                style={[
+                  styles.radioOuter,
+                  propertyDetails.developmentStatus === 'GENERIC' && styles.radioOuterSelected,
+                ]}
+              >
+                {propertyDetails.developmentStatus === 'GENERIC' && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>Upload Generic Video</Text>
+            </Pressable>
           </View>
         </View>
 
+        {propertyDetails.developmentStatus === 'READY' ? (
+          <>
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Title *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Luxury 2BR Marina View Apartment"
+                placeholderTextColor={Colors.textSecondary}
+                value={propertyDetails.title}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, title: text })}
+              />
+            </View>
+          </>
+        ) : null}
+
+    
         {propertyDetails.developmentStatus === 'READY' && (
           <View style={styles.formSection}>
             <Text style={styles.formLabel}>Listing Type *</Text>
@@ -1793,7 +1915,28 @@ export default function UploadScreen() {
                     styles.chip,
                     propertyDetails.listingType === type && styles.chipSelected,
                   ]}
-                  onPress={() => setPropertyDetails({ ...propertyDetails, listingType: type })}
+                  onPress={() => {
+                    setPropertyDetails((prev) => {
+                      // Clear the main price field whenever switching listing type.
+                      // (Requested: reset main price when switching types)
+                      if (type === 'BUY') {
+                        // BUY: also hide Default Pricing + Prices and clear their values.
+                        return {
+                          ...prev,
+                          listingType: type,
+                          price: '',
+                          defaultPricing: 'month',
+                          dayPrice: '',
+                          weekPrice: '',
+                          monthPrice: '',
+                          yearPrice: '',
+                        };
+                      }
+
+                      // RENT/STAY: keep existing pricing fields as-is, but clear main price.
+                      return { ...prev, listingType: type, price: '' };
+                    });
+                  }}
                 >
                   <Text
                     style={[
@@ -1808,6 +1951,119 @@ export default function UploadScreen() {
             </View>
           </View>
         )}
+
+          {propertyDetails.developmentStatus === 'READY' && (
+            <>
+              <View style={styles.formSection}>
+                <Text style={styles.formLabel}>Price (AED)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., 2300000"
+                  placeholderTextColor={Colors.textSecondary}
+                  keyboardType="numeric"
+                  value={propertyDetails.price}
+                  onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
+                />
+              </View>
+
+              {propertyDetails.listingType !== 'BUY' && (
+                <>
+                  <View style={styles.formSection}>
+                    <Text style={styles.formLabel}>Default Pricing</Text>
+                    <View style={styles.buttonGroup}>
+                      {(['day', 'week', 'month', 'year'] as const).map((p) => (
+                        <Pressable
+                          key={p}
+                          style={[
+                            styles.controlButton,
+                            propertyDetails.defaultPricing === p && styles.controlButtonSelected,
+                          ]}
+                          onPress={() => {
+                            setPropertyDetails({ ...propertyDetails, defaultPricing: p });
+                            showToast('Default pricing updated');
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.controlButtonText,
+                              propertyDetails.defaultPricing === p && styles.controlButtonTextSelected,
+                            ]}
+                          >
+                            {p.toUpperCase()}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.formSection}>
+                    <Text style={styles.formLabel}>Prices</Text>
+                    <View style={styles.formRow}>
+                      <View style={styles.formColumn}>
+                        <Text style={styles.formLabelSmall}>Day</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="0"
+                          placeholderTextColor={Colors.textSecondary}
+                          keyboardType="numeric"
+                          value={propertyDetails.dayPrice}
+                          onChangeText={(text) => {
+                            setPropertyDetails({ ...propertyDetails, dayPrice: text });
+                            showToast('Day price updated');
+                          }}
+                        />
+                      </View>
+                      <View style={styles.formColumn}>
+                        <Text style={styles.formLabelSmall}>Week</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="0"
+                          placeholderTextColor={Colors.textSecondary}
+                          keyboardType="numeric"
+                          value={propertyDetails.weekPrice}
+                          onChangeText={(text) => {
+                            setPropertyDetails({ ...propertyDetails, weekPrice: text });
+                            showToast('Week price updated');
+                          }}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.formRow}>
+                      <View style={styles.formColumn}>
+                        <Text style={styles.formLabelSmall}>Month</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="0"
+                          placeholderTextColor={Colors.textSecondary}
+                          keyboardType="numeric"
+                          value={propertyDetails.monthPrice}
+                          onChangeText={(text) => {
+                            setPropertyDetails({ ...propertyDetails, monthPrice: text });
+                            showToast('Month price updated');
+                          }}
+                        />
+                      </View>
+                      <View style={styles.formColumn}>
+                        <Text style={styles.formLabelSmall}>Year</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="0"
+                          placeholderTextColor={Colors.textSecondary}
+                          keyboardType="numeric"
+                          value={propertyDetails.yearPrice}
+                          onChangeText={(text) => {
+                            setPropertyDetails({ ...propertyDetails, yearPrice: text });
+                            showToast('Year price updated');
+                          }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )}
+            </>
+          )}
+
 
         {propertyDetails.developmentStatus === 'OFF_PLAN' && (
           <View style={styles.formSection}>
@@ -2113,98 +2369,6 @@ export default function UploadScreen() {
               ))}
             </ScrollView>
           )}
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Default Pricing</Text>
-          <View style={styles.buttonGroup}>
-            {(['day', 'week', 'month', 'year'] as const).map((p) => (
-              <Pressable
-                key={p}
-                style={[
-                  styles.controlButton,
-                  propertyDetails.defaultPricing === p && styles.controlButtonSelected,
-                ]}
-                onPress={() => {
-                  setPropertyDetails({ ...propertyDetails, defaultPricing: p });
-                  showToast('Default pricing updated');
-                }}
-              >
-                <Text
-                  style={[
-                    styles.controlButtonText,
-                    propertyDetails.defaultPricing === p && styles.controlButtonTextSelected,
-                  ]}
-                >
-                  {p.toUpperCase()}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Prices</Text>
-          <View style={styles.formRow}>
-            <View style={styles.formColumn}>
-              <Text style={styles.formLabelSmall}>Day</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={propertyDetails.dayPrice}
-                onChangeText={(text) => {
-                  setPropertyDetails({ ...propertyDetails, dayPrice: text });
-                  showToast('Day price updated');
-                }}
-              />
-            </View>
-            <View style={styles.formColumn}>
-              <Text style={styles.formLabelSmall}>Week</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={propertyDetails.weekPrice}
-                onChangeText={(text) => {
-                  setPropertyDetails({ ...propertyDetails, weekPrice: text });
-                  showToast('Week price updated');
-                }}
-              />
-            </View>
-          </View>
-          <View style={styles.formRow}>
-            <View style={styles.formColumn}>
-              <Text style={styles.formLabelSmall}>Month</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={propertyDetails.monthPrice}
-                onChangeText={(text) => {
-                  setPropertyDetails({ ...propertyDetails, monthPrice: text });
-                  showToast('Month price updated');
-                }}
-              />
-            </View>
-            <View style={styles.formColumn}>
-              <Text style={styles.formLabelSmall}>Year</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="numeric"
-                value={propertyDetails.yearPrice}
-                onChangeText={(text) => {
-                  setPropertyDetails({ ...propertyDetails, yearPrice: text });
-                  showToast('Year price updated');
-                }}
-              />
-            </View>
-          </View>
         </View>
 
         <View style={styles.formRow}>
@@ -2611,7 +2775,7 @@ export default function UploadScreen() {
         </Modal>
 
         <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Description</Text>
+          <Text style={styles.formLabel}>Description *</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Describe your property..."
@@ -2697,12 +2861,17 @@ export default function UploadScreen() {
                       <Pressable
                         style={styles.offPlanItem}
                         onPress={() => {
+                          const referenceId = item.reference_id ?? '';
                           setPropertyDetails({
                             ...propertyDetails,
                             offPlanProjectId: item.id,
-                            offPlanProjectReferenceId: item.reference_id ?? '',
+                            offPlanProjectReferenceId: referenceId,
                             offPlanProjectTitle: item.title,
                           });
+
+                          // OFF_PLAN: do not create a draft property; use the selected project's reference_id.
+                          setDraftPropertyReferenceId(referenceId || null);
+
                           setOffPlanSearch('');
                           setOffPlanPickerOpen(false);
                         }}
