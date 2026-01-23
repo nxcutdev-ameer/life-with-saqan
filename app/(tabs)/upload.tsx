@@ -14,6 +14,8 @@ import {
   useWindowDimensions,
   Image,
   ActivityIndicator,
+  Animated,
+  Easing,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -80,9 +82,71 @@ export default function UploadScreen() {
   const pendingSeekSecRef = React.useRef(0);
   const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
 
+  type DetailsFlow =
+    | 'status'
+    | 'ready_step_1'
+    | 'ready_step_2'
+    | 'ready_step_3'
+    | 'ready_step_4'
+    | 'offplan_project'
+    | 'generic_publish';
+  const [detailsFlow, setDetailsFlow] = useState<DetailsFlow>('status');
+  const [isAdvancingFlow, setIsAdvancingFlow] = useState(false);
+
+  const flowAnimOpacity = React.useRef(new Animated.Value(1)).current;
+  const flowAnimTranslateX = React.useRef(new Animated.Value(0)).current;
+
+  const animateToFlow = React.useCallback(
+    async (next: DetailsFlow, direction: 'forward' | 'back' = 'forward') => {
+      const distance = 28;
+
+      // Fade out + slight slide opposite direction
+      await new Promise<void>((resolve) => {
+        Animated.parallel([
+          Animated.timing(flowAnimOpacity, {
+            toValue: 0,
+            duration: 140,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(flowAnimTranslateX, {
+            // fade + slide to the right
+            toValue: direction === 'forward' ? distance : -distance,
+            duration: 140,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(() => resolve());
+      });
+
+      setDetailsFlow(next);
+
+      // Prepare next view offscreen to the right (forward) or left (back)
+      flowAnimTranslateX.setValue(direction === 'forward' ? distance : -distance);
+
+      // Fade in + slide into place
+      await new Promise<void>((resolve) => {
+        Animated.parallel([
+          Animated.timing(flowAnimOpacity, {
+            toValue: 1,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(flowAnimTranslateX, {
+            toValue: 0,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(() => resolve());
+      });
+    },
+    [flowAnimOpacity, flowAnimTranslateX]
+  );
+
   useEffect(() => {
-    // Upload is a multi-step flow; avoid accidental navigation back to previous screens (e.g. Lifestyle)
-    // while user is in the Upload tab.
+    // avoid accidental navigation back to previous screens (e.g. Lifestyle)
     navigation.setOptions({ gestureEnabled: false } as any);
 
     // Lock tab switching only during highlight picking.
@@ -96,7 +160,7 @@ export default function UploadScreen() {
   const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   
-  // Segment 3: lightweight toast UI (will be used for save/update feedback)
+  // lightweight toast UI (will be used for save/update feedback)
   const [toast, setToast] = useState<{ visible: boolean; message: string }>(
     { visible: false, message: '' }
   );
@@ -160,6 +224,13 @@ export default function UploadScreen() {
   const [districtSearch, setDistrictSearch] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
 
+  useEffect(() => {
+    // Ensure location picker can only be used on ready_step_3.
+    if (detailsFlow !== 'ready_step_3' && locationPicker !== null) {
+      setLocationPicker(null);
+    }
+  }, [detailsFlow, locationPicker]);
+
   const [offPlanPickerOpen, setOffPlanPickerOpen] = useState(false);
   const [offPlanSearch, setOffPlanSearch] = useState('');
 
@@ -209,7 +280,16 @@ export default function UploadScreen() {
   const [amenitiesSearch, setAmenitiesSearch] = useState('');
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<number[]>([]);
 
-  const [selectedImages, setSelectedImages] = useState<{ uri: string }[]>([]);
+  type SelectedImage = {
+    uri: string;
+    uploadId?: number | null; // returned from POST /media
+    attachId?: number | null; // returned from POST /properties/{ref}/media
+    uploading?: boolean;
+  };
+  const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
+
+  const imageUploadQueueRef = React.useRef<string[]>([]);
+  const isProcessingImageQueueRef = React.useRef(false);
 
   const [propertyDetails, setPropertyDetails] = useState({
     title: '',
@@ -247,6 +327,19 @@ export default function UploadScreen() {
 
     description: '',
   });
+
+  const developmentStatusLabel = React.useMemo(() => {
+    switch (propertyDetails.developmentStatus) {
+      case 'READY':
+        return 'Ready property';
+      case 'OFF_PLAN':
+        return 'Off plan';
+      case 'GENERIC':
+        return 'Generic video';
+      default:
+        return '—';
+    }
+  }, [propertyDetails.developmentStatus]);
 
   const {
     data: emirates,
@@ -368,18 +461,9 @@ export default function UploadScreen() {
   const offPlanOptions: OffPlanProjectListItem[] =
     offPlanPages?.pages.flatMap((p) => p.data) ?? [];
 
-  useEffect(() => {
-    if (step !== 'details') return;
-    if (!offPlanPages) return;
-    // Debug: log off-plan API response when entering Property Details step
-  }, [step, offPlanPages]);
 
-  // Create a draft property as soon as READY details step mounts.
-  useEffect(() => {
-    if (step !== 'details') return;
-    if (propertyDetails.developmentStatus !== 'READY') return;
-    void ensureDraftPropertyReferenceId();
-  }, [step, propertyDetails.developmentStatus, sessionTokens?.propertiesToken]);
+
+  // Draft creation for READY is deferred until user advances from Property Status.
 
 
   // Debounced update to properties.vzite.com whenever READY fields change.
@@ -401,7 +485,22 @@ export default function UploadScreen() {
       reference_id: referenceId,
       state: 'draft',
       type: 'sale',
-      default_pricing: propertyDetails.listingType === 'BUY' ? null : propertyDetails.defaultPricing,
+      // Pricing rules:
+      //  BUY  => sale_price = Price(AED), hide default pricing/prices
+      //  RENT => default_pricing = 'year', year_price = Price(AED), hide default pricing/prices, sale_price = null
+      //  STAY => default_pricing = selected value, prices from day/week/month/year fields, sale_price = null
+      sale_price:
+        propertyDetails.listingType === 'BUY'
+          ? propertyDetails.price
+            ? Number(propertyDetails.price)
+            : null
+          : null,
+      default_pricing:
+        propertyDetails.listingType === 'STAY'
+          ? propertyDetails.defaultPricing
+          : propertyDetails.listingType === 'RENT'
+            ? 'year'
+            : null,
       title: propertyDetails.title || null,
       description: propertyDetails.description || null,
 
@@ -423,27 +522,23 @@ export default function UploadScreen() {
       floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
 
       day_price:
-        propertyDetails.listingType === 'BUY'
-          ? null
-          : propertyDetails.dayPrice
-            ? Number(propertyDetails.dayPrice)
-            : null,
+        propertyDetails.listingType === 'STAY' && propertyDetails.dayPrice
+          ? Number(propertyDetails.dayPrice)
+          : null,
       week_price:
-        propertyDetails.listingType === 'BUY'
-          ? null
-          : propertyDetails.weekPrice
-            ? Number(propertyDetails.weekPrice)
-            : null,
+        propertyDetails.listingType === 'STAY' && propertyDetails.weekPrice
+          ? Number(propertyDetails.weekPrice)
+          : null,
       month_price:
-        propertyDetails.listingType === 'BUY'
-          ? null
-          : propertyDetails.monthPrice
-            ? Number(propertyDetails.monthPrice)
-            : null,
+        propertyDetails.listingType === 'STAY' && propertyDetails.monthPrice
+          ? Number(propertyDetails.monthPrice)
+          : null,
       year_price:
-        propertyDetails.listingType === 'BUY'
-          ? null
-          : propertyDetails.yearPrice
+        propertyDetails.listingType === 'RENT'
+          ? propertyDetails.price
+            ? Number(propertyDetails.price)
+            : null
+          : propertyDetails.listingType === 'STAY' && propertyDetails.yearPrice
             ? Number(propertyDetails.yearPrice)
             : null,
     };
@@ -597,6 +692,7 @@ export default function UploadScreen() {
   const resetUploadFlow = React.useCallback(() => {
     // Core flow
     setStep('select');
+    setDetailsFlow('status');
     setSelectedVideoUri(null);
 
     // Editor/UI
@@ -968,6 +1064,168 @@ export default function UploadScreen() {
     setStep('details');
   };
 
+  const uploadMediaAndAttachToProperty = async (params: {
+    uri: string;
+    referenceId: string;
+    propertiesToken: string;
+  }): Promise<{ uploadId: number; attachId: number }> => {
+    // 1) Upload media
+    const form = new FormData();
+    const fileName = params.uri.split('/').pop() || 'image.jpg';
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+    form.append('file', {
+      uri: params.uri,
+      name: fileName,
+      type: mime,
+    } as any);
+    form.append('featured', '1');
+
+    const t0 = Date.now();
+    console.log('[media] upload start', { uri: params.uri, referenceId: params.referenceId });
+
+    const uploadRes = await fetch('https://properties.vzite.com/api/v1/media', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${params.propertiesToken}`,
+      },
+      body: form,
+    });
+
+    const uploadText = await uploadRes.text();
+    console.log(
+      '[media] upload response',
+      uploadRes.status,
+      `t=${Date.now() - t0}ms`,
+      uploadText?.slice(0, 500)
+    );
+
+    let uploadJson: any = null;
+    try {
+      uploadJson = uploadText ? JSON.parse(uploadText) : null;
+    } catch {
+      uploadJson = null;
+    }
+
+    if (!uploadRes.ok || !uploadJson?.success || !uploadJson?.payload?.id) {
+      const message = uploadJson?.message || `Failed to upload image (${uploadRes.status})`;
+      throw new Error(message);
+    }
+
+    const uploadId: number = uploadJson.payload.id;
+
+    const t1 = Date.now();
+
+    // 2) Attach media to property
+    // POST /properties/{property_reference}/media
+    // Body: { type: "other", upload_id: "{id}" }
+    const attachUrl = `https://properties.vzite.com/api/v1/properties/${encodeURIComponent(
+      params.referenceId
+    )}/media`;
+
+    console.log('[media] attach start', { attachUrl, upload_id: uploadId });
+
+    const attachRes = await fetch(attachUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.propertiesToken}`,
+      },
+      body: JSON.stringify({
+        type: 'other',
+        upload_id: String(uploadId),
+      }),
+    });
+
+    const attachText = await attachRes.text();
+    console.log(
+      '[media] attach response',
+      attachRes.status,
+      `t=${Date.now() - t1}ms`,
+      attachText?.slice(0, 500)
+    );
+
+    let attachJson: any = null;
+    try {
+      attachJson = attachText ? JSON.parse(attachText) : null;
+    } catch {
+      attachJson = null;
+    }
+
+    if (!attachRes.ok || !attachJson?.success || !attachJson?.payload?.id) {
+      const message = attachJson?.message || `Failed to attach image (${attachRes.status})`;
+      throw new Error(message);
+    }
+
+    // The attach endpoint returns the property-media id in payload.id.
+    // Use this id for later detach/delete calls.
+    const attachId = Number(attachJson.payload.id);
+    console.log('[media] complete', { uploadId, attachId, totalMs: Date.now() - t0 });
+    return { uploadId, attachId };
+  };
+
+  const processImageQueue = async () => {
+    if (isProcessingImageQueueRef.current) return;
+    isProcessingImageQueueRef.current = true;
+
+    try {
+      while (imageUploadQueueRef.current.length) {
+        const uri = imageUploadQueueRef.current.shift();
+        if (!uri) continue;
+
+        const propertiesToken = sessionTokens?.propertiesToken;
+        const referenceId = draftPropertyReferenceId;
+
+        if (!propertiesToken || !referenceId) {
+          console.log('[media] queue blocked: missing token or reference', {
+            hasToken: Boolean(propertiesToken),
+            hasReferenceId: Boolean(referenceId),
+          });
+
+          // Prevent stuck "uploading" state if we cannot proceed.
+          setSelectedImages((prev) =>
+            prev.map((img) => (img.uploading ? { ...img, uploading: false } : img))
+          );
+          imageUploadQueueRef.current = [];
+
+          Alert.alert(
+            'Cannot upload images',
+            !propertiesToken
+              ? 'Missing properties token. Please login again.'
+              : 'Draft property reference is missing. Please wait a moment and try again.'
+          );
+          return;
+        }
+
+        try {
+          const ids = await uploadMediaAndAttachToProperty({
+            uri,
+            referenceId,
+            propertiesToken,
+          });
+
+          setSelectedImages((prev) =>
+            prev.map((img) =>
+              img.uri === uri
+                ? { ...img, uploadId: ids.uploadId, attachId: ids.attachId, uploading: false }
+                : img
+            )
+          );
+        } catch (err: any) {
+          setSelectedImages((prev) =>
+            prev.map((img) => (img.uri === uri ? { ...img, uploading: false } : img))
+          );
+          Alert.alert('Image upload failed', err?.message || 'Failed to upload image.');
+        }
+      }
+    } finally {
+      isProcessingImageQueueRef.current = false;
+    }
+  };
+
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -983,17 +1241,27 @@ export default function UploadScreen() {
 
     if (result.canceled) return;
 
-    const next = result.assets.map((a) => ({ uri: a.uri }));
+    const picked = result.assets.map((a) => a.uri);
+
+    const newUris: string[] = [];
     setSelectedImages((prev) => {
       const existing = new Set(prev.map((p) => p.uri));
       const merged = [...prev];
-      next.forEach((n) => {
-        if (!existing.has(n.uri)) merged.push(n);
-      });
+      for (const uri of picked) {
+        if (existing.has(uri)) continue;
+        existing.add(uri);
+        newUris.push(uri);
+        merged.push({ uri, uploadId: null, attachId: null, uploading: true });
+      }
       return merged;
     });
 
-    showToast('Images updated');
+    // enqueue and process sequentially
+    if (newUris.length) {
+      imageUploadQueueRef.current.push(...newUris);
+      void processImageQueue();
+      showToast('Uploading images...');
+    }
   };
 
   const handleSkipToHighlights = () => {
@@ -1046,7 +1314,6 @@ export default function UploadScreen() {
     );
   };
 
-  // Note: upload requires an authenticated session + tokens from OTP verification.
   // Tokens are stored globally via `useAuthStore` and persisted with AsyncStorage.
   if (!isAuthenticated || !sessionTokens?.backofficeToken) {
     return (
@@ -1209,11 +1476,11 @@ export default function UploadScreen() {
    };
 
    const handleDone = () => {
-     // Require at least one highlight timestamp before proceeding.
-     if (!highlightTimestamps.length) {
-       Alert.alert('Highlights required', 'Please set at least one highlight timestamp to continue.');
-       return;
-     }
+    //  // Require at least one highlight timestamp before proceeding.
+    //  if (!highlightTimestamps.length) {
+    //    Alert.alert('Highlights required', 'Please set at least one highlight timestamp to continue.');
+    //    return;
+    //  }
 
      setIsHighlightsPlaying(false);
      setStep('details');
@@ -1729,13 +1996,8 @@ export default function UploadScreen() {
           <X size={scaleWidth(24)} color={Colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Property Details</Text>
-        <Pressable
-          onPress={handlePublish}
-          disabled={isPublishing}
-          style={[styles.publishButton, isPublishing && styles.publishButtonDisabled]}
-        >
-          <Text style={styles.publishButtonText}>Publish</Text>
-        </Pressable>
+        {/* Publish is controlled by the segmented wizard footer (Back/Next/Publish) */}
+        <View style={{ width: scaleWidth(70) }} />
       </View>
 
       {toast.visible && (
@@ -1754,8 +2016,10 @@ export default function UploadScreen() {
       )}
 
       <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: flowAnimOpacity, transform: [{ translateX: flowAnimTranslateX }] }}>
+          {detailsFlow === 'status' && (
             <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Property Status *</Text>
+              <Text style={styles.formLabel}>Property Status *</Text>
           <View style={styles.radioRow}>
             <Pressable
               style={styles.radioOption}
@@ -1787,7 +2051,6 @@ export default function UploadScreen() {
               style={styles.radioOption}
               onPress={() => {
                 // Clear READY-only fields when switching to OFF_PLAN.
-                // Note: For OFF_PLAN we do NOT create a draft property. We will use the selected project's reference_id (picked from the modal) as the property reference.
                 setOffPlanPickerOpen(false);
                 setOffPlanSearch('');
                 setPropertyDetails({
@@ -1887,8 +2150,9 @@ export default function UploadScreen() {
             </Pressable>
           </View>
         </View>
+          )}
 
-        {propertyDetails.developmentStatus === 'READY' ? (
+        {detailsFlow === 'ready_step_1' && propertyDetails.developmentStatus === 'READY' ? (
           <>
             <View style={styles.formSection}>
               <Text style={styles.formLabel}>Title *</Text>
@@ -1904,7 +2168,7 @@ export default function UploadScreen() {
         ) : null}
 
     
-        {propertyDetails.developmentStatus === 'READY' && (
+        {detailsFlow === 'ready_step_1' && propertyDetails.developmentStatus === 'READY' && (
           <View style={styles.formSection}>
             <Text style={styles.formLabel}>Listing Type *</Text>
             <View style={styles.chipRow}>
@@ -1917,14 +2181,16 @@ export default function UploadScreen() {
                   ]}
                   onPress={() => {
                     setPropertyDetails((prev) => {
-                      // Clear the main price field whenever switching listing type.
-                      // (Requested: reset main price when switching types)
-                      if (type === 'BUY') {
-                        // BUY: also hide Default Pricing + Prices and clear their values.
+                      // Pricing UI rules:
+                      // - BUY/RENT => show only main Price (AED). Clear STAY pricing fields so hidden values aren't submitted.
+                      // - STAY     => show Default Pricing + Prices, hide main Price (AED).
+                      if (type === 'BUY' || type === 'RENT') {
                         return {
                           ...prev,
                           listingType: type,
+                          // main price remains user-entered for BUY/RENT, but we clear it on type switch to avoid cross-type mistakes
                           price: '',
+                          // clear STAY fields
                           defaultPricing: 'month',
                           dayPrice: '',
                           weekPrice: '',
@@ -1933,7 +2199,7 @@ export default function UploadScreen() {
                         };
                       }
 
-                      // RENT/STAY: keep existing pricing fields as-is, but clear main price.
+                      // STAY: clear main price since UI hides it; keep STAY pricing fields.
                       return { ...prev, listingType: type, price: '' };
                     });
                   }}
@@ -1952,21 +2218,24 @@ export default function UploadScreen() {
           </View>
         )}
 
-          {propertyDetails.developmentStatus === 'READY' && (
+          {detailsFlow === 'ready_step_1' && propertyDetails.developmentStatus === 'READY' && (
             <>
-              <View style={styles.formSection}>
-                <Text style={styles.formLabel}>Price (AED)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., 2300000"
-                  placeholderTextColor={Colors.textSecondary}
-                  keyboardType="numeric"
-                  value={propertyDetails.price}
-                  onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
-                />
-              </View>
+              {/* BUY/RENT: show main Price (AED) only. STAY: hide main price and show Default Pricing + Prices */}
+              {propertyDetails.listingType !== 'STAY' && (
+                <View style={styles.formSection}>
+                  <Text style={styles.formLabel}>Price (AED)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 2300000"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="numeric"
+                    value={propertyDetails.price}
+                    onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
+                  />
+                </View>
+              )}
 
-              {propertyDetails.listingType !== 'BUY' && (
+              {propertyDetails.listingType === 'STAY' && (
                 <>
                   <View style={styles.formSection}>
                     <Text style={styles.formLabel}>Default Pricing</Text>
@@ -2065,7 +2334,7 @@ export default function UploadScreen() {
           )}
 
 
-        {propertyDetails.developmentStatus === 'OFF_PLAN' && (
+        {detailsFlow === 'offplan_project' && propertyDetails.developmentStatus === 'OFF_PLAN' && (
           <View style={styles.formSection}>
             <Text style={styles.formLabel}>Off-plan project *</Text>
             <Pressable
@@ -2085,78 +2354,81 @@ export default function UploadScreen() {
           </View>
         )}
 
-        {propertyDetails.developmentStatus === 'READY' && (
+        {detailsFlow === 'ready_step_2' && propertyDetails.developmentStatus === 'READY' && (
           <>
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Property Type *</Text>
-          <View style={styles.chipRow}>
-            {(['apartment', 'villa', 'townhouse', 'penthouse', 'studio'] as PropertyType[]).map((type) => (
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Property Type *</Text>
+              <View style={styles.chipRow}>
+                {(['apartment', 'villa', 'townhouse', 'penthouse', 'studio'] as PropertyType[]).map((type) => (
+                  <Pressable
+                    key={type}
+                    style={[styles.chip, propertyDetails.propertyType === type && styles.chipSelected]}
+                    onPress={() => setPropertyDetails({ ...propertyDetails, propertyType: type })}
+                  >
+                    <Text
+                      style={[styles.chipText, propertyDetails.propertyType === type && styles.chipTextSelected]}
+                    >
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={styles.formColumn}>
+                <Text style={styles.formLabel}>Bedrooms *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2"
+                  placeholderTextColor={Colors.textSecondary}
+                  keyboardType="numeric"
+                  value={propertyDetails.bedrooms}
+                  onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bedrooms: text })}
+                />
+              </View>
+              <View style={styles.formColumn}>
+                <Text style={styles.formLabel}>Bathrooms *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2"
+                  placeholderTextColor={Colors.textSecondary}
+                  keyboardType="numeric"
+                  value={propertyDetails.bathrooms}
+                  onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bathrooms: text })}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Size (sqft) *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="1200"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="numeric"
+                value={propertyDetails.sizeSqft}
+                onChangeText={(text) => setPropertyDetails({ ...propertyDetails, sizeSqft: text })}
+              />
+            </View>
+          </>
+        )}
+
+        {detailsFlow === 'ready_step_3' && propertyDetails.developmentStatus === 'READY' && (
+          <>
+            {/* <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Property Status</Text>
+              <Text style={styles.summaryValueText}>{developmentStatusLabel}</Text>
+            </View> */}
+
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Property Location</Text>
+
+              <Text style={styles.formLabel}>Emirate *</Text>
               <Pressable
-                key={type}
-                style={[
-                  styles.chip,
-                  propertyDetails.propertyType === type && styles.chipSelected,
-                ]}
-                onPress={() => setPropertyDetails({ ...propertyDetails, propertyType: type })}
+                style={styles.locationInput}
+                onPress={() => requestAnimationFrame(() => setLocationPicker('emirate'))}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    propertyDetails.propertyType === type && styles.chipTextSelected,
-                  ]}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.formRow}>
-          <View style={styles.formColumn}>
-            <Text style={styles.formLabel}>Bedrooms *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="2"
-              placeholderTextColor={Colors.textSecondary}
-              keyboardType="numeric"
-              value={propertyDetails.bedrooms}
-              onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bedrooms: text })}
-            />
-          </View>
-          <View style={styles.formColumn}>
-            <Text style={styles.formLabel}>Bathrooms *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="2"
-              placeholderTextColor={Colors.textSecondary}
-              keyboardType="numeric"
-              value={propertyDetails.bathrooms}
-              onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bathrooms: text })}
-            />
-          </View>
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.formLabel}>Size (sqft) *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="1200"
-            placeholderTextColor={Colors.textSecondary}
-            keyboardType="numeric"
-            value={propertyDetails.sizeSqft}
-            onChangeText={(text) => setPropertyDetails({ ...propertyDetails, sizeSqft: text })}
-          />
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Property Location</Text>
-
-          <Text style={styles.formLabel}>Emirate *</Text>
-          <Pressable
-            style={styles.locationInput}
-            onPress={() => setLocationPicker('emirate')}
-          >
             <Text style={[styles.locationInputText, !propertyDetails.emirateId && styles.placeholder]}>
               {propertyDetails.emirateName || 'Select emirate'}
             </Text>
@@ -2188,7 +2460,7 @@ export default function UploadScreen() {
           <Pressable
             style={[styles.locationInput, !propertyDetails.emirateId && styles.disabledInput]}
             disabled={!propertyDetails.emirateId}
-            onPress={() => setLocationPicker('district')}
+            onPress={() => requestAnimationFrame(() => setLocationPicker('district'))}
           >
             <Text
               style={[
@@ -2225,7 +2497,7 @@ export default function UploadScreen() {
           <Pressable
             style={[styles.locationInput, !propertyDetails.districtId && styles.disabledInput]}
             disabled={!propertyDetails.districtId}
-            onPress={() => setLocationPicker('building')}
+            onPress={() => requestAnimationFrame(() => setLocationPicker('building'))}
           >
             <Text
               style={[
@@ -2260,7 +2532,7 @@ export default function UploadScreen() {
           <Pressable
             style={[styles.locationInput, !propertyDetails.building && styles.disabledInput]}
             disabled={!propertyDetails.building}
-            onPress={() => setLocationPicker('area')}
+            onPress={() => requestAnimationFrame(() => setLocationPicker('area'))}
           >
             <Text
               style={[
@@ -2291,7 +2563,11 @@ export default function UploadScreen() {
           </Pressable>
 
         </View>
+      </>
+        )}
 
+        {detailsFlow === 'ready_step_4' && propertyDetails.developmentStatus === 'READY' && (
+        <> 
         <View style={styles.formSection}>
           <Text style={styles.formLabel}>Amenities</Text>
           <Pressable
@@ -2356,11 +2632,48 @@ export default function UploadScreen() {
               {selectedImages.map((img) => (
                 <View key={img.uri} style={styles.imageThumbWrap}>
                   <Image source={{ uri: img.uri }} style={styles.imageThumb} />
+                  {img.uploading ? (
+                    <View style={styles.imageUploadingOverlay} pointerEvents="none">
+                      <ActivityIndicator size="small" color="#fff" />
+                    </View>
+                  ) : null}
                   <Pressable
                     style={styles.imageThumbRemove}
-                    onPress={() => {
-                      setSelectedImages((prev) => prev.filter((p) => p.uri !== img.uri));
-                      showToast('Image removed');
+                    onPress={async () => {
+                      try {
+                        const referenceId = draftPropertyReferenceId;
+                        const propertiesToken = sessionTokens?.propertiesToken;
+                        const uploadId = img.uploadId;
+
+                        // If the media was already uploaded+attached, detach it first.
+                        // DELETE uses the upload id in the URL: /properties/{ref}/media/{id}
+                        if (referenceId && propertiesToken && typeof uploadId === 'number') {
+                          const url = `https://properties.vzite.com/api/v1/properties/${encodeURIComponent(
+                            referenceId
+                          )}/media/${encodeURIComponent(String(uploadId))}`;
+
+                          const res = await fetch(url, {
+                            method: 'DELETE',
+                            headers: {
+                              Accept: 'application/json',
+                              Authorization: `Bearer ${propertiesToken}`,
+                            },
+                          });
+
+                          const json = await res.json().catch(() => null);
+                          if (!res.ok || (json && json.success === false)) {
+                            const message = json?.message || `Failed to remove image (${res.status})`;
+                            Alert.alert('Remove failed', message);
+                            return;
+                          }
+                        }
+
+                        // Remove from UI state
+                        setSelectedImages((prev) => prev.filter((p) => p.uri !== img.uri));
+                        showToast('Image removed');
+                      } catch (err: any) {
+                        Alert.alert('Remove failed', err?.message || 'Failed to remove image.');
+                      }
                     }}
                   >
                     <X size={scaleWidth(14)} color="#fff" />
@@ -2403,12 +2716,12 @@ export default function UploadScreen() {
         </View>
 
         <Modal
-          visible={locationPicker !== null}
+          visible={false}
           transparent
           animationType="fade"
           onRequestClose={() => setLocationPicker(null)}
         >
-          <View style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
             <Pressable
               style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
               onPress={() => {
@@ -2416,9 +2729,10 @@ export default function UploadScreen() {
                 setLocationPicker(null);
               }}
             >
-              <Pressable
+              <View
                 style={[styles.modal, { height: windowHeight * 0.55 }]}
-                onPress={() => Keyboard.dismiss()}
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={() => Keyboard.dismiss()}
               >
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderSpacer} />
@@ -2666,10 +2980,12 @@ export default function UploadScreen() {
                   </>
                 )
               )}
-              </Pressable>
+              </View>
             </Pressable>
           </View>
         </Modal>
+
+
 
         <Modal
           visible={amenitiesModalVisible}
@@ -2787,8 +3103,7 @@ export default function UploadScreen() {
             onChangeText={(text) => setPropertyDetails({ ...propertyDetails, description: text })}
           />
         </View>
-
-        </>
+      </>
         )}
 
         <Modal
@@ -2839,7 +3154,9 @@ export default function UploadScreen() {
 
                 <FlatList<OffPlanProjectListItem>
                   data={offPlanOptions.filter((p) =>
-                    p.title.toLowerCase().includes(offPlanSearch.trim().toLowerCase())
+                    String(p.title ?? '')
+                      .toLowerCase()
+                      .includes(String(offPlanSearch ?? '').trim().toLowerCase())
                   )}
                   keyExtractor={(item) => String(item.id)}
                   ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
@@ -2909,7 +3226,299 @@ export default function UploadScreen() {
         </Modal>
 
         <View style={styles.bottomPadding} />
+        </Animated.View>
       </ScrollView>
+
+      <Modal
+        visible={locationPicker !== null && detailsFlow === 'ready_step_3'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLocationPicker(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
+            onPress={() => {
+              Keyboard.dismiss();
+              setLocationPicker(null);
+            }}
+          >
+            <View
+              style={[styles.modal, { height: windowHeight * 0.55 }]}
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={() => Keyboard.dismiss()}
+            >
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeaderSpacer} />
+                <Text style={styles.modalTitle}>
+                  {locationPicker === 'emirate'
+                    ? 'Select Emirate'
+                    : locationPicker === 'district'
+                      ? 'Select District'
+                      : locationPicker === 'building'
+                        ? 'Select Building'
+                        : 'Select Area'}
+                </Text>
+                <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
+                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                </Pressable>
+              </View>
+
+              {(locationPicker === 'district' || locationPicker === 'building' || locationPicker === 'area') && (
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  placeholder={`Search ${
+                    locationPicker === 'district'
+                      ? 'districts'
+                      : locationPicker === 'building'
+                        ? 'buildings'
+                        : 'areas'
+                  }...`}
+                  placeholderTextColor={Colors.textSecondary}
+                  value={locationPicker === 'district' ? districtSearch : locationSearch}
+                  onChangeText={locationPicker === 'district' ? setDistrictSearch : setLocationSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                />
+              )}
+
+              {locationPicker === 'emirate' ? (
+                <FlatList
+                  data={emirateOptions.filter((e) =>
+                    e.name.toLowerCase().includes(emirateSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          emirateId: item.id,
+                          emirateName: item.name,
+                          districtId: null,
+                          districtName: '',
+                          building: '',
+                          area: '',
+                        });
+                        setDistrictSearch('');
+                        setLocationSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    isEmiratesLoading ? (
+                      <Text style={styles.emptyPickerText}>Loading emirates...</Text>
+                    ) : (
+                      <Text style={styles.emptyPickerText}>No emirates found.</Text>
+                    )
+                  }
+                />
+              ) : locationPicker === 'district' ? (
+                <FlatList
+                  data={districtOptions.filter((d) =>
+                    d.name.toLowerCase().includes(districtSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          districtId: item.id,
+                          districtName: item.name,
+                          building: '',
+                          area: '',
+                        });
+                        setLocationSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    isDistrictsLoading ? (
+                      <Text style={styles.emptyPickerText}>Loading districts...</Text>
+                    ) : (
+                      <Text style={styles.emptyPickerText}>No districts found.</Text>
+                    )
+                  }
+                />
+              ) : locationPicker === 'building' ? (
+                <FlatList
+                  data={buildingsOptions.filter((b) =>
+                    b.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => `${item.id}-${item.slug}`}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          building: item.slug,
+                          area: '',
+                        });
+                        setLocationSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    isBuildingsLoading ? (
+                      <Text style={styles.emptyPickerText}>Loading buildings...</Text>
+                    ) : (
+                      <Text style={styles.emptyPickerText}>No buildings found.</Text>
+                    )
+                  }
+                />
+              ) : (
+                <FlatList
+                  data={(areasOptions ?? []).filter((a) =>
+                    a.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
+                  )}
+                  keyExtractor={(item) => `${item.id}-${item.slug}`}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        setPropertyDetails({
+                          ...propertyDetails,
+                          area: item.slug,
+                        });
+                        setLocationSearch('');
+                        setLocationPicker(null);
+                      }}
+                    >
+                      <Text style={styles.pickerItemText}>{item.name}</Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    isAreasLoading ? (
+                      <Text style={styles.emptyPickerText}>Loading areas...</Text>
+                    ) : (
+                      <Text style={styles.emptyPickerText}>No areas found.</Text>
+                    )
+                  }
+                />
+              )}
+            </View>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <View style={[styles.wizardFooter, { marginBottom: tabBarHeight }]}>
+        <Pressable
+          style={[styles.wizardButton, styles.wizardButtonSecondary]}
+          disabled={isPublishing || isAdvancingFlow}
+          onPress={async () => {
+            if (detailsFlow === 'status') {
+              setStep('selectHighlights');
+              return;
+            }
+            if (detailsFlow === 'generic_publish') {
+              setStep('selectHighlights');
+              return;
+            }
+            if (detailsFlow === 'offplan_project') {
+              await animateToFlow('status', 'back');
+              return;
+            }
+            if (detailsFlow === 'ready_step_1') {
+              await animateToFlow('status', 'back');
+              return;
+            }
+            if (detailsFlow === 'ready_step_2') {
+              await animateToFlow('ready_step_1', 'back');
+              return;
+            }
+            if (detailsFlow === 'ready_step_3') {
+              await animateToFlow('ready_step_2', 'back');
+              return;
+            }
+            if (detailsFlow === 'ready_step_4') {
+              await animateToFlow('ready_step_3', 'back');
+              return;
+            }
+          }}
+        >
+          <Text style={[styles.wizardButtonText, styles.wizardButtonTextSecondary]}>Back</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.wizardButton, (isPublishing || isAdvancingFlow) && styles.publishButtonDisabled]}
+          disabled={isPublishing || isAdvancingFlow}
+          onPress={async () => {
+            if (detailsFlow === 'status') {
+              if (propertyDetails.developmentStatus === 'READY') {
+                try {
+                  setIsAdvancingFlow(true);
+                  const ref = await ensureDraftPropertyReferenceId();
+                  if (!ref) {
+                    Alert.alert('Failed to create draft', 'Please try again.');
+                    return;
+                  }
+                  await animateToFlow('ready_step_1', 'forward');
+                } finally {
+                  setIsAdvancingFlow(false);
+                }
+                return;
+              }
+
+              if (propertyDetails.developmentStatus === 'OFF_PLAN') {
+                await animateToFlow('offplan_project', 'forward');
+                return;
+              }
+
+              if (propertyDetails.developmentStatus === 'GENERIC') {
+                // Generic videos can be published immediately (highlights are selected in the previous step).
+                await handlePublish();
+                return;
+              }
+            }
+
+            if (detailsFlow === 'ready_step_1') {
+              await animateToFlow('ready_step_2', 'forward');
+              return;
+            }
+            if (detailsFlow === 'ready_step_2') {
+              await animateToFlow('ready_step_3', 'forward');
+              return;
+            }
+            if (detailsFlow === 'ready_step_3') {
+              await animateToFlow('ready_step_4', 'forward');
+              return;
+            }
+
+            // Publish flows
+            if (detailsFlow === 'ready_step_4' || detailsFlow === 'offplan_project' || detailsFlow === 'generic_publish') {
+              await handlePublish();
+              return;
+            }
+          }}
+        >
+          <Text style={styles.wizardButtonText}>
+            {detailsFlow === 'ready_step_4' ||
+            detailsFlow === 'offplan_project' ||
+            detailsFlow === 'generic_publish' ||
+            (detailsFlow === 'status' && propertyDetails.developmentStatus === 'GENERIC')
+              ? isPublishing
+                ? 'Publishing...'
+                : 'Publish'
+              : isAdvancingFlow
+                ? 'Loading...'
+                : 'Next'}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2950,6 +3559,42 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(14),
     fontWeight: '800',
     color: Colors.textLight,
+  },
+  wizardFooter: {
+    flexDirection: 'row',
+    gap: scaleWidth(12),
+    paddingHorizontal: scaleWidth(20),
+    paddingVertical: scaleHeight(16),
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  wizardButton: {
+    flex: 1,
+    paddingVertical: scaleHeight(14),
+    borderRadius: scaleWidth(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.bronze,
+  },
+  wizardButtonSecondary: {
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  wizardButtonText: {
+    fontSize: scaleFont(15),
+    fontWeight: '700',
+    color: Colors.textLight,
+  },
+  summaryValueText: {
+    fontSize: scaleFont(14),
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginTop: scaleHeight(6),
+  },
+  wizardButtonTextSecondary: {
+    color: Colors.text,
   },
   content: {
     flex: 1,
@@ -3083,6 +3728,17 @@ const styles = StyleSheet.create({
   imageThumb: {
     width: scaleWidth(80),
     height: scaleWidth(80),
+  },
+  imageUploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: scaleWidth(12),
   },
   imageThumbRemove: {
     position: 'absolute',
