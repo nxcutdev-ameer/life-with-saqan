@@ -198,13 +198,18 @@ export async function createDraftProperty(params: {
 export async function fetchOffPlanProjects(options?: {
   page?: number;
   limit?: number;
+  name?: string;
 }): Promise<{ data: OffPlanProjectListItem[]; currentPage: number; lastPage: number | null }> {
   const page = options?.page ?? 1;
   const limit = options?.limit ?? 20;
 
+  const nameParam = options?.name?.trim();
+
   const url = `${BASE_URL}/properties/offplan/elastic?view=list&order_by=created_at&size=xs&page=${encodeURIComponent(
     String(page)
-  )}&limit=${encodeURIComponent(String(limit))}`;
+  )}&limit=${encodeURIComponent(String(limit))}${
+    nameParam ? `&name=${encodeURIComponent(nameParam)}` : ''
+  }`;
 
   const res = await fetchJson<ApiResponse<OffPlanProjectsPayload>>(url);
   const data = res.payload.properties.data;
@@ -265,4 +270,110 @@ export async function fetchPropertyByReferenceResponse(
 export async function fetchPropertyByReference(referenceId: string): Promise<PropertyDetailsPayload> {
   const res = await fetchPropertyByReferenceResponse(referenceId);
   return res.payload;
+}
+
+// --- Property media helpers (mimic web logic) ---
+
+export type UploadMediaPayload = {
+  id: number;
+  info?: string;
+  original_path?: string;
+  thumbnail_path?: string;
+  big_image_path?: string;
+  original_url?: string;
+  thumbnail_url?: string;
+  big_image_url?: string;
+};
+
+export async function uploadMedia(params: {
+  propertiesToken: string;
+  uri: string;
+  featured?: '0' | '1';
+}): Promise<ApiResponse<UploadMediaPayload>> {
+  const form = new FormData();
+  const fileName = params.uri.split('/').pop() || 'image.jpg';
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  form.append('file', {
+    uri: params.uri,
+    name: fileName,
+    type: mime,
+  } as any);
+  form.append('featured', params.featured ?? '1');
+
+  const url = `${BASE_URL}/media`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${params.propertiesToken}`,
+    },
+    body: form,
+  });
+  const text = await res.text();
+  const body = text ? ((): any => { try { return JSON.parse(text); } catch { return null; } })() : null;
+
+  if (!res.ok) {
+    const message = body?.message || `Request failed (${res.status})`;
+    throw new Error(message);
+  }
+
+  return body as ApiResponse<UploadMediaPayload>;
+}
+
+export type AttachPropertyMediaPayload = {
+  id: number;
+};
+
+export async function attachPropertyMedia(params: {
+  propertiesToken: string;
+  referenceId: string;
+  type: string;
+  upload_id: string | number;
+}): Promise<{ success: boolean; data?: AttachPropertyMediaPayload; message?: string }> {
+  const url = `${BASE_URL}/properties/${encodeURIComponent(params.referenceId)}/media`;
+  const res = await fetchJson<ApiResponse<AttachPropertyMediaPayload>>(url, {
+    method: 'POST',
+    timeoutMs: 30000,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.propertiesToken}`,
+    },
+    body: JSON.stringify({
+      type: params.type,
+      upload_id: params.upload_id,
+    }),
+  });
+
+  const obj: { success: boolean; data?: AttachPropertyMediaPayload; message?: string } = {
+    success: res.success,
+  };
+  if (res.success) obj.data = res.payload;
+  if (!res.success) obj.message = res.message;
+  return obj;
+}
+
+export async function unAttachPropertyMedia(params: {
+  propertiesToken: string;
+  referenceId: string;
+  id: string | number;
+}): Promise<{ success: boolean; data?: unknown; message?: string }> {
+  const url = `${BASE_URL}/properties/${encodeURIComponent(params.referenceId)}/media/${encodeURIComponent(
+    Number(params.id)
+  )}`;
+
+  const res = await fetchJson<ApiResponse<unknown>>(url, {
+    method: 'DELETE',
+    timeoutMs: 30000,
+    headers: {
+      Authorization: `Bearer ${params.propertiesToken}`,
+    },
+  });
+
+  const obj: { success: boolean; data?: unknown; message?: string } = { success: res.success };
+  if (res.success) obj.data = res.payload;
+  if (!res.success) obj.message = res.message;
+  return obj;
 }

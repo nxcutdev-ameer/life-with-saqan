@@ -58,6 +58,7 @@ import {
   District,
   Emirate,
   OffPlanProjectListItem,
+  attachPropertyMedia,
   createDraftProperty,
   fetchAmenities,
   fetchAreas,
@@ -65,7 +66,9 @@ import {
   fetchDistricts,
   fetchEmirates,
   fetchOffPlanProjects,
+  unAttachPropertyMedia,
   updateProperty,
+  uploadMedia,
 } from '@/utils/propertiesApi';
 
 type HighlightStep = string;
@@ -233,9 +236,82 @@ export default function UploadScreen() {
 
   const [offPlanPickerOpen, setOffPlanPickerOpen] = useState(false);
   const [offPlanSearch, setOffPlanSearch] = useState('');
+  const [debouncedOffPlanSearch, setDebouncedOffPlanSearch] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedOffPlanSearch(offPlanSearch), 300);
+    return () => clearTimeout(t);
+  }, [offPlanSearch]);
 
   const [draftPropertyReferenceId, setDraftPropertyReferenceId] = useState<string | null>(null);
   const createDraftInflightRef = React.useRef<Promise<string | null> | null>(null);
+
+  const resetReadyPropertyFlow = async () => {
+    const referenceId = draftPropertyReferenceId;
+    const propertiesToken = sessionTokens?.propertiesToken;
+
+    // Best-effort detach any attached media
+    if (referenceId && propertiesToken) {
+      const attachIds = selectedImages
+        .map((img) => img.attachId)
+        .filter((id): id is number => typeof id === 'number');
+
+      for (const id of attachIds) {
+        try {
+          await unAttachPropertyMedia({ propertiesToken, referenceId, id });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Reset all local state (form + UI)
+    setSelectedImages([]);
+    setSelectedAmenityIds([]);
+    setAmenitiesSearch('');
+    setAmenitiesModalVisible(false);
+
+    setEmirateSearch('');
+    setDistrictSearch('');
+    setLocationSearch('');
+    setLocationPicker(null);
+
+    setOffPlanPickerOpen(false);
+    setOffPlanSearch('');
+
+    setDraftPropertyReferenceId(null);
+    createDraftInflightRef.current = null;
+
+    setPropertyDetails({
+      title: '',
+      price: '',
+      developmentStatus: 'GENERIC' as 'READY' | 'OFF_PLAN' | 'GENERIC',
+      listingType: 'RENT' as TransactionType,
+      propertyType: 'apartment' as PropertyType,
+      bedrooms: '',
+      bathrooms: '',
+      sizeSqft: '',
+      isFurnished: false,
+      hasParking: false,
+      offPlanProjectId: null as number | null,
+      offPlanProjectReferenceId: '' as string,
+      offPlanProjectTitle: '',
+      emirateId: null as number | null,
+      emirateName: '',
+      districtId: null as number | null,
+      districtName: '',
+      building: '',
+      area: '',
+      defaultPricing: 'month' as 'day' | 'week' | 'month' | 'year',
+      dayPrice: '',
+      weekPrice: '',
+      monthPrice: '',
+      yearPrice: '',
+      builtYear: '',
+      floor: '',
+      description: '',
+    });
+  };
 
   const ensureDraftPropertyReferenceId = async (): Promise<string | null> => {
     const propertiesToken = sessionTokens?.propertiesToken;
@@ -288,14 +364,11 @@ export default function UploadScreen() {
   };
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
 
-  const imageUploadQueueRef = React.useRef<string[]>([]);
-  const isProcessingImageQueueRef = React.useRef(false);
-
-  const [propertyDetails, setPropertyDetails] = useState({
+  const initialPropertyDetails = {
     title: '',
     price: '',
     // Determines whether to show Listing Type (Ready property) or hide it (Off plan)
-    developmentStatus: 'OFF_PLAN' as 'READY' | 'OFF_PLAN' | 'GENERIC',
+    developmentStatus: 'GENERIC' as 'READY' | 'OFF_PLAN' | 'GENERIC',
     listingType: 'RENT' as TransactionType,
     propertyType: 'apartment' as PropertyType,
     bedrooms: '',
@@ -326,7 +399,9 @@ export default function UploadScreen() {
     floor: '',
 
     description: '',
-  });
+  };
+
+  const [propertyDetails, setPropertyDetails] = useState(initialPropertyDetails);
 
   const developmentStatusLabel = React.useMemo(() => {
     switch (propertyDetails.developmentStatus) {
@@ -445,8 +520,23 @@ export default function UploadScreen() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['properties', 'offplan', { view: 'list', order_by: 'created_at', size: 'xs', limit: 20 }],
-    queryFn: ({ pageParam }) => fetchOffPlanProjects({ page: Number(pageParam ?? 1), limit: 20 }),
+    queryKey: [
+      'properties',
+      'offplan',
+      {
+        view: 'list',
+        order_by: 'created_at',
+        size: 'xs',
+        limit: 20,
+        name: debouncedOffPlanSearch.trim(),
+      },
+    ],
+    queryFn: ({ pageParam }) =>
+      fetchOffPlanProjects({
+        page: Number(pageParam ?? 1),
+        limit: 20,
+        name: debouncedOffPlanSearch.trim(),
+      }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       if (!lastPage) return undefined;
@@ -479,12 +569,11 @@ export default function UploadScreen() {
 
     // Prepare payload.
     const amenitiesCsv = selectedAmenityIds.length ? selectedAmenityIds.join(',') : '';
-    const imagesCsv = selectedImages.length ? selectedImages.map((i) => i.uri).join(',') : '';
-
     const body: Record<string, unknown> = {
       reference_id: referenceId,
       state: 'draft',
-      type: 'sale',
+      // Listing Type -> type
+      type: propertyDetails.listingType || null,
       // Pricing rules:
       //  BUY  => sale_price = Price(AED), hide default pricing/prices
       //  RENT => default_pricing = 'year', year_price = Price(AED), hide default pricing/prices, sale_price = null
@@ -503,24 +592,19 @@ export default function UploadScreen() {
             : null,
       title: propertyDetails.title || null,
       description: propertyDetails.description || null,
-
       emirate_id: propertyDetails.emirateId ? String(propertyDetails.emirateId) : null,
       district_id: propertyDetails.districtId ? String(propertyDetails.districtId) : null,
-
       building: propertyDetails.building || null,
       area: propertyDetails.area || null,
-
+      property_type: propertyDetails.propertyType || null,
+      square: propertyDetails.sizeSqft ? Number(propertyDetails.sizeSqft) : null,
       bedrooms: propertyDetails.bedrooms ? Number(propertyDetails.bedrooms) : null,
       bathrooms: propertyDetails.bathrooms ? Number(propertyDetails.bathrooms) : null,
-      furnished: Boolean((propertyDetails as any).isFurnished),
-      garage: Boolean((propertyDetails as any).hasParking),
-
-      amenities: amenitiesCsv,
-      images: imagesCsv,
-
+      furnished: Boolean(propertyDetails.isFurnished),
+      garage: Boolean(propertyDetails.hasParking),
+      amenitites: amenitiesCsv,
       built_year: propertyDetails.builtYear ? Number(propertyDetails.builtYear) : null,
       floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
-
       day_price:
         propertyDetails.listingType === 'STAY' && propertyDetails.dayPrice
           ? Number(propertyDetails.dayPrice)
@@ -814,10 +898,7 @@ export default function UploadScreen() {
 
       const roomTimestamps = highlightTimestamps.length ? highlightTimestamps : timestampsFromMap;
 
-      if (!roomTimestamps.length) {
-        Alert.alert('Missing highlights', 'Please select at least one highlight timestamp.');
-        return;
-      }
+      // Highlights are optional
 
       setIsPublishing(true);
 
@@ -897,10 +978,7 @@ export default function UploadScreen() {
 
       const roomTimestamps = highlightTimestamps.length ? highlightTimestamps : timestampsFromMap;
 
-      if (!roomTimestamps.length) {
-        Alert.alert('Missing highlights', 'Please select at least one highlight timestamp.');
-        return;
-      }
+      // Highlights are optional
 
       try {
         const saqanToken = sessionTokens?.saqancomToken;
@@ -971,10 +1049,7 @@ export default function UploadScreen() {
         return;
       }
 
-      if (!highlightTimestamps.length) {
-        Alert.alert('Highlights required', 'Please set at least one highlight timestamp to continue.');
-        return;
-      }
+      // Highlights are optional
 
       let propertyReference = draftPropertyReferenceId;
       if (!propertyReference) {
@@ -1069,162 +1144,44 @@ export default function UploadScreen() {
     referenceId: string;
     propertiesToken: string;
   }): Promise<{ uploadId: number; attachId: number }> => {
-    // 1) Upload media
-    const form = new FormData();
-    const fileName = params.uri.split('/').pop() || 'image.jpg';
-    const ext = fileName.split('.').pop()?.toLowerCase();
-    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-
-    form.append('file', {
-      uri: params.uri,
-      name: fileName,
-      type: mime,
-    } as any);
-    form.append('featured', '1');
-
     const t0 = Date.now();
+
     console.log('[media] upload start', { uri: params.uri, referenceId: params.referenceId });
-
-    const uploadRes = await fetch('https://properties.vzite.com/api/v1/media', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${params.propertiesToken}`,
-      },
-      body: form,
+    const uploadRes = await uploadMedia({
+      propertiesToken: params.propertiesToken,
+      uri: params.uri,
+      featured: '1',
     });
+    console.log('[media] upload response', uploadRes?.success, `t=${Date.now() - t0}ms`, uploadRes);
 
-    const uploadText = await uploadRes.text();
-    console.log(
-      '[media] upload response',
-      uploadRes.status,
-      `t=${Date.now() - t0}ms`,
-      uploadText?.slice(0, 500)
-    );
-
-    let uploadJson: any = null;
-    try {
-      uploadJson = uploadText ? JSON.parse(uploadText) : null;
-    } catch {
-      uploadJson = null;
+    if (!uploadRes?.success || !uploadRes?.payload?.id) {
+      throw new Error(uploadRes?.message || 'Failed to upload image');
     }
 
-    if (!uploadRes.ok || !uploadJson?.success || !uploadJson?.payload?.id) {
-      const message = uploadJson?.message || `Failed to upload image (${uploadRes.status})`;
-      throw new Error(message);
-    }
-
-    const uploadId: number = uploadJson.payload.id;
+    const uploadId = uploadRes.payload.id;
 
     const t1 = Date.now();
+    console.log('[media] attach start', { referenceId: params.referenceId, upload_id: uploadId });
 
-    // 2) Attach media to property
-    // POST /properties/{property_reference}/media
-    // Body: { type: "other", upload_id: "{id}" }
-    const attachUrl = `https://properties.vzite.com/api/v1/properties/${encodeURIComponent(
-      params.referenceId
-    )}/media`;
-
-    console.log('[media] attach start', { attachUrl, upload_id: uploadId });
-
-    const attachRes = await fetch(attachUrl, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.propertiesToken}`,
-      },
-      body: JSON.stringify({
-        type: 'other',
-        upload_id: String(uploadId),
-      }),
+    const attachRes = await attachPropertyMedia({
+      propertiesToken: params.propertiesToken,
+      referenceId: params.referenceId,
+      type: 'other',
+      upload_id: uploadId,
     });
 
-    const attachText = await attachRes.text();
-    console.log(
-      '[media] attach response',
-      attachRes.status,
-      `t=${Date.now() - t1}ms`,
-      attachText?.slice(0, 500)
-    );
+    console.log('[media] attach response', attachRes?.success, `t=${Date.now() - t1}ms`, attachRes);
 
-    let attachJson: any = null;
-    try {
-      attachJson = attachText ? JSON.parse(attachText) : null;
-    } catch {
-      attachJson = null;
+    if (!attachRes?.success || !attachRes.data?.id) {
+      throw new Error(attachRes?.message || 'Failed to attach image');
     }
 
-    if (!attachRes.ok || !attachJson?.success || !attachJson?.payload?.id) {
-      const message = attachJson?.message || `Failed to attach image (${attachRes.status})`;
-      throw new Error(message);
-    }
-
-    // The attach endpoint returns the property-media id in payload.id.
-    // Use this id for later detach/delete calls.
-    const attachId = Number(attachJson.payload.id);
+    const attachId = attachRes.data.id;
     console.log('[media] complete', { uploadId, attachId, totalMs: Date.now() - t0 });
+
     return { uploadId, attachId };
   };
 
-  const processImageQueue = async () => {
-    if (isProcessingImageQueueRef.current) return;
-    isProcessingImageQueueRef.current = true;
-
-    try {
-      while (imageUploadQueueRef.current.length) {
-        const uri = imageUploadQueueRef.current.shift();
-        if (!uri) continue;
-
-        const propertiesToken = sessionTokens?.propertiesToken;
-        const referenceId = draftPropertyReferenceId;
-
-        if (!propertiesToken || !referenceId) {
-          console.log('[media] queue blocked: missing token or reference', {
-            hasToken: Boolean(propertiesToken),
-            hasReferenceId: Boolean(referenceId),
-          });
-
-          // Prevent stuck "uploading" state if we cannot proceed.
-          setSelectedImages((prev) =>
-            prev.map((img) => (img.uploading ? { ...img, uploading: false } : img))
-          );
-          imageUploadQueueRef.current = [];
-
-          Alert.alert(
-            'Cannot upload images',
-            !propertiesToken
-              ? 'Missing properties token. Please login again.'
-              : 'Draft property reference is missing. Please wait a moment and try again.'
-          );
-          return;
-        }
-
-        try {
-          const ids = await uploadMediaAndAttachToProperty({
-            uri,
-            referenceId,
-            propertiesToken,
-          });
-
-          setSelectedImages((prev) =>
-            prev.map((img) =>
-              img.uri === uri
-                ? { ...img, uploadId: ids.uploadId, attachId: ids.attachId, uploading: false }
-                : img
-            )
-          );
-        } catch (err: any) {
-          setSelectedImages((prev) =>
-            prev.map((img) => (img.uri === uri ? { ...img, uploading: false } : img))
-          );
-          Alert.alert('Image upload failed', err?.message || 'Failed to upload image.');
-        }
-      }
-    } finally {
-      isProcessingImageQueueRef.current = false;
-    }
-  };
 
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1243,24 +1200,62 @@ export default function UploadScreen() {
 
     const picked = result.assets.map((a) => a.uri);
 
-    const newUris: string[] = [];
+    // IMPORTANT: compute new URIs outside setState.
+    // React may defer running the state updater function, so mutating `newUris` inside it can
+    // cause `newUris.length` to be 0 here even though we added items to state (stuck spinners).
+    const existingNow = new Set(selectedImages.map((p) => p.uri));
+    const newUris = picked.filter((uri) => !existingNow.has(uri));
+
+    if (!newUris.length) return;
+
     setSelectedImages((prev) => {
       const existing = new Set(prev.map((p) => p.uri));
       const merged = [...prev];
-      for (const uri of picked) {
+      for (const uri of newUris) {
         if (existing.has(uri)) continue;
         existing.add(uri);
-        newUris.push(uri);
         merged.push({ uri, uploadId: null, attachId: null, uploading: true });
       }
       return merged;
     });
 
-    // enqueue and process sequentially
-    if (newUris.length) {
-      imageUploadQueueRef.current.push(...newUris);
-      void processImageQueue();
-      showToast('Uploading images...');
+    const propertiesToken = sessionTokens?.propertiesToken;
+    const referenceId = draftPropertyReferenceId;
+
+    if (!propertiesToken || !referenceId) {
+      setSelectedImages((prev) => prev.map((img) => ({ ...img, uploading: false })));
+      Alert.alert(
+        'Cannot upload images',
+        !propertiesToken
+          ? 'Missing properties token. Please login again.'
+          : 'Draft property reference is missing. Please wait a moment and try again.'
+      );
+      return;
+    }
+
+    showToast('Uploading images...');
+
+    for (const uri of newUris) {
+      try {
+        const ids = await uploadMediaAndAttachToProperty({
+          uri,
+          referenceId,
+          propertiesToken,
+        });
+
+        setSelectedImages((prev) =>
+          prev.map((img) =>
+            img.uri === uri
+              ? { ...img, uploadId: ids.uploadId, attachId: ids.attachId, uploading: false }
+              : img
+          )
+        );
+      } catch (err: any) {
+        setSelectedImages((prev) =>
+          prev.map((img) => (img.uri === uri ? { ...img, uploading: false } : img))
+        );
+        Alert.alert('Image upload failed', err?.message || 'Failed to upload image.');
+      }
     }
   };
 
@@ -2022,7 +2017,10 @@ export default function UploadScreen() {
               <Text style={styles.formLabel}>Property Status *</Text>
           <View style={styles.radioRow}>
             <Pressable
-              style={styles.radioOption}
+              style={[
+                styles.radioOption,
+                propertyDetails.developmentStatus === 'READY' && styles.radioOptionSelected,
+              ]}
               onPress={() => {
                 setOffPlanPickerOpen(false);
                 setOffPlanSearch('');
@@ -2048,7 +2046,10 @@ export default function UploadScreen() {
             </Pressable>
 
             <Pressable
-              style={styles.radioOption}
+              style={[
+                styles.radioOption,
+                propertyDetails.developmentStatus === 'OFF_PLAN' && styles.radioOptionSelected,
+              ]}
               onPress={() => {
                 // Clear READY-only fields when switching to OFF_PLAN.
                 setOffPlanPickerOpen(false);
@@ -2146,7 +2147,7 @@ export default function UploadScreen() {
               >
                 {propertyDetails.developmentStatus === 'GENERIC' && <View style={styles.radioInner} />}
               </View>
-              <Text style={styles.radioLabel}>Upload Generic Video</Text>
+              <Text style={styles.radioLabel}>My video is generic</Text>
             </Pressable>
           </View>
         </View>
@@ -2170,7 +2171,7 @@ export default function UploadScreen() {
     
         {detailsFlow === 'ready_step_1' && propertyDetails.developmentStatus === 'READY' && (
           <View style={styles.formSection}>
-            <Text style={styles.formLabel}>Listing Type *</Text>
+            <Text style={styles.formLabel}>Listing Type</Text>
             <View style={styles.chipRow}>
               {(['BUY', 'RENT', 'STAY'] as TransactionType[]).map((type) => (
                 <Pressable
@@ -2182,8 +2183,8 @@ export default function UploadScreen() {
                   onPress={() => {
                     setPropertyDetails((prev) => {
                       // Pricing UI rules:
-                      // - BUY/RENT => show only main Price (AED). Clear STAY pricing fields so hidden values aren't submitted.
-                      // - STAY     => show Default Pricing + Prices, hide main Price (AED).
+                      // BUY/RENT => show only main Price (AED). Clear STAY pricing fields so hidden values aren't submitted.
+                      // STAY     => show Default Pricing + Prices, hide main Price (AED).
                       if (type === 'BUY' || type === 'RENT') {
                         return {
                           ...prev,
@@ -2357,7 +2358,7 @@ export default function UploadScreen() {
         {detailsFlow === 'ready_step_2' && propertyDetails.developmentStatus === 'READY' && (
           <>
             <View style={styles.formSection}>
-              <Text style={styles.formLabel}>Property Type *</Text>
+              <Text style={styles.formLabel}>Property Type</Text>
               <View style={styles.chipRow}>
                 {(['apartment', 'villa', 'townhouse', 'penthouse', 'studio'] as PropertyType[]).map((type) => (
                   <Pressable
@@ -2377,7 +2378,7 @@ export default function UploadScreen() {
 
             <View style={styles.formRow}>
               <View style={styles.formColumn}>
-                <Text style={styles.formLabel}>Bedrooms *</Text>
+                <Text style={styles.formLabel}>Bedrooms</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="2"
@@ -2388,7 +2389,7 @@ export default function UploadScreen() {
                 />
               </View>
               <View style={styles.formColumn}>
-                <Text style={styles.formLabel}>Bathrooms *</Text>
+                <Text style={styles.formLabel}>Bathrooms</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="2"
@@ -2401,7 +2402,7 @@ export default function UploadScreen() {
             </View>
 
             <View style={styles.formSection}>
-              <Text style={styles.formLabel}>Size (sqft) *</Text>
+              <Text style={styles.formLabel}>Size (sqft)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="1200"
@@ -2411,6 +2412,40 @@ export default function UploadScreen() {
                 onChangeText={(text) => setPropertyDetails({ ...propertyDetails, sizeSqft: text })}
               />
             </View>
+
+            {/* <View style={styles.formSection}>
+              <View style={styles.checkboxRow}>
+                <Pressable
+                  style={[styles.checkbox, propertyDetails.isFurnished && styles.checkboxChecked]}
+                  onPress={() =>
+                    setPropertyDetails({ ...propertyDetails, isFurnished: !propertyDetails.isFurnished })
+                  }
+                >
+                  {propertyDetails.isFurnished ? <Check size={scaleWidth(14)} color="#fff" /> : null}
+                </Pressable>
+                <View style={styles.checkboxTextWrap}>
+                  <Text style={styles.formLabel}>Furnished</Text>
+                  <Text style={styles.helperText}>Is this property furnished?</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <View style={styles.checkboxRow}>
+                <Pressable
+                  style={[styles.checkbox, propertyDetails.hasParking && styles.checkboxChecked]}
+                  onPress={() =>
+                    setPropertyDetails({ ...propertyDetails, hasParking: !propertyDetails.hasParking })
+                  }
+                >
+                  {propertyDetails.hasParking ? <Check size={scaleWidth(14)} color="#fff" /> : null}
+                </Pressable>
+                <View style={styles.checkboxTextWrap}>
+                  <Text style={styles.formLabel}>Garage</Text>
+                  <Text style={styles.helperText}>Does this property have a garage?</Text>
+                </View>
+              </View>
+            </View> */}
           </>
         )}
 
@@ -2643,27 +2678,17 @@ export default function UploadScreen() {
                       try {
                         const referenceId = draftPropertyReferenceId;
                         const propertiesToken = sessionTokens?.propertiesToken;
-                        const uploadId = img.uploadId;
+                        const attachId = img.attachId;
 
-                        // If the media was already uploaded+attached, detach it first.
-                        // DELETE uses the upload id in the URL: /properties/{ref}/media/{id}
-                        if (referenceId && propertiesToken && typeof uploadId === 'number') {
-                          const url = `https://properties.vzite.com/api/v1/properties/${encodeURIComponent(
-                            referenceId
-                          )}/media/${encodeURIComponent(String(uploadId))}`;
-
-                          const res = await fetch(url, {
-                            method: 'DELETE',
-                            headers: {
-                              Accept: 'application/json',
-                              Authorization: `Bearer ${propertiesToken}`,
-                            },
+                        if (referenceId && propertiesToken && typeof attachId === 'number') {
+                          const res = await unAttachPropertyMedia({
+                            propertiesToken,
+                            referenceId,
+                            id: attachId,
                           });
 
-                          const json = await res.json().catch(() => null);
-                          if (!res.ok || (json && json.success === false)) {
-                            const message = json?.message || `Failed to remove image (${res.status})`;
-                            Alert.alert('Remove failed', message);
+                          if (!res.success) {
+                            Alert.alert('Remove failed', res.message || 'Failed to remove image');
                             return;
                           }
                         }
@@ -3153,17 +3178,11 @@ export default function UploadScreen() {
                 )}
 
                 <FlatList<OffPlanProjectListItem>
-                  data={offPlanOptions.filter((p) =>
-                    String(p.title ?? '')
-                      .toLowerCase()
-                      .includes(String(offPlanSearch ?? '').trim().toLowerCase())
-                  )}
+                  data={offPlanOptions}
                   keyExtractor={(item) => String(item.id)}
                   ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
                   onEndReachedThreshold={0.5}
                   onEndReached={() => {
-                    // Only paginate when not searching.
-                    if (offPlanSearch.trim().length) return;
                     if (!hasNextPage || isFetchingNextPage) return;
                     fetchNextPage();
                   }}
@@ -3186,7 +3205,7 @@ export default function UploadScreen() {
                             offPlanProjectTitle: item.title,
                           });
 
-                          // OFF_PLAN: do not create a draft property; use the selected project's reference_id.
+                          // OFF_PLAN: uses the selected project's reference_id.
                           setDraftPropertyReferenceId(referenceId || null);
 
                           setOffPlanSearch('');
@@ -3415,24 +3434,51 @@ export default function UploadScreen() {
         </View>
       </Modal>
 
-      <View style={[styles.wizardFooter, { marginBottom: tabBarHeight }]}>
+      {(() => {
+        const isReadyStep1Valid = Boolean(propertyDetails.title?.trim());
+        const isReadyStep3Valid = Boolean(propertyDetails.emirateId) && Boolean(propertyDetails.districtId);
+        const isReadyStep4DescriptionValid = Boolean(propertyDetails.description?.trim());
+        const hasAnyImages = selectedImages.length > 0;
+        const areAllImagesAttached =
+          hasAnyImages && selectedImages.every((img) => typeof img.attachId === 'number' && !img.uploading);
+
+        const isNextBlocked =
+          (detailsFlow === 'ready_step_1' && !isReadyStep1Valid) ||
+          (detailsFlow === 'ready_step_3' && !isReadyStep3Valid) ||
+          (detailsFlow === 'ready_step_4' && !isReadyStep4DescriptionValid);
+
+        const isPublishBlocked =
+          (detailsFlow === 'ready_step_4' && (!isReadyStep4DescriptionValid || !areAllImagesAttached)) ||
+          (detailsFlow === 'offplan_project' && !propertyDetails.offPlanProjectTitle) ||
+          (detailsFlow === 'generic_publish' && false) ||
+          (detailsFlow === 'status' && propertyDetails.developmentStatus === 'GENERIC' && false);
+
+        const primaryDisabled = isPublishing || isAdvancingFlow || isNextBlocked || isPublishBlocked;
+
+        return (
+          <View style={[styles.wizardFooter, { marginBottom: tabBarHeight }]}>
+
         <Pressable
           style={[styles.wizardButton, styles.wizardButtonSecondary]}
           disabled={isPublishing || isAdvancingFlow}
           onPress={async () => {
             if (detailsFlow === 'status') {
+              // Highlights are optional, but allow navigating back to the highlight picker.
               setStep('selectHighlights');
               return;
             }
             if (detailsFlow === 'generic_publish') {
-              setStep('selectHighlights');
+              // Highlights are optional; return to details flow instead.
+              setStep('details');
               return;
             }
             if (detailsFlow === 'offplan_project') {
+              await resetReadyPropertyFlow();
               await animateToFlow('status', 'back');
               return;
             }
             if (detailsFlow === 'ready_step_1') {
+              await resetReadyPropertyFlow();
               await animateToFlow('status', 'back');
               return;
             }
@@ -3454,8 +3500,8 @@ export default function UploadScreen() {
         </Pressable>
 
         <Pressable
-          style={[styles.wizardButton, (isPublishing || isAdvancingFlow) && styles.publishButtonDisabled]}
-          disabled={isPublishing || isAdvancingFlow}
+          style={[styles.wizardButton, primaryDisabled && styles.publishButtonDisabled]}
+          disabled={primaryDisabled}
           onPress={async () => {
             if (detailsFlow === 'status') {
               if (propertyDetails.developmentStatus === 'READY') {
@@ -3479,13 +3525,17 @@ export default function UploadScreen() {
               }
 
               if (propertyDetails.developmentStatus === 'GENERIC') {
-                // Generic videos can be published immediately (highlights are selected in the previous step).
+                // Generic videos can be published immediately
                 await handlePublish();
                 return;
               }
             }
 
             if (detailsFlow === 'ready_step_1') {
+              if (!isReadyStep1Valid) {
+                Alert.alert('Missing title', 'Please enter a title to continue.');
+                return;
+              }
               await animateToFlow('ready_step_2', 'forward');
               return;
             }
@@ -3494,12 +3544,26 @@ export default function UploadScreen() {
               return;
             }
             if (detailsFlow === 'ready_step_3') {
+              if (!isReadyStep3Valid) {
+                Alert.alert('Missing location', 'Please select Emirate and District to continue.');
+                return;
+              }
               await animateToFlow('ready_step_4', 'forward');
               return;
             }
 
             // Publish flows
             if (detailsFlow === 'ready_step_4' || detailsFlow === 'offplan_project' || detailsFlow === 'generic_publish') {
+              if (detailsFlow === 'ready_step_4') {
+                if (!isReadyStep4DescriptionValid) {
+                  Alert.alert('Missing description', 'Please enter a description to publish.');
+                  return;
+                }
+                if (!areAllImagesAttached) {
+                  Alert.alert('Images still uploading', 'Please wait until all images finish uploading.');
+                  return;
+                }
+              }
               await handlePublish();
               return;
             }
@@ -3518,7 +3582,9 @@ export default function UploadScreen() {
                 : 'Next'}
           </Text>
         </Pressable>
-      </View>
+          </View>
+        );
+      })()}
     </View>
   );
 }
@@ -3643,7 +3709,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sectionTitle: {
-    fontSize: scaleFont(20),
+    fontSize: scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(8),
@@ -3751,6 +3817,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(12),
+  },
+  checkbox: {
+    width: scaleWidth(22),
+    height: scaleWidth(22),
+    borderRadius: scaleWidth(6),
+    borderWidth: 1,
+    borderColor: 'black',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.bronze,
+    borderColor: Colors.bronze,
+  },
+  checkboxTextWrap: {
+    flex: 1,
+  },
+  helperText: {
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+    marginTop: scaleHeight(4),
+  },
   amenitiesChipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -3849,8 +3942,8 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
   },
   radioRow: {
-    flexDirection: 'row',
-    gap: scaleWidth(16),
+    flexDirection: 'column',
+    //gap: scaleWidth(26),
     flexWrap: 'wrap',
   },
   radioOption: {
@@ -3858,7 +3951,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: scaleWidth(8),
     paddingVertical: scaleHeight(10),
+    paddingHorizontal: scaleWidth(16),
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
     marginLeft: scaleWidth(8),
+    width: "90%",
+    height: scaleHeight(80),
+    marginTop: scaleHeight(20),
+  },
+  radioOptionSelected: {
+    borderColor: Colors.bronze,
   },
   radioOuter: {
     width: scaleWidth(20),
