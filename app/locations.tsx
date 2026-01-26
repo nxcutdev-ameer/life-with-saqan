@@ -6,14 +6,20 @@ import { TransactionType } from '@/types';
 import { cities } from '@/mocks/properties';
 import { Platform } from 'react-native';
 
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+
 export default function LocationsScreen() {
   const router = useRouter();
+  const { updatePreferences, lifestyles } = useUserPreferences();
   const [transactionType, setTransactionType] = useState<TransactionType>('RENT');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
 
   const handleCitySelect = (city: string) => {
     setSelectedCity(city);
-    setTimeout(() => {
+    updatePreferences(transactionType, city, lifestyles);
+
+    if(transactionType === 'STAY') {
+       setTimeout(() => {
       router.push({
         pathname: '/lifestyle',
         params: {
@@ -22,6 +28,17 @@ export default function LocationsScreen() {
         },
       });
     }, 200);
+    }
+    else {
+      setTimeout(() => {
+      router.push({
+        pathname: '/(tabs)/feed',
+        params: {
+          location: city,
+        },
+      });
+    }, 200);
+    }
   };
 
   return (

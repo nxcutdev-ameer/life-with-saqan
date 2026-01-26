@@ -483,18 +483,25 @@ export default function FeedScreen() {
     const meta = backendProperty?.meta;
 
     const title = backendProperty?.title || backendProperty?.name || v.title || 'Untitled';
-    const defaultPricing = backendProperty?.default_pricing || 'month';
-    const priceField =
-      defaultPricing === 'week'
-        ? meta?.week_price
-        : defaultPricing === 'year'
-          ? meta?.year_price
-          : meta?.month_price;
+    const defaultPricing = backendProperty?.default_pricing || null;
+    
+    let priceField = 0;
+    if (defaultPricing === null) {
+        priceField = meta?.sale_price;
+    } else {
+         priceField =
+        defaultPricing === 'week'
+            ? meta?.week_price
+            : defaultPricing === 'year'
+            ? meta?.year_price
+            : meta?.month_price;
+    }
+
     const price = toNumberOrZero(priceField);
 
     const bedrooms = toNumberOrZero(meta?.bedrooms);
     const bathrooms = toNumberOrZero(meta?.bathrooms);
-    const sizeSqft = toNumberOrZero(meta?.size);
+    const sizeSqft = toNumberOrZero(meta?.square); // Use square as the primary source for size
 
     const city = backendProperty?.emirate?.name || '';
     const area = backendProperty?.district?.name || '';
@@ -711,16 +718,16 @@ export default function FeedScreen() {
           setCommentsModalVisible(true);
         }}
         onNavigateToProperty={async (propertyReference) => {
-          // Cache item data for the details screen (until a dedicated property endpoint is wired).
-          try {
-            const current = items.find((p) => p.propertyReference === propertyReference || p.id === propertyReference);
-            if (current?.propertyReference) {
-              await AsyncStorage.setItem(
-                `@property_cache_${current.propertyReference}`,
-                JSON.stringify(current)
-              );
-            }
-          } catch {}
+          // // Cache item data for the details screen (until a dedicated property endpoint is wired).
+          // try {
+          //   const current = items.find((p) => p.propertyReference === propertyReference || p.id === propertyReference);
+          //   if (current?.propertyReference) {
+          //     await AsyncStorage.setItem(
+          //       `@property_cache_${current.propertyReference}`,
+          //       JSON.stringify(current)
+          //     );
+          //   }
+          // } catch {}
 
           router.push(`/property/${propertyReference}`);
         }}

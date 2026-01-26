@@ -78,7 +78,7 @@ export async function uploadGenericVideo(params: {
     form.append(`room_timestamps[${idx}][end_time]`, String(item.end_time));
   });
 
-  return fetchJson<UploadWithPropertySuccessResponse>(`${BASE_URL}/upload`, {
+  return fetchJson<UploadWithPropertySuccessResponse>(`${BASE_URL}/upload-generic`, {
     method: 'POST',
     timeoutMs: 120000,
     headers: {

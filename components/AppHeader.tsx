@@ -35,24 +35,39 @@ export default function AppHeader({ onSearchPress, onSelectionsPress }: AppHeade
         >
           {transactionType.charAt(0) + transactionType.slice(1).toLowerCase()}
         </Text>
-        <Text
-          style={[styles.selectionText, styles.inactiveText]}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
-          {location}
-        </Text>
-        <View style={styles.lifestyleContainer}>
+        
+        <View style={styles.locationContainer}>
           <Text
-            style={[styles.selectionText, styles.activeText]}
+            style={[
+              styles.selectionText, 
+              transactionType === 'STAY' ? styles.inactiveText : styles.activeText
+            ]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            {lifestyleDisplay}
+            {location}
           </Text>
-          <View style={styles.lifestyleUnderline} />
-          <View style={styles.lifestyleDot} />
+          {transactionType !== 'STAY' && (
+            <>
+              <View style={styles.lifestyleUnderline} />
+              <View style={styles.lifestyleDot} />
+            </>
+          )}
         </View>
+
+        {transactionType === 'STAY' && (
+          <View style={styles.lifestyleContainer}>
+            <Text
+              style={[styles.selectionText, styles.activeText]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {lifestyleDisplay}
+            </Text>
+            <View style={styles.lifestyleUnderline} />
+            <View style={styles.lifestyleDot} />
+          </View>
+        )}
       </Pressable>
 
       <Pressable style={styles.iconButton} onPress={onSearchPress}>
@@ -98,6 +113,11 @@ const styles = StyleSheet.create({
   activeText: {
     fontWeight: '700',
     opacity: 1,
+  },
+  locationContainer: {
+    position: 'relative' as const,
+    flexShrink: 1,
+    minWidth: 0,
   },
   lifestyleContainer: {
     position: 'relative' as const,

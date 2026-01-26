@@ -573,7 +573,7 @@ export default function UploadScreen() {
       reference_id: referenceId,
       state: 'draft',
       // Listing Type -> type
-      type: propertyDetails.listingType || null,
+      type: propertyDetails.listingType === 'BUY'? 'sale':propertyDetails.listingType || null,
       // Pricing rules:
       //  BUY  => sale_price = Price(AED), hide default pricing/prices
       //  RENT => default_pricing = 'year', year_price = Price(AED), hide default pricing/prices, sale_price = null
@@ -602,7 +602,7 @@ export default function UploadScreen() {
       bathrooms: propertyDetails.bathrooms ? Number(propertyDetails.bathrooms) : null,
       furnished: Boolean(propertyDetails.isFurnished),
       garage: Boolean(propertyDetails.hasParking),
-      amenitites: amenitiesCsv,
+      amenities: amenitiesCsv,
       built_year: propertyDetails.builtYear ? Number(propertyDetails.builtYear) : null,
       floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
       day_price:

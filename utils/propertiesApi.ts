@@ -229,26 +229,80 @@ export type PropertyDetailsPayload = {
   title: string;
   description: string;
   type?: string;
+  permit?: string | null;
+  rera?: string | null;
+  dtcm?: string | null;
   state?: string;
+  trakheesi?: string | null;
+  rera_licence_id?: string | null;
   default_pricing?: string | null;
   meta?: {
+    sale_price?: string | number | null;
     week_price?: string | number | null;
     month_price?: string | number | null;
     year_price?: string | number | null;
     bedrooms?: string | number | null;
+    furnished?: string | number | null;
     bathrooms?: string | number | null;
+    built_year?: string | number | null;
+    garage?: string | number | null;
+    block?: string | null;
+    floor?: string | number | null;
     size?: string | number | null;
+    square?: string | number | null;
+    seo_title?: string | null;
+    seo_description?: string | null;
   };
-  agency?: { agency_name?: string | null } | null;
-  agent?: { id?: number | null } | null;
-  district?: { id: number; name: string; description?: string | null } | null;
-  emirate?: { id: number; name: string; description?: string | null } | null;
-  area?: { id: number; name: string; slug?: string; status?: number; is_deleted?: number } | null;
-  building?: { name?: string | null; slug?: string | null } | null;
+  agency?: {
+    agency_name?: string | null;
+  } | null;
+  agent?: {
+    id?: number | null;
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    avatar?: {
+      url?: string | null;
+    } | null;
+  } | null;
+  developer?: unknown | null;
+  district?: {
+    id: number;
+    name: string;
+    description?: string | null;
+  } | null;
+  emirate?: {
+    id: number;
+    name: string;
+    description?: string | null;
+  } | null;
+  area?: {
+    id: number;
+    name: string;
+    slug?: string;
+    status?: number;
+    is_deleted?: number;
+  } | null;
+  building?: {
+    name?: string | null;
+    slug?: string | null;
+  } | null;
   coordinates?: unknown;
-  media?: any[];
+  media?: Array<{
+    id?: number;
+    type?: string;
+    url?: string;
+    file?: string;
+    path?: string;
+    original_url?: string;
+    thumbnail_url?: string;
+  }>;
   media_meta?: any[];
-  amenities?: PropertyAmenity[];
+  amenities?: Array<{
+    id: number;
+    name: string;
+    icon?: string;
+  }>;
 };
 
 export async function fetchPropertyByReferenceResponse(
@@ -272,7 +326,7 @@ export async function fetchPropertyByReference(referenceId: string): Promise<Pro
   return res.payload;
 }
 
-// --- Property media helpers (mimic web logic) ---
+// --- Property media helpers ---
 
 export type UploadMediaPayload = {
   id: number;

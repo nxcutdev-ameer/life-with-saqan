@@ -32,7 +32,6 @@ import {
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
 import {
-  fetchPropertyByReference,
   fetchPropertyByReferenceResponse,
   PropertyDetailsPayload,
 } from '@/utils/propertiesApi';
@@ -48,9 +47,9 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function PropertyDetailScreen() {
   const router = useRouter();
   // Route param is treated as the property reference.
-  // expo-router may provide params as string | string[] depending on how navigation was done.
-  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
+  const { id, videoId } = useLocalSearchParams<{ id?: string | string[]; videoId?: string | string[] }>();
   const propertyReference = Array.isArray(id) ? id[0] : id;
+  const videoIdParam = Array.isArray(videoId) ? videoId[0] : videoId;
 
   const [property, setProperty] = useState<Property | null>(() => {
     // Allow mocked items to still work in dev.
@@ -65,7 +64,7 @@ export default function PropertyDetailScreen() {
   const propertiesToken = useAuthStore((st) => st.session?.tokens?.propertiesToken) ?? null;
   const requestSeq = useRef(0);
 
-  const mapApiPayloadToProperty = (payload: PropertyDetailsPayload): Property => {
+  const mapApiPayloadToProperty = (payload: PropertyDetailsPayload, videoIdOverride?: string): Property => {
     const parseNum = (value: unknown, fallback = 0) => {
       const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
       return Number.isFinite(n) ? n : fallback;
@@ -74,17 +73,22 @@ export default function PropertyDetailScreen() {
     const listingType: TransactionType = payload.type === 'rent' ? 'RENT' : payload.type === 'stay' ? 'STAY' : 'BUY';
 
     const pricing = payload.default_pricing ?? 'month';
-    const price =
-      pricing === 'week'
-        ? parseNum(payload.meta?.week_price)
-        : pricing === 'year'
-          ? parseNum(payload.meta?.year_price)
-          : parseNum(payload.meta?.month_price);
+    
+    let price = 0;
+    if (listingType === 'BUY') {
+      price = parseNum(payload.meta?.sale_price);
+    } else {
+        price =
+        pricing === 'week'
+            ? parseNum(payload.meta?.week_price)
+            : pricing === 'year'
+            ? parseNum(payload.meta?.year_price)
+            : parseNum(payload.meta?.month_price);
+    }
 
     const emirateName = payload.emirate?.name ?? 'UAE';
     const areaName = payload.area?.name ?? payload.district?.name ?? 'Unknown area';
 
-    // API may return media later; for now keep fallbacks so UI doesn't break.
     const fallbackThumb =
       'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=80';
 
@@ -93,14 +97,15 @@ export default function PropertyDetailScreen() {
       .filter((v) => Boolean(v));
 
     const mediaUrls = (payload.media ?? [])
-      .map((m: any) => m?.url ?? m?.file ?? m?.path)
-      .filter((u: any) => typeof u === 'string' && u.length > 0) as string[];
+      .map((m) => m?.original_url ?? m?.url ?? m?.file ?? m?.path)
+      .filter((u): u is string => typeof u === 'string' && u.length > 0);
 
     const videoUrl = mediaUrls.find((u) => u.endsWith('.mp4')) ?? '';
+    // Filter out video from images list if needed, or keep all. Usually images are non-mp4.
     const images = mediaUrls.filter((u) => !u.endsWith('.mp4'));
 
     return {
-      id: payload.reference_id,
+      id: videoIdOverride || payload.reference_id,
       propertyReference: payload.reference_id,
       title: payload.title ?? 'Untitled property',
       description: payload.description ?? '',
@@ -111,7 +116,7 @@ export default function PropertyDetailScreen() {
       propertyType: 'apartment' as PropertyType,
       bedrooms: parseNum(payload.meta?.bedrooms),
       bathrooms: parseNum(payload.meta?.bathrooms),
-      sizeSqft: parseNum(payload.meta?.size),
+      sizeSqft: parseNum(payload.meta?.size) || parseNum(payload.meta?.square),
       location: {
         city: emirateName,
         area: areaName,
@@ -120,20 +125,20 @@ export default function PropertyDetailScreen() {
       },
       videoUrl,
       thumbnailUrl: images[0] ?? fallbackThumb,
-      images,
+      images: images.length > 0 ? images : [fallbackThumb],
       amenities,
       lifestyle: [] as LifestyleType[],
       agent: {
         id: String(payload.agent?.id ?? '0'),
-        name: `Agent ${payload.agent?.id ?? ''}`.trim(),
+        name: payload.agent?.name ?? `Agent ${payload.agent?.id ?? ''}`.trim(),
         agency: payload.agency?.agency_name ?? 'Agency',
-        photo: fallbackThumb,
-        phone: '+971501234567',
-        email: 'agent@vzite.com',
+        photo: payload.agent?.avatar?.url || fallbackThumb,
+        phone: payload.agent?.phone ?? '+971501234567',
+        email: payload.agent?.email ?? 'agent@vzite.com',
         isVerified: true,
       },
-      agentName: `Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent',
-      agentPhoto: fallbackThumb,
+      agentName: payload.agent?.name ??(`Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent'),
+      agentPhoto: payload.agent?.avatar?.url || fallbackThumb,
       likesCount: 0,
       savesCount: 0,
       sharesCount: 0,
@@ -160,7 +165,7 @@ export default function PropertyDetailScreen() {
       // 2) Fetch the latest from API
       try {
         setLoading(true);
-                const response = await fetchPropertyByReferenceResponse(propertyReference, {
+          const response = await fetchPropertyByReferenceResponse(propertyReference, {
           timeoutMs: 15000,
           propertiesToken,
         });
@@ -459,9 +464,16 @@ export default function PropertyDetailScreen() {
           <View style={styles.agentCard}>
             <Text style={styles.sectionTitle}>Agent Information</Text>
             <View style={styles.agentRow}>
-              <View style={styles.agentAvatar}>
-                <Text style={styles.agentInitial}>{property.agentName.charAt(0)}</Text>
-              </View>
+               {property.agentPhoto ? (
+                <Image
+                  source={{ uri: property.agentPhoto }}
+                  style={styles.agentAvatar}
+                />
+              ) : (
+                <View style={[styles.agentAvatar, { overflow: 'hidden' }]}>
+                  <Text style={styles.agentInitial}>{property.agentName.charAt(0)}</Text>
+                </View>
+              )}
               <View style={styles.agentInfo}>
                 <Text style={styles.agentName}>{property.agentName}</Text>
                 <Text style={styles.agentRole}>Real Estate Agent</Text>
