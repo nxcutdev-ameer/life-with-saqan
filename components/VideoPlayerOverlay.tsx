@@ -4,6 +4,7 @@ import { FastForward } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { scaleWidth } from '@/utils/responsive';
 
 interface Room {
   name: string;
@@ -55,7 +56,7 @@ export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: Vid
   return (
     <>
       <Pressable
-        style={styles.triggerButton}
+        style={[styles.triggerButton, styles.iconShadow]}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
@@ -116,8 +117,8 @@ export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: Vid
           setVisible(true);
         }}
       >
-        <Animated.View style={[styles.iconShadow, ffAnimatedStyle]}>
-          <FastForward size={25} color={Colors.textLight} fill={Colors.textLight} />
+        <Animated.View style={[ffAnimatedStyle, {marginRight:scaleWidth(8)}]}>
+          <FastForward size={20} color={Colors.textLight} fill={Colors.textLight} />
         </Animated.View>
       </Pressable>
 

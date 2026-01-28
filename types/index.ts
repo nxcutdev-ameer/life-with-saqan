@@ -24,6 +24,9 @@ export interface Agent {
   totalReviews?: number;
   yearsExperience?: number;
   licenseNumber?: string;
+
+  /** Backend agent_id from public videos endpoint (to be used for dedicated agent profile endpoint). */
+  agentId?: number;
 }
 
 export interface Property {

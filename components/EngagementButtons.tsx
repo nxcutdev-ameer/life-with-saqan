@@ -87,7 +87,7 @@ export default function EngagementButtons({
   return (
     <View style={styles.footerActionsBar}>
       <Pressable
-        style={styles.footerActionButton}
+        style={[styles.footerActionButton, styles.iconShadow]}
         onPress={() => {
           // Immediate tactile response even before parent state updates
           Animated.spring(heartScale, {
@@ -134,14 +134,14 @@ export default function EngagementButtons({
         </Text>
       </Pressable>
 
-      <Pressable style={styles.footerActionButton} onPress={() => onOpenComments(item.id)}>
+      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onOpenComments(item.id)}>
         <MaterialCommunityIcons name="chat" size={25} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.commentsCount)}
         </Text>
       </Pressable>
 
-      <Pressable style={styles.footerActionButton} onPress={() => onToggleSave(item.id)}>
+      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onToggleSave(item.id)}>
         <MaterialCommunityIcons
           name={isSaved ? 'bookmark' : 'bookmark-outline'}
           size={25}
@@ -153,7 +153,7 @@ export default function EngagementButtons({
       </Pressable>
 
       <Pressable
-        style={styles.footerActionButton}
+        style={[styles.footerActionButton, styles.iconShadow]}
         onPress={() => onShare && onShare(item.id)}
       >
         <MaterialCommunityIcons name="share-variant" size={25} color="#FFFFFF" />

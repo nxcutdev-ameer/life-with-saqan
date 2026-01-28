@@ -111,12 +111,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight:scaleWidth(8),
   },
-  iconShadow: {
+ iconShadow: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 4,
     elevation: 5,
+    marginRight:5
   },
   modalOverlay: {
     flex: 1,

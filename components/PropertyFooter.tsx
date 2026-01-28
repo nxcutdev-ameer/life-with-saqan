@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Text, View, Pressable } from 'react-native';
+import { Animated, Text, View, Pressable } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { scaleHeight } from '@/utils/responsive';
-import { Plus } from 'lucide-react-native';
+import { Check, Plus } from 'lucide-react-native';
 import { Property } from '@/types';
 import { Colors } from '@/constants/colors';
 import { feedStyles as styles } from '@/constants/feedStyles';
@@ -28,6 +28,13 @@ interface PropertyFooterProps {
   selectedSubtitleCode?: string;
   /** Navigate to property details (only triggered from the footer tap area). */
   onNavigateToProperty?: () => void;
+
+  /** Notify parent when user starts/ends scrubbing the progress bar. */
+  onScrubStart?: () => void;
+  onScrubEnd?: () => void;
+
+  /** When true, hide all footer overlays except the progress bar (TikTok-like scrubbing mode). */
+  scrubbing?: boolean;
 }
 
 interface LanguageTranslation {
@@ -59,10 +66,52 @@ export default function PropertyFooter({
   onSubtitleSelect,
   selectedSubtitleCode,
   onNavigateToProperty,
+  onScrubStart,
+  onScrubEnd,
+  scrubbing = false,
 }: PropertyFooterProps) {
   const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+
+  const [followIconState, setFollowIconState] = useState<'plus' | 'check' | 'hidden'>('plus');
+  const followIconScale = useRef(new Animated.Value(1)).current;
+  const followIconOpacity = useRef(new Animated.Value(1)).current;
+
+  const onPressFollow = useCallback(() => {
+    if (followIconState !== 'plus') return;
+
+    Animated.sequence([
+      Animated.timing(followIconScale, {
+        toValue: 0,
+        duration: 90,
+        useNativeDriver: true,
+      }),
+      Animated.timing(followIconScale, {
+        toValue: 1,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.delay(650),
+      Animated.parallel([
+        Animated.timing(followIconOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(followIconScale, {
+          toValue: 0.6,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(({ finished }) => {
+      if (finished) setFollowIconState('hidden');
+    });
+
+    // Swap icon to check just after the "shrink".
+    setTimeout(() => setFollowIconState('check'), 90);
+  }, [followIconOpacity, followIconScale, followIconState]);
 
   const toAbsoluteUrl = (maybePath?: string | null) => {
     if (!maybePath) return '';
@@ -91,14 +140,12 @@ export default function PropertyFooter({
   return (
     <>
       {/* Action buttons floating above footer (exclude bottom tab bar height) */}
-      <View
-        style={[
-          styles.floatingActionsBar,
-          { bottom: scaleHeight(140) + bottomTabBarHeight },
-        ]}
-      >
+      {!scrubbing ? (
+        <View
+          style={[styles.floatingActionsBar, { bottom: scaleHeight(140) + bottomTabBarHeight }]}
+        >
         <View style={styles.agentSection}>
-          <TranslationOverlay
+       <TranslationOverlay
             agentName={item.agentName}
             languages={translations}
             selectedCode={selectedSubtitleCode}
@@ -109,21 +156,41 @@ export default function PropertyFooter({
               }
             }}
           />
-          <Pressable
-            style={styles.footerActionButton}
-            onPress={() => router.push('/(tabs)/profile' as any)}
-            hitSlop={10}
-          >
+          <View style={styles.footerActionButton}>
             <View style={styles.agentAvatarContainer}>
-              <View style={styles.agentAvatar}>
-               <Text style={styles.agentInitial}>{item.agentName.charAt(0)}</Text>
-              </View>
-              {/* size 14 */}
-              <View style={styles.agentPlusIcon}>
-                <Plus size={12} color={Colors.textLight} strokeWidth={2.5} />
-              </View>
+              <Pressable
+                onPress={() => router.push('/(tabs)/profile' as any)}
+                hitSlop={10}
+              >
+                <View style={styles.agentAvatar}>
+                  <Text style={styles.agentInitial}>
+                    {(item.agentName || item.agent?.name || 'A').trim().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              </Pressable>
+
+              {followIconState !== 'hidden' ? (
+                <Pressable
+                  style={styles.agentPlusIcon}
+                  hitSlop={10}
+                  onPress={onPressFollow}
+                >
+                  <Animated.View
+                    style={{
+                      transform: [{ scale: followIconScale }],
+                      opacity: followIconOpacity,
+                    }}
+                  >
+                    {followIconState === 'check' ? (
+                      <Check size={14} color={Colors.textLight} strokeWidth={3} />
+                    ) : (
+                      <Plus size={14} color={Colors.textLight} strokeWidth={2.5} />
+                    )}
+                  </Animated.View>
+                </Pressable>
+              ) : null}
             </View>
-          </Pressable>
+          </View>
         </View>
 
         <EngagementButtons
@@ -137,30 +204,40 @@ export default function PropertyFooter({
         />
 
         <VideoPlayerOverlay onSeek={onSeek} rooms={item.rooms} />
-      </View>
+        </View>
+      ) : null}
 
       {/* Black footer bar with progress and property info (sits above bottom tabs) */}
-      <View style={[styles.globalFooterBar, { bottom: bottomTabBarHeight }]}>
+      <View style={[styles.globalFooterBar, { bottom: bottomTabBarHeight }]}> 
         {/* Property info (tap to navigate) */}
-        <Pressable
-          style={styles.footerMainContent}
-          onPress={onNavigateToProperty}
-          disabled={!onNavigateToProperty}
-        >
-          <PropertyInfo
-            item={item}
-            translationContent={
-              selectedLanguage && selectedLanguage.translation
-                ? {
-                    agentName: item.agentName,
-                    translation: selectedLanguage.translation,
-                  }
-                : null
-            }
-          />
-        </Pressable>
+        {!scrubbing ? (
+          <Pressable
+            style={styles.footerMainContent}
+            onPress={onNavigateToProperty}
+            disabled={!onNavigateToProperty}
+          >
+            <PropertyInfo
+              item={item}
+              translationContent={
+                selectedLanguage && selectedLanguage.translation
+                  ? {
+                      agentName: item.agentName,
+                      translation: selectedLanguage.translation,
+                    }
+                  : null
+              }
+            />
+          </Pressable>
+        ) : null}
         {/* Progress bar should sit right above the bottom tabs */}
-        <PropertyProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+        <PropertyProgressBar
+          currentTime={currentTime}
+          duration={duration}
+          onSeek={onSeek}
+          onScrubStart={onScrubStart}
+          onScrubEnd={onScrubEnd}
+          showTimeLabel={scrubbing}
+        />
       </View>
     </>
   );

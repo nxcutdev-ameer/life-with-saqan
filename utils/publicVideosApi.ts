@@ -17,6 +17,18 @@ export interface PublicVideosResponse {
 
 export interface PublicVideo {
   video_id: number;
+  agent?: {
+    agent_id?: number;
+    company_employee?: {
+      id?: number;
+      name?: string;
+      email?: string;
+      phone?: string;
+      avatar?: { id?: number; url?: string | null };
+      company_id?: number | null;
+      status?: number;
+    };
+  };
   property_reference: string;
   title: string;
   description: string;

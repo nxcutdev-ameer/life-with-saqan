@@ -8,9 +8,9 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 // remains consistent, but make spacing/typography scale with device size.
 const spacing = scaleWidth;
 
-const AVATAR_SIZE = scaleWidth(35);
+const AVATAR_SIZE = scaleWidth(45);
 const AVATAR_BORDER_RADIUS = AVATAR_SIZE / 2;
-const PLUS_ICON_SIZE = scaleWidth(16);
+const PLUS_ICON_SIZE = scaleWidth(25);
 
 export const feedStyles = StyleSheet.create({
   container: {
@@ -58,7 +58,10 @@ export const feedStyles = StyleSheet.create({
     paddingHorizontal: spacing(16),
     paddingTop: scaleHeight(12),
     paddingBottom: scaleHeight(12),
+    marginBottom: scaleHeight(12),
+    marginRight: spacing(66),
     gap: spacing(16),
+    //backgroundColor: '#000000',
   },
   footerLeftContent: {
     flex: 1,
@@ -108,6 +111,14 @@ export const feedStyles = StyleSheet.create({
     alignItems: 'center',
     paddingRight: spacing(8),
   },
+   iconShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 5,
+    marginRight:5
+  },
   footerActionButton: {
     alignItems: 'center',
     gap: spacing(1),
@@ -132,6 +143,7 @@ export const feedStyles = StyleSheet.create({
     height: AVATAR_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: scaleWidth(8),
   },
   agentAvatar: {
     width: AVATAR_SIZE,
@@ -146,7 +158,7 @@ export const feedStyles = StyleSheet.create({
   },
   agentPlusIcon: {
     position: 'absolute' as const,
-    bottom: -spacing(-22), //3
+    bottom: -spacing(-30), //3
     right: -spacing(2),
     width: PLUS_ICON_SIZE,
     height: PLUS_ICON_SIZE,

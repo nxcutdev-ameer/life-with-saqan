@@ -50,7 +50,7 @@ export default function AppHeader({ onSearchPress, onSelectionsPress }: AppHeade
           {transactionType !== 'STAY' && (
             <>
               <View style={styles.lifestyleUnderline} />
-              <View style={styles.lifestyleDot} />
+              {/* <View style={styles.lifestyleDot} /> */}
             </>
           )}
         </View>
@@ -65,7 +65,7 @@ export default function AppHeader({ onSearchPress, onSelectionsPress }: AppHeade
               {lifestyleDisplay}
             </Text>
             <View style={styles.lifestyleUnderline} />
-            <View style={styles.lifestyleDot} />
+            {/* <View style={styles.lifestyleDot} /> */}
           </View>
         )}
       </Pressable>
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     bottom: -scaleHeight(4),
     left: '50%',
     height: scaleHeight(3),
-    backgroundColor: Colors.textLight,
+    backgroundColor: '#E53935',
     borderRadius: scaleWidth(2),
     width: scaleWidth(26),
     transform: [{ translateX: -scaleWidth(13) }],

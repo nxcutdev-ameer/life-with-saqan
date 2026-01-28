@@ -30,6 +30,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
 import PropertyFooter from '@/components/PropertyFooter';
 import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
+import { Play } from 'lucide-react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -49,10 +50,36 @@ interface FeedItemProps {
   onShare: (id: string) => void;
   globalSubtitleLanguageCode?: string;
   onGlobalSubtitleLanguageChange?: (languageCode: string) => void;
+  onSpeedingChange?: (isSpeeding: boolean) => void;
+  onScrubbingChange?: (isScrubbing: boolean) => void;
 }
 
-function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange }: FeedItemProps) {
+function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
   const [isPaused, setIsPaused] = useState(false);
+
+  const playOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const [showPlayOverlay, setShowPlayOverlay] = useState(false);
+
+  useEffect(() => {
+    if (isPaused) {
+      setShowPlayOverlay(true);
+      Animated.timing(playOverlayOpacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
+    // Fade out then unmount
+    Animated.timing(playOverlayOpacity, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setShowPlayOverlay(false);
+    });
+  }, [isPaused, playOverlayOpacity]);
 
   const player = useVideoPlayer(item.videoUrl, (player) => {
     player.loop = true;
@@ -93,6 +120,8 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
       }
     } else {
       // Ensure we never keep a feed item at 2x when it leaves the viewport.
+      setIsSpeeding(false);
+      onSpeedingChange?.(false);
       try {
         (player as any).playbackRate = 1;
       } catch {}
@@ -216,14 +245,37 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   };
 
   const [isSpeeding, setIsSpeeding] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const wasPausedBeforeSpeedRef = useRef(false);
 
   const startSpeed = () => {
+    wasPausedBeforeSpeedRef.current = isPaused;
+
+    // If the video was paused, temporarily resume while holding for 2x.
+    if (isPaused) {
+      setIsPaused(false);
+      try {
+        player.play();
+      } catch {}
+    }
+
     setIsSpeeding(true);
+    onSpeedingChange?.(true);
     setPlaybackRate(2);
   };
   const stopSpeed = () => {
     setIsSpeeding(false);
+    onSpeedingChange?.(false);
     setPlaybackRate(1);
+
+    // If it was paused before the speed-hold started, restore paused state.
+    if (wasPausedBeforeSpeedRef.current) {
+      try {
+        player.pause();
+      } catch {}
+      setIsPaused(true);
+      wasPausedBeforeSpeedRef.current = false;
+    }
   };
 
   const swipeHandledRef = useRef(false);
@@ -269,6 +321,37 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           </View>
         )}
 
+        {showPlayOverlay && !isSpeeding ? (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 50,
+              opacity: playOverlayOpacity,
+            }}
+          >
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 36,
+                //backgroundColor: 'rgba(0,0,0,0.45)',
+                opacity: 0.60,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Play size={36} color="#fff" fill="#fff" />
+            </View>
+          </Animated.View>
+        ) : null}
+
          {activeSubtitle ? (
           <View
             pointerEvents="none"
@@ -301,6 +384,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
       {/* Overlay touch zones: left/right hold = 2x speed, center tap = pause/play */}
       <View
+        pointerEvents={isScrubbing ? 'none' : 'auto'}
         style={{
           position: 'absolute',
           top: OVERLAY_TOP,
@@ -334,28 +418,47 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
      {/* Centered just above the progress bar */}
      <SpeedBoostOverlay visible={isSpeeding} bottom={bottomTabBarHeight + scaleHeight(10)} />
 
-     <PropertyFooter
-       item={item}
-        currentTime={currentTime}
-        duration={duration}
-        isLiked={isLiked}
-        isSaved={isSaved}
-        onToggleLike={onToggleLike}
-        onToggleSave={onToggleSave}
-        onOpenComments={onOpenComments}
-        onShare={onShare}
-        onSeek={handleSeek}
-        selectedSubtitleCode={globalSubtitleLanguageCode}
-        onSubtitleSelect={(subtitleUrl, languageCode) => {
-          setSelectedSubtitleUrl(subtitleUrl);
-          onGlobalSubtitleLanguageChange?.(languageCode);
-        }}
-        onNavigateToProperty={() => {
-          player.pause();
-          setIsPaused(true);
-          onNavigateToProperty(item.propertyReference || item.id);
-        }}
-      />
+     {!isSpeeding ? (
+       <PropertyFooter
+         item={item}
+         currentTime={currentTime}
+         duration={duration}
+         isLiked={isLiked}
+         isSaved={isSaved}
+         onToggleLike={onToggleLike}
+         onToggleSave={onToggleSave}
+         onOpenComments={onOpenComments}
+         onShare={onShare}
+         onSeek={handleSeek}
+         scrubbing={isScrubbing}
+         onScrubStart={() => {
+           // If user starts scrubbing, stop any 2x hold and disable overlay zones.
+           stopSpeed();
+
+           // Pause video while scrubbing.
+           player.pause();
+           setIsPaused(true);
+
+           setIsScrubbing(true);
+           onScrubbingChange?.(true);
+         }}
+         onScrubEnd={() => {
+           // Show UI again; keep video paused (user can tap to play).
+           setIsScrubbing(false);
+           onScrubbingChange?.(false);
+         }}
+         selectedSubtitleCode={globalSubtitleLanguageCode}
+         onSubtitleSelect={(subtitleUrl, languageCode) => {
+           setSelectedSubtitleUrl(subtitleUrl);
+           onGlobalSubtitleLanguageChange?.(languageCode);
+         }}
+         onNavigateToProperty={() => {
+           player.pause();
+           setIsPaused(true);
+           onNavigateToProperty(item.propertyReference || item.id);
+         }}
+       />
+     ) : null}
     </View>
   );
 }
@@ -383,6 +486,8 @@ export default function FeedScreen() {
   const filteredProperties = useMemo(() => items, [items]);
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   const globalSubtitleLanguageCode = useSubtitleStore((st) => st.languageCode);
   const setGlobalSubtitleLanguageCode = useSubtitleStore((st) => st.setLanguageCode);
@@ -506,6 +611,9 @@ export default function FeedScreen() {
     const city = backendProperty?.emirate?.name || '';
     const area = backendProperty?.district?.name || '';
 
+    const agentId = v?.agent?.agent_id ?? v?.agent?.company_employee?.id;
+    const agentName = (v?.agent?.company_employee?.name ?? '').trim();
+
     return {
       id: String(v.video_id),
       propertyReference: v?.property_reference,
@@ -528,16 +636,17 @@ export default function FeedScreen() {
       amenities: [],
       lifestyle: [],
       agent: {
-        id: '1',
-        name: 'Saqan',
+        id: String(agentId ?? '1'),
+        name: agentName || 'Agent',
         agency: 'Saqan',
-        photo: '',
-        phone: '',
-        email: '',
+        photo: v?.agent?.company_employee?.avatar?.url ?? '',
+        phone: v?.agent?.company_employee?.phone ?? '',
+        email: v?.agent?.company_employee?.email ?? '',
         isVerified: true,
+        agentId: agentId ?? undefined,
       },
-      agentName: 'Saqan',
-      agentPhoto: '',
+      agentName: agentName || 'Agent',
+      agentPhoto: v?.agent?.company_employee?.avatar?.url ?? '',
       likesCount: v?.engagement?.likes_count ?? 0,
       savesCount: 0,
       sharesCount: v?.engagement?.shares_count ?? 0,
@@ -717,6 +826,13 @@ export default function FeedScreen() {
           setSelectedPropertyId(id);
           setCommentsModalVisible(true);
         }}
+        onSpeedingChange={(speeding) => {
+          // Hide header while the user is holding left/right for 2x
+          setIsHoldingSpeed(speeding);
+        }}
+        onScrubbingChange={(scrubbing) => {
+          setIsScrubbing(scrubbing);
+        }}
         onNavigateToProperty={async (propertyReference) => {
           // // Cache item data for the details screen (until a dedicated property endpoint is wired).
           // try {
@@ -749,15 +865,18 @@ export default function FeedScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader 
-        onSearchPress={() => router.push('/search')}
-        onSelectionsPress={() => setLocationsModalVisible(true)}
-      />
+      {!isHoldingSpeed && !isScrubbing ? (
+        <AppHeader 
+          onSearchPress={() => router.push('/search')}
+          onSelectionsPress={() => setLocationsModalVisible(true)}
+        />
+      ) : null}
       <Animated.FlatList
         data={filteredProperties}
         renderItem={renderProperty}
         keyExtractor={(item) => item.id}
-        pagingEnabled
+        scrollEnabled={!isScrubbing && !isHoldingSpeed}
+        pagingEnabled={false} // was true
         showsVerticalScrollIndicator={false}
         // Offset the spinner so it doesn't sit under the absolute AppHeader.
         progressViewOffset={insets.top + scaleHeight(75)}
@@ -771,19 +890,19 @@ export default function FeedScreen() {
         }
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
-        decelerationRate="fast"
+        decelerationRate={0.65} // Faster scroll
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         removeClippedSubviews
         initialNumToRender={4}
         maxToRenderPerBatch={4}
         windowSize={5}
-        updateCellsBatchingPeriod={50}
+        updateCellsBatchingPeriod={50} // Update cells in batches to improve performance
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
-        scrollEventThrottle={16}
+        scrollEventThrottle={20} // Throttle scroll events to improve performance was 8
         onMomentumScrollBegin={() => {
           endReachedCalledDuringMomentum.current = false;
         }}
@@ -795,7 +914,7 @@ export default function FeedScreen() {
             loadPage(pageRef.current + 1);
           }
         }}
-        onEndReachedThreshold={0.6}
+        onEndReachedThreshold={1.6} // Load more when user reaches the end of the list was 0.5
       />
       <CommentsModal
         visible={commentsModalVisible}
