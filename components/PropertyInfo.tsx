@@ -47,15 +47,15 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
       
       <View style={styles.footerDetailsRow}>
         <View style={styles.footerDetailItem}>
-          <Bed size={12} color="#FFFFFF" fill="#FFFFFF" />
+          <Bed size={14} color="#FFFFFF" fill="#FFFFFF" />
           <Text style={styles.footerSmallText}>{item.bedrooms}</Text>
         </View>
         <View style={styles.footerDetailItem}>
-          <Bath size={12} color="#FFFFFF" fill="#FFFFFF" />
+          <Bath size={14} color="#FFFFFF" fill="#FFFFFF" />
           <Text style={styles.footerSmallText}>{item.bathrooms}</Text>
         </View>
         <View style={styles.footerDetailItem}>
-          <Ruler size={12} color="#FFFFFF" fill="#FFFFFF" />
+          <Ruler size={14} color="#FFFFFF" fill="#FFFFFF" />
           <Text style={styles.footerSmallText}>
             {item.sizeSqft ? `${item.sizeSqft.toLocaleString()} sqft` : '—'}
           </Text>

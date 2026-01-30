@@ -70,13 +70,13 @@ export const feedStyles = StyleSheet.create({
   },
   footerTitle: {
     color: '#FFFFFF',
-    fontSize: scaleFont(16),
+    fontSize: scaleFont(18),
     fontWeight: '700',
     lineHeight: scaleFont(20),
   },
   footerPrice: {
     color: '#FFFFFF',
-    fontSize: scaleFont(14),
+    fontSize: scaleFont(16),
     fontWeight: '700',
     lineHeight: scaleFont(18),
   },
@@ -87,7 +87,7 @@ export const feedStyles = StyleSheet.create({
   },
   footerSmallText: {
     color: '#FFFFFF',
-    fontSize: scaleFont(11),
+    fontSize: scaleFont(12),
     fontWeight: '400',
     opacity: 0.9,
   },
@@ -125,7 +125,7 @@ export const feedStyles = StyleSheet.create({
   },
   footerActionText: {
     color: '#FFFFFF',
-    fontSize: scaleFont(9),
+    fontSize: scaleFont(10),
     fontWeight: '600',
   },
   translationContainer: {
@@ -143,7 +143,7 @@ export const feedStyles = StyleSheet.create({
     height: AVATAR_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: scaleWidth(8),
+    marginRight: scaleWidth(10),
   },
   agentAvatar: {
     width: AVATAR_SIZE,

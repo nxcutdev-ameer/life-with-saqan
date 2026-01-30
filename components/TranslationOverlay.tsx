@@ -66,7 +66,7 @@ export default function TranslationOverlay({
         }}
       >
         <View style={styles.iconShadow}>
-          <Captions size={20} color={Colors.textLight} strokeWidth={2.5} />
+          <Captions size={28} color={Colors.textLight} strokeWidth={1.8} />
         </View>
       </Pressable>
 

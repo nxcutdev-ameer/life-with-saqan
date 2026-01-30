@@ -32,44 +32,49 @@ export default function EngagementButtons({
   const heartScale = useRef(new Animated.Value(1)).current;
   const heartBurstOpacity = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    // Modern "pop" animation when toggling like
-    if (isLiked) {
-      heartScale.setValue(0.9);
-      heartBurstOpacity.setValue(0);
+  const prevIsLikedRef = useRef(isLiked);
+  const hasPlayedLikeAnimRef = useRef(false);
 
-      Animated.parallel([
-        Animated.spring(heartScale, {
-          toValue: 1.12,
-          stiffness: 280,
-          damping: 16,
-          mass: 0.75,
+  const playLikeAnimation = () => {
+    heartScale.setValue(0.9);
+    heartBurstOpacity.setValue(0);
+
+    Animated.parallel([
+      Animated.spring(heartScale, {
+        toValue: 1.12,
+        stiffness: 280,
+        damping: 16,
+        mass: 0.75,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(heartBurstOpacity, {
+          toValue: 1,
+          duration: 90,
+          easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
-        Animated.sequence([
-          Animated.timing(heartBurstOpacity, {
-            toValue: 1,
-            duration: 90,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(heartBurstOpacity, {
-            toValue: 0,
-            duration: 260,
-            easing: Easing.in(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start(() => {
-        Animated.spring(heartScale, {
-          toValue: 1,
-          stiffness: 220,
-          damping: 16,
-          mass: 0.9,
+        Animated.timing(heartBurstOpacity, {
+          toValue: 0,
+          duration: 260,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
-        }).start();
-      });
-    } else {
+        }),
+      ]),
+    ]).start(() => {
+      Animated.spring(heartScale, {
+        toValue: 1,
+        stiffness: 220,
+        damping: 16,
+        mass: 0.9,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
+  useEffect(() => {
+    // Reset to normal size when unliked.
+    if (!isLiked) {
       Animated.spring(heartScale, {
         toValue: 1,
         stiffness: 220,
@@ -78,7 +83,9 @@ export default function EngagementButtons({
         useNativeDriver: true,
       }).start();
     }
-  }, [heartBurstOpacity, heartScale, isLiked]);
+
+    prevIsLikedRef.current = isLiked;
+  }, [heartScale, isLiked]);
 
   const heartAnimatedStyle = {
     transform: [{ scale: heartScale }],
@@ -89,6 +96,8 @@ export default function EngagementButtons({
       <Pressable
         style={[styles.footerActionButton, styles.iconShadow]}
         onPress={() => {
+          const willLike = !isLiked;
+
           // Immediate tactile response even before parent state updates
           Animated.spring(heartScale, {
             toValue: 0.92,
@@ -97,6 +106,13 @@ export default function EngagementButtons({
             mass: 0.7,
             useNativeDriver: true,
           }).start();
+
+          // Only play the burst animation the first time the user likes during this mount.
+          if (willLike && !hasPlayedLikeAnimRef.current) {
+            hasPlayedLikeAnimRef.current = true;
+            playLikeAnimation();
+          }
+
           onToggleLike(item.id);
         }}
       >
@@ -125,7 +141,7 @@ export default function EngagementButtons({
           />
           <MaterialCommunityIcons
             name={isLiked ? 'heart' : 'heart-outline'}
-            size={25}
+            size={28}
             color={isLiked ? '#FF3B30' : '#FFFFFF'}
           />
         </Animated.View>
@@ -135,7 +151,7 @@ export default function EngagementButtons({
       </Pressable>
 
       <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onOpenComments(item.id)}>
-        <MaterialCommunityIcons name="chat" size={25} color="#FFFFFF" />
+        <MaterialCommunityIcons name="chat" size={28} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.commentsCount)}
         </Text>
@@ -144,7 +160,7 @@ export default function EngagementButtons({
       <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onToggleSave(item.id)}>
         <MaterialCommunityIcons
           name={isSaved ? 'bookmark' : 'bookmark-outline'}
-          size={25}
+          size={28}
           color={isSaved ?Colors.bronze: "#ffff"}
         />
         <Text style={styles.footerActionText}>
@@ -156,7 +172,7 @@ export default function EngagementButtons({
         style={[styles.footerActionButton, styles.iconShadow]}
         onPress={() => onShare && onShare(item.id)}
       >
-        <MaterialCommunityIcons name="share-variant" size={25} color="#FFFFFF" />
+        <MaterialCommunityIcons name="share-variant" size={28} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.sharesCount)}
         </Text>

@@ -118,7 +118,7 @@ export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: Vid
         }}
       >
         <Animated.View style={[ffAnimatedStyle, {marginRight:scaleWidth(8)}]}>
-          <FastForward size={20} color={Colors.textLight} fill={Colors.textLight} />
+          <FastForward size={28} color={Colors.textLight} fill={Colors.textLight} />
         </Animated.View>
       </Pressable>
 

@@ -9,6 +9,7 @@ import { mockProperties } from '@/mocks/properties';
 import { Property } from '@/types';
 import { Image } from 'expo-image';
 import { useSubscription } from '@/contexts/SubscriptionContext';
+import { useAuthStore } from '@/stores/authStore';
 
 type TabType = 'properties' | 'liked';
 
@@ -17,6 +18,9 @@ export default function ProfileScreen() {
   const bottomTabBarHeight = useBottomTabBarHeight();
   const [activeTab, setActiveTab] = useState<TabType>('properties');
   const { tier, postsUsed, postsLimit } = useSubscription();
+  const token = useAuthStore((s) =>
+    s.session?.tokens?.saqancomToken || s.session?.tokens?.backofficeToken || s.session?.tokens?.propertiesToken
+  );
 
   const userProperties = mockProperties.slice(0, 6);
   const likedProperties = mockProperties.slice(6, 12);
@@ -47,6 +51,26 @@ export default function ProfileScreen() {
       </View>
     </Pressable>
   );
+
+  if (!token) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Profile</Text>
+        </View>
+
+        <View style={[styles.contentContainer, { paddingBottom: bottomTabBarHeight + scaleHeight(16) }]}>
+          <View style={styles.authGateCard}>
+            <Text style={styles.authGateTitle}>Login required</Text>
+            <Text style={styles.authGateDescription}>Only logged in users can upload videos.</Text>
+            <Pressable style={styles.authGateButton} onPress={() => router.replace('/auth/login' as any)}>
+              <Text style={styles.authGateButtonText}>Log in</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -196,6 +220,41 @@ const styles = StyleSheet.create({
     height: scaleHeight(40),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingHorizontal: scaleWidth(20),
+    paddingTop: scaleHeight(24),
+  },
+  authGateCard: {
+    backgroundColor: Colors.textLight,
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(20),
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  authGateTitle: {
+    fontSize: scaleFont(20),
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: scaleHeight(8),
+  },
+  authGateDescription: {
+    fontSize: scaleFont(14),
+    color: Colors.textSecondary,
+    lineHeight: scaleHeight(20),
+    marginBottom: scaleHeight(16),
+  },
+  authGateButton: {
+    backgroundColor: Colors.bronze,
+    borderRadius: scaleWidth(12),
+    paddingVertical: scaleHeight(12),
+    alignItems: 'center',
+  },
+  authGateButtonText: {
+    color: Colors.textLight,
+    fontWeight: '700',
+    fontSize: scaleFont(14),
   },
   profileSection: {
     alignItems: 'center',

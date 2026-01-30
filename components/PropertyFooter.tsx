@@ -159,7 +159,10 @@ export default function PropertyFooter({
           <View style={styles.footerActionButton}>
             <View style={styles.agentAvatarContainer}>
               <Pressable
-                onPress={() => router.push('/(tabs)/profile' as any)}
+                onPress={() => {
+                  const agentId = item.agent?.agentId ?? Number(item.agent?.id);
+                  if (agentId) router.push(`/agent/${agentId}` as any);
+                }}
                 hitSlop={10}
               >
                 <View style={styles.agentAvatar}>

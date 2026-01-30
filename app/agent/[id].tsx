@@ -1,208 +1,117 @@
-import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  Pressable,
-  Image,
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import {
-  ArrowLeft,
-  MapPin,
-  Star,
-  Phone,
-  Mail,
-  CheckCircle,
-  Award,
-  TrendingUp,
-} from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ArrowLeft, Grid, Heart } from 'lucide-react-native';
+import { Image } from 'expo-image';
+
 import { Colors } from '@/constants/colors';
+import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
+import { Property } from '@/types';
+
+type TabType = 'properties' | 'liked';
 
 export default function AgentProfileScreen() {
   const router = useRouter();
+  const bottomTabBarHeight = 0;
   const params = useLocalSearchParams<{ id: string }>();
+  const [activeTab, setActiveTab] = useState<TabType>('properties');
 
-  const agentProperty = mockProperties.find(p => p.agent.id === params.id);
-  const agent = agentProperty?.agent;
+  const agentId = params.id;
 
-  const agentProperties = mockProperties.filter(
-    p => p.agent.id === params.id
-  );
+  // UI-only for now: until a dedicated agent profile endpoint is implemented.
+  const agentProperties = useMemo(() => {
+    // mockProperties currently uses string ids; try to match either agent.id or agent.agentId.
+    return mockProperties.filter((p) => p.agent?.id === agentId || String((p.agent as any)?.agentId) === agentId);
+  }, [agentId]);
 
-  if (!agent) {
-    return (
-      <View style={styles.container}>
-        <Text>Agent not found</Text>
+  const agent = agentProperties[0]?.agent;
+
+  const agentName = (agent?.name ?? `Agent ${agentId}`).trim() || `Agent ${agentId}`;
+  const agentInitial = agentName.charAt(0).toUpperCase();
+
+  const displayedProperties = activeTab === 'properties' ? agentProperties : mockProperties.slice(0, 6);
+
+  const renderPropertyItem = ({ item }: { item: Property }) => (
+    <Pressable style={styles.gridItem} onPress={() => router.push(`/property/${item.id}` as any)}>
+      <Image source={{ uri: item.thumbnailUrl }} style={styles.gridImage} contentFit="cover" />
+      <View style={styles.gridOverlay}>
+        <View style={styles.gridStats}>
+          <View style={styles.gridStat}>
+            <Heart size={scaleWidth(14)} color={Colors.textLight} fill={Colors.textLight} />
+            <Text style={styles.gridStatText}>{item.likesCount}</Text>
+          </View>
+        </View>
       </View>
-    );
-  }
+    </Pressable>
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={Colors.text} />
+        <Pressable style={styles.backButton} onPress={() => router.back()} hitSlop={10}>
+          <ArrowLeft size={scaleWidth(24)} color={Colors.text} />
         </Pressable>
+        <Text style={styles.headerTitle}>Agent</Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: bottomTabBarHeight + scaleHeight(16) }}
       >
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: agent.photo }}
-              style={styles.avatar}
-            />
-            {agent.isVerified && (
-              <View style={styles.verifiedBadge}>
-                <CheckCircle size={20} color={Colors.textLight} />
-              </View>
-            )}
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{agentInitial}</Text>
+            </View>
           </View>
 
-          <Text style={styles.agentName}>{agent.name}</Text>
-          <Text style={styles.agencyName}>{agent.agency}</Text>
-
-          {agent.rating && (
-            <View style={styles.ratingContainer}>
-              <Star size={16} color={Colors.bronze} fill={Colors.bronze} />
-              <Text style={styles.ratingText}>
-                {agent.rating} ({agent.totalReviews} reviews)
-              </Text>
-            </View>
-          )}
+          <Text style={styles.userName}>{agentName}</Text>
+          <Text style={styles.userBio}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{agentProperties.length}</Text>
+              <Text style={styles.statNumber}>{agentProperties.length}</Text>
               <Text style={styles.statLabel}>Properties</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{agent.yearsExperience}+</Text>
-              <Text style={styles.statLabel}>Years</Text>
+              <Text style={styles.statNumber}>—</Text>
+              <Text style={styles.statLabel}>Followers</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {agentProperties.reduce((sum, p) => sum + p.likesCount, 0)}
-              </Text>
-              <Text style={styles.statLabel}>Total Likes</Text>
+              <Text style={styles.statNumber}>—</Text>
+              <Text style={styles.statLabel}>Following</Text>
             </View>
           </View>
+
+          <Pressable style={styles.editButton} onPress={() => {}}>
+            <Text style={styles.editButtonText}>Contact Agent</Text>
+          </Pressable>
         </View>
 
-        {agent.bio && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>About</Text>
-            <Text style={styles.bioText}>{agent.bio}</Text>
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Specializations</Text>
-          <View style={styles.badges}>
-            {agent.isVerified && (
-              <View style={styles.badge}>
-                <CheckCircle size={14} color={Colors.bronze} />
-                <Text style={styles.badgeText}>Verified Agent</Text>
-              </View>
-            )}
-            <View style={styles.badge}>
-              <Award size={14} color={Colors.bronze} />
-              <Text style={styles.badgeText}>Top Performer</Text>
-            </View>
-            <View style={styles.badge}>
-              <TrendingUp size={14} color={Colors.bronze} />
-              <Text style={styles.badgeText}>Quick Responder</Text>
-            </View>
-          </View>
+        <View style={styles.tabsContainer}>
+          <Pressable style={[styles.tab, activeTab === 'properties' && styles.tabActive]} onPress={() => setActiveTab('properties')}>
+            <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>Properties</Text>
+          </Pressable>
+          <Pressable style={[styles.tab, activeTab === 'liked' && styles.tabActive]} onPress={() => setActiveTab('liked')}>
+            <Heart size={scaleWidth(20)} color={activeTab === 'liked' ? Colors.bronze : Colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === 'liked' && styles.tabTextActive]}>Liked</Text>
+          </Pressable>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
-          <View style={styles.contactCard}>
-            <View style={styles.contactItem}>
-              <View style={styles.contactIcon}>
-                <Phone size={18} color={Colors.bronze} />
-              </View>
-              <Text style={styles.contactText}>{agent.phone}</Text>
-            </View>
-            <View style={styles.contactItem}>
-              <View style={styles.contactIcon}>
-                <Mail size={18} color={Colors.bronze} />
-              </View>
-              <Text style={styles.contactText}>{agent.email}</Text>
-            </View>
-            {agent.licenseNumber && (
-              <View style={styles.contactItem}>
-                <View style={styles.contactIcon}>
-                  <Award size={18} color={Colors.bronze} />
-                </View>
-                <Text style={styles.contactText}>
-                  License: {agent.licenseNumber}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Properties ({agentProperties.length})
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.propertiesScroll}
-          >
-            {agentProperties.map((property) => (
-              <Pressable
-                key={property.id}
-                style={styles.propertyCard}
-                onPress={() => router.push(`/property/${property.id}` as any)}
-              >
-                <Image
-                  source={{ uri: property.thumbnailUrl }}
-                  style={styles.propertyImage}
-                />
-                <View style={styles.propertyInfo}>
-                  <Text style={styles.propertyTitle} numberOfLines={2}>
-                    {property.title}
-                  </Text>
-                  <Text style={styles.propertyPrice}>
-                    {property.currency} {property.price.toLocaleString()}
-                  </Text>
-                  <View style={styles.propertyLocation}>
-                    <MapPin size={12} color={Colors.textSecondary} />
-                    <Text style={styles.propertyLocationText}>
-                      {property.location.area}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.bottomSpacer} />
+        <FlatList
+          data={displayedProperties}
+          renderItem={renderPropertyItem}
+          keyExtractor={(item) => item.id}
+          numColumns={3}
+          scrollEnabled={false}
+          contentContainerStyle={styles.gridContainer}
+        />
       </ScrollView>
-
-      <View style={styles.footer}>
-        <Pressable
-          style={styles.contactButton}
-          onPress={() => {}}
-        >
-          <Phone size={20} color={Colors.textLight} />
-          <Text style={styles.contactButtonText}>Contact Agent</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -213,227 +122,165 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: scaleHeight(60),
+    paddingHorizontal: scaleWidth(20),
+    paddingBottom: scaleHeight(16),
+  },
+  headerTitle: {
+    fontSize: scaleFont(22),
+    fontWeight: '700',
+    color: Colors.text,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    width: scaleWidth(40),
+    height: scaleHeight(40),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingBottom: 100,
+  headerRightSpacer: {
+    width: scaleWidth(40),
+    height: scaleHeight(40),
   },
   profileSection: {
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingVertical: scaleHeight(24),
+    paddingHorizontal: scaleWidth(20),
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
   avatarContainer: {
     position: 'relative' as const,
-    marginBottom: 16,
+    marginBottom: scaleHeight(16),
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.border,
-  },
-  verifiedBadge: {
-    position: 'absolute' as const,
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: scaleWidth(100),
+    height: scaleHeight(100),
+    borderRadius: scaleWidth(50),
     backgroundColor: Colors.bronze,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.background,
+    borderColor: Colors.textLight,
   },
-  agentName: {
-    fontSize: 24,
+  avatarText: {
+    fontSize: scaleFont(36),
+    fontWeight: '700',
+    color: Colors.textLight,
+  },
+  userName: {
+    fontSize: scaleFont(24),
     fontWeight: '700',
     color: Colors.text,
-    marginBottom: 4,
+    marginBottom: scaleHeight(4),
   },
-  agencyName: {
-    fontSize: 16,
+  userBio: {
+    fontSize: scaleFont(14),
     color: Colors.textSecondary,
-    marginBottom: 12,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 20,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: scaleHeight(20),
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24,
-    paddingTop: 20,
+    gap: scaleWidth(24),
+    marginBottom: scaleHeight(20),
   },
   statItem: {
     alignItems: 'center',
+    gap: scaleWidth(4),
   },
-  statValue: {
-    fontSize: 24,
+  statNumber: {
+    fontSize: scaleFont(20),
     fontWeight: '700',
-    color: Colors.bronze,
-    marginBottom: 4,
+    color: Colors.text,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: scaleFont(13),
     color: Colors.textSecondary,
   },
   statDivider: {
-    width: 1,
-    height: 40,
+    width: scaleWidth(1),
+    height: scaleHeight(24),
     backgroundColor: Colors.border,
   },
-  section: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 16,
-  },
-  bioText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: Colors.text,
-  },
-  badges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: `${Colors.bronze}15`,
-  },
-  badgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.bronze,
-  },
-  contactCard: {
-    gap: 12,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 12,
+  editButton: {
+    width: '100%',
+    paddingVertical: scaleHeight(12),
+    borderRadius: scaleWidth(12),
     borderWidth: 1,
     borderColor: Colors.border,
+    backgroundColor: Colors.textLight,
+    alignItems: 'center',
   },
-  contactIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${Colors.bronze}15`,
+  editButtonText: {
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: scaleWidth(8),
+    paddingVertical: scaleHeight(16),
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  contactText: {
-    fontSize: 15,
-    color: Colors.text,
-    flex: 1,
+  tabActive: {
+    borderBottomColor: Colors.bronze,
   },
-  propertiesScroll: {
-    gap: 16,
-    paddingRight: 24,
-  },
-  propertyCard: {
-    width: 200,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: Colors.background,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  propertyImage: {
-    width: '100%',
-    height: 120,
-    backgroundColor: Colors.border,
-  },
-  propertyInfo: {
-    padding: 12,
-  },
-  propertyTitle: {
-    fontSize: 14,
+  tabText: {
+    fontSize: scaleFont(14),
     fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  propertyPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.bronze,
-    marginBottom: 6,
-  },
-  propertyLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  propertyLocationText: {
-    fontSize: 12,
     color: Colors.textSecondary,
   },
-  bottomSpacer: {
-    height: 40,
+  tabTextActive: {
+    color: Colors.bronze,
   },
-  footer: {
-    position: 'absolute' as const,
-    bottom: 0,
+  gridContainer: {
+    paddingHorizontal: scaleWidth(2),
+  },
+  gridItem: {
+    width: '33.33%',
+    aspectRatio: 1,
+    padding: scaleWidth(1),
+  },
+  gridImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: scaleWidth(8),
+  },
+  gridOverlay: {
+    position: 'absolute',
+    top: 0,
     left: 0,
     right: 0,
-    padding: 24,
-    backgroundColor: Colors.background,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    bottom: 0,
+    borderRadius: scaleWidth(8),
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'flex-end',
   },
-  contactButton: {
+  gridStats: {
+    flexDirection: 'row',
+    padding: scaleWidth(6),
+  },
+  gridStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.bronze,
-    paddingVertical: 16,
-    borderRadius: 12,
+    gap: scaleWidth(4),
   },
-  contactButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  gridStatText: {
     color: Colors.textLight,
+    fontSize: scaleFont(12),
+    fontWeight: '700',
   },
 });
