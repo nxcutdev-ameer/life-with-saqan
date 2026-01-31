@@ -189,7 +189,13 @@ export default function OtpVerificationScreen() {
             backofficeToken: payload?.backoffice_token ?? null,
             propertiesToken: payload?.properties_token ?? null,
           },
-          agent: payload?.agent ?? null,
+          agent: payload?.agent
+            ? {
+                id: payload.agent.id,
+                name: payload.agent.name,
+                avatarUrl: payload.agent.avatar?.url ?? null,
+              }
+            : null,
         });
         router.replace('/(tabs)/upload' as any);
         return;
@@ -211,7 +217,13 @@ export default function OtpVerificationScreen() {
           backofficeToken: res?.payload?.backoffice_token ?? null,
           propertiesToken: res?.payload?.properties_token ?? null,
         },
-        agent: res?.payload?.agent ?? null,
+        agent: res?.payload?.agent
+          ? {
+              id: res.payload.agent.id,
+              name: res.payload.agent.name,
+              avatarUrl: res.payload.agent.avatar?.url ?? null,
+            }
+          : null,
       });
 
       // If broker exists, go straight to upload. Otherwise show broker question.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView, Modal, ImageBackground } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Check, X } from 'lucide-react-native';
+import { ArrowLeft, Check, X } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { TransactionType, LifestyleType } from '@/types';
 import { cities, lifestyleOptions } from '@/mocks/properties';
@@ -18,11 +18,11 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionType>(transactionType);
   const [selectedLocation, setSelectedLocation] = useState<string>(location);
   const [selectedLifestyles, setSelectedLifestyles] = useState<LifestyleType[]>(lifestyles);
-  const [step, setStep] = useState<'transaction' | 'location' | 'lifestyle'>('transaction');
+  const [step, setStep] = useState<'selection' | 'lifestyle'>('selection');
 
   const handleTransactionSelect = (type: TransactionType) => {
     setSelectedTransaction(type);
-    setTimeout(() => setStep('location'), 200);
+    // Transaction + location are a single step now; do not advance.
   };
 
   const handleLocationSelect = (city: string) => {
@@ -52,64 +52,52 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
     >
       <View style={styles.container}>
         <View style={styles.header}>
+          {step === 'lifestyle' ? (
+            <Pressable onPress={() => setStep('selection')} style={styles.backButton}>
+              <ArrowLeft size={24} color={Colors.text} />
+            </Pressable>
+          ) : (
+            <View style={{ width: 24 }} />
+          )}
+
+          <Text style={styles.headerTitle}>{step === 'selection' ? 'Locations' : 'Choose Lifestyle'}</Text>
+
+          <View style={{ width: 24 }} />
           <Pressable onPress={onClose} style={styles.closeButton}>
             <X size={24} color={Colors.text} />
           </Pressable>
-          <Text style={styles.headerTitle}>
-            {step === 'transaction' ? 'Locations' : step === 'location' ? 'Select City' : 'Choose Lifestyle'}
-          </Text>
-          <View style={{ width: 24 }} />
         </View>
-
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {step === 'transaction' && (
+          {step === 'selection' && (
             <View>
               <View style={styles.transactionTabs}>
                 {(['BUY', 'RENT', 'STAY'] as TransactionType[]).map((type) => (
                   <Pressable
                     key={type}
-                    style={[
-                      styles.tab,
-                      selectedTransaction === type && styles.tabActive,
-                    ]}
+                    style={[styles.tab, selectedTransaction === type && styles.tabActive]}
                     onPress={() => handleTransactionSelect(type)}
                   >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        selectedTransaction === type && styles.tabTextActive,
-                      ]}
-                    >
+                    <Text style={[styles.tabText, selectedTransaction === type && styles.tabTextActive]}>
                       {type}
                     </Text>
                     {selectedTransaction === type && <View style={styles.tabUnderline} />}
                   </Pressable>
                 ))}
               </View>
-            </View>
-          )}
 
-          {step === 'location' && (
-            <View style={styles.citiesContainer}>
-              {cities.map((city) => (
-                <Pressable
-                  key={city}
-                  style={[
-                    styles.cityChip,
-                    selectedLocation === city && styles.cityChipSelected,
-                  ]}
-                  onPress={() => handleLocationSelect(city)}
-                >
-                  <Text
-                    style={[
-                      styles.cityText,
-                      selectedLocation === city && styles.cityTextSelected,
-                    ]}
+              <View style={styles.citiesContainer}>
+                {cities.map((city) => (
+                  <Pressable
+                    key={city}
+                    style={[styles.cityChip, selectedLocation === city && styles.cityChipSelected]}
+                    onPress={() => handleLocationSelect(city)}
                   >
-                    {city}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text style={[styles.cityText, selectedLocation === city && styles.cityTextSelected]}>
+                      {city}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           )}
 
@@ -195,6 +183,9 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   closeButton: {
+    padding: 4,
+  },
+  backButton: {
     padding: 4,
   },
   headerTitle: {

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Grid, Heart } from 'lucide-react-native';
 import { Image } from 'expo-image';
 
@@ -13,7 +14,7 @@ type TabType = 'properties' | 'liked';
 
 export default function AgentProfileScreen() {
   const router = useRouter();
-  const bottomTabBarHeight = 0;
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<TabType>('properties');
 
@@ -58,7 +59,7 @@ export default function AgentProfileScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottomTabBarHeight + scaleHeight(16) }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + scaleHeight(16) }}
       >
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
@@ -97,10 +98,10 @@ export default function AgentProfileScreen() {
             <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>Properties</Text>
           </Pressable>
-          <Pressable style={[styles.tab, activeTab === 'liked' && styles.tabActive]} onPress={() => setActiveTab('liked')}>
+          {/* <Pressable style={[styles.tab, activeTab === 'liked' && styles.tabActive]} onPress={() => setActiveTab('liked')}>
             <Heart size={scaleWidth(20)} color={activeTab === 'liked' ? Colors.bronze : Colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'liked' && styles.tabTextActive]}>Liked</Text>
-          </Pressable>
+          </Pressable> */}
         </View>
 
         <FlatList

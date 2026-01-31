@@ -71,7 +71,7 @@ export default function AppHeader({ onSearchPress, onSelectionsPress }: AppHeade
       </Pressable>
 
       <Pressable style={styles.iconButton} onPress={onSearchPress}>
-        <Search size={scaleFont(24)} color={Colors.textLight} />
+        <Search size={scaleFont(28)} color={Colors.textLight} />
       </Pressable>
     </View>
   );

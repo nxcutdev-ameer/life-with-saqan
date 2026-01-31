@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Settings, Grid, Heart, MessageSquare, Edit, Gift, Briefcase, Star } from 'lucide-react-native';
@@ -8,6 +8,8 @@ import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
 import { Property } from '@/types';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadProfileAvatar } from '@/utils/profileApi';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -21,6 +23,69 @@ export default function ProfileScreen() {
   const token = useAuthStore((s) =>
     s.session?.tokens?.saqancomToken || s.session?.tokens?.backofficeToken || s.session?.tokens?.propertiesToken
   );
+  const agent = useAuthStore((s) => s.session?.agent);
+  const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken);
+  const setSession = useAuthStore((s) => s.setSession);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  const handlePickAvatar = async () => {
+    try {
+      if (!backofficeToken) {
+        Alert.alert('Login required', 'Missing Backoffice token. Please log in again.');
+        return;
+      }
+
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow access to your photos to update your avatar.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+
+      // Show immediately
+      setLocalAvatarUri(asset.uri);
+
+      setIsUploadingAvatar(true);
+      const res = await uploadProfileAvatar({
+        backofficeToken,
+        uri: asset.uri,
+        fileName: asset.fileName ?? undefined,
+        mimeType: asset.mimeType ?? undefined,
+      });
+
+      const uploadedUrl = (res as any)?.payload?.avatar_url ?? null;
+
+      // Persist the new avatar url in the global store
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          agent: prev.agent ? { ...prev.agent, avatarUrl: uploadedUrl ?? prev.agent.avatarUrl } : prev.agent,
+        };
+      });
+
+      if (!uploadedUrl) {
+        // If backend doesn't return url, keep local preview.
+        Alert.alert('Updated', 'Avatar uploaded successfully.');
+      }
+    } catch (e: any) {
+      Alert.alert('Upload failed', e?.message ?? 'Could not upload avatar.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   const userProperties = mockProperties.slice(0, 6);
   const likedProperties = mockProperties.slice(6, 12);
@@ -88,15 +153,29 @@ export default function ProfileScreen() {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>JS</Text>
+              {localAvatarUri || agent?.avatarUrl ? (
+                <Image
+                  source={{ uri: localAvatarUri || agent?.avatarUrl || '' }}
+                  style={styles.avatarImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {(agent?.name ?? 'A').trim().charAt(0).toUpperCase()}
+                </Text>
+              )}
             </View>
-            <Pressable style={styles.editAvatarButton}>
+            <Pressable
+              style={[styles.editAvatarButton, isUploadingAvatar && { opacity: 0.7 }]}
+              onPress={handlePickAvatar}
+              disabled={isUploadingAvatar}
+            >
               <Edit size={scaleWidth(16)} color={Colors.textLight} />
             </Pressable>
           </View>
 
-          <Text style={styles.userName}>John Smith</Text>
-          <Text style={styles.userBio}>Real Estate Agent | Dubai Marina Specialist</Text>
+          <Text style={styles.userName}>{agent?.name ?? 'Agent'}</Text>
+          <Text style={styles.userBio}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -276,6 +355,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: Colors.textLight,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: scaleWidth(50),
   },
   avatarText: {
     fontSize: scaleFont(36),

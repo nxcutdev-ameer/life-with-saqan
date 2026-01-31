@@ -29,6 +29,9 @@ interface PropertyFooterProps {
   /** Navigate to property details (only triggered from the footer tap area). */
   onNavigateToProperty?: () => void;
 
+  /** Optional: called before navigating away (e.g., agent profile). */
+  onNavigateAway?: () => void;
+
   /** Notify parent when user starts/ends scrubbing the progress bar. */
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
@@ -66,6 +69,7 @@ export default function PropertyFooter({
   onSubtitleSelect,
   selectedSubtitleCode,
   onNavigateToProperty,
+  onNavigateAway,
   onScrubStart,
   onScrubEnd,
   scrubbing = false,
@@ -160,6 +164,7 @@ export default function PropertyFooter({
             <View style={styles.agentAvatarContainer}>
               <Pressable
                 onPress={() => {
+                  onNavigateAway?.();
                   const agentId = item.agent?.agentId ?? Number(item.agent?.id);
                   if (agentId) router.push(`/agent/${agentId}` as any);
                 }}

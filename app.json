@@ -14,6 +14,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "icon": "./assets/images/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.saqan-lifestyle-real-estate",
       "infoPlist": {
@@ -26,9 +27,10 @@
       }
     },
     "android": {
+      "icon": "./assets/images/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
       "package": "app.rork.saqan_lifestyle_real_estate",
       "permissions": [

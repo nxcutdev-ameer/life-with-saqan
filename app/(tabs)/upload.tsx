@@ -169,7 +169,7 @@ export default function UploadScreen() {
   );
   const showToast = (message: string) => {
     setToast({ visible: true, message });
-    setTimeout(() => setToast({ visible: false, message: '' }), 1200);
+    setTimeout(() => setToast({ visible: false, message: '' }), 2000);
   };
 
   const [, setIsSavingProperty] = useState(false);
@@ -1715,7 +1715,7 @@ export default function UploadScreen() {
                          isActive && styles.highlightsCircleTimeActive,
                        ]}
                      >
-                       {value != null ? formatTimeMmSs(value) : 'Not set'}
+                       {value != null ? formatTimeMmSs(value) : room}
                      </Text>
                    </Pressable>
                  );
@@ -4621,7 +4621,7 @@ const styles = StyleSheet.create({
   },
   highlightsCircleTime: {
     marginTop: scaleHeight(6),
-    fontSize: scaleFont(12),
+    fontSize: scaleFont(10),
     fontWeight: '800',
     color: Colors.textSecondary,
   },

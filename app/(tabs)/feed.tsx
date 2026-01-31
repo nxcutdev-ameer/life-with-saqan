@@ -10,8 +10,10 @@ import {
   Alert,
   Share,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
@@ -129,14 +131,11 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         (player as any).rate = 1;
       } catch {}
 
-      // Hard-stop when leaving viewport.
+      // Pause when not viewable, but DO NOT reset time/isPaused.
+      // This allows resuming from the same currentTime when closing modals or returning to this tab.
       try {
         player.pause();
-        player.currentTime = 0;
       } catch {}
-
-      // Ensure next time it becomes active, it will play from start unless user paused.
-      setIsPaused(false);
     }
   }, [isPaused, isViewable, player]);
 
@@ -421,6 +420,12 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
      {!isSpeeding ? (
        <PropertyFooter
          item={item}
+         onNavigateAway={() => {
+           try {
+             player.pause();
+           } catch {}
+           setIsPaused(true);
+         }}
          currentTime={currentTime}
          duration={duration}
          isLiked={isLiked}
@@ -486,6 +491,7 @@ export default function FeedScreen() {
   const filteredProperties = useMemo(() => items, [items]);
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const isFocused = useIsFocused();
   const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -811,12 +817,14 @@ export default function FeedScreen() {
     }
   };
 
+  const canPlay = isFocused && !locationsModalVisible && !commentsModalVisible;
+
   const renderProperty = ({ item, index }: { item: FeedVideoItem; index: number }) => {
     return (
       <FeedItem
         item={item}
         index={index}
-        isViewable={activeItemId === item.id}
+        isViewable={canPlay && activeItemId === item.id}
         isLiked={isLikedGlobal(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
@@ -862,13 +870,16 @@ export default function FeedScreen() {
       </View>
     );
   }
-
   return (
     <View style={styles.container}>
       {!isHoldingSpeed && !isScrubbing ? (
         <AppHeader 
-          onSearchPress={() => router.push('/search')}
-          onSelectionsPress={() => setLocationsModalVisible(true)}
+          onSearchPress={() => {
+            router.push('/search');
+          }}
+          onSelectionsPress={() => {
+            setLocationsModalVisible(true);
+          }}
         />
       ) : null}
       <Animated.FlatList
@@ -876,7 +887,7 @@ export default function FeedScreen() {
         renderItem={renderProperty}
         keyExtractor={(item) => item.id}
         scrollEnabled={!isScrubbing && !isHoldingSpeed}
-        pagingEnabled={false} // was true
+        pagingEnabled
         showsVerticalScrollIndicator={false}
         // Offset the spinner so it doesn't sit under the absolute AppHeader.
         progressViewOffset={insets.top + scaleHeight(75)}
@@ -890,14 +901,16 @@ export default function FeedScreen() {
         }
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
-        decelerationRate={0.65} // Faster scroll
+        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.25}
+        disableIntervalMomentum
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         removeClippedSubviews
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={5}
-        updateCellsBatchingPeriod={50} // Update cells in batches to improve performance
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={9}
+        updateCellsBatchingPeriod={16}
+        getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }

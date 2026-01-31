@@ -13,6 +13,7 @@ export type AuthTokens = {
 export type AuthAgent = {
   id: number;
   name: string;
+  avatarUrl?: string | null;
 };
 
 export type AuthSession = {
@@ -44,7 +45,7 @@ export interface AuthState {
   clearPendingAuth: () => void;
   setPendingMessage: (message: string | null) => void;
 
-  setSession: (session: AuthSession | null) => void;
+  setSession: (session: AuthSession | null | ((prev: AuthSession | null) => AuthSession | null)) => void;
 
   /**
    * Mark user as authenticated.
@@ -88,7 +89,10 @@ export const useAuthStore = create<AuthState>()(
 
       setPendingMessage: (message) => set({ pendingMessage: message }),
 
-      setSession: (session) => set({ session }),
+      setSession: (session) =>
+        set((state) => ({
+          session: typeof session === 'function' ? (session as any)(state.session) : session,
+        })),
 
       completeOtpVerification: (session) => {
         const pending = get().pendingPhoneNumber;
