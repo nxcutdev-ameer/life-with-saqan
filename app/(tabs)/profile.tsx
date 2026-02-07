@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, ActivityIndicator, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Settings, Grid, Heart, MessageSquare, Edit, Gift, Briefcase, Star } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
+import { fetchPublicAgentVideos } from '@/utils/publicVideosApi';
+import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 import { Property } from '@/types';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -87,15 +89,53 @@ export default function ProfileScreen() {
     }
   };
 
-  const userProperties = mockProperties.slice(0, 6);
+  const [agentVideos, setAgentVideos] = useState<Property[]>([]);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(false);
+
   const likedProperties = mockProperties.slice(6, 12);
 
-  const displayedProperties = activeTab === 'properties' ? userProperties : likedProperties;
+  const displayedProperties = useMemo(() => {
+    return activeTab === 'properties' ? agentVideos : likedProperties;
+  }, [activeTab, agentVideos, likedProperties]);
+
+  // Public videos endpoint expects numeric backend agent id.
+  // Our auth store's agent.id is numeric and matches that backend id.
+  const agentId = agent?.id;
+
+  useEffect(() => {
+    if (activeTab !== 'properties') return;
+    if (!agentId) {
+      // Fallback to mocked properties if agentId is not available.
+      setAgentVideos(mockProperties.slice(0, 6));
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setIsLoadingVideos(true);
+        const res = await fetchPublicAgentVideos({ agentId, perPage: 20, page: 1 });
+        const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
+        if (!cancelled) setAgentVideos(mapped);
+      } catch (e: any) {
+        if (!cancelled) {
+          setAgentVideos([]);
+          Alert.alert('Error', e?.message ?? 'Failed to load your videos');
+        }
+      } finally {
+        if (!cancelled) setIsLoadingVideos(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, agentId]);
 
   const renderPropertyItem = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.gridItem}
-      onPress={() => router.push(`/property/${item.id}`)}
+      onPress={() => router.push(`/property/${item.propertyReference ?? item.id}` as any)}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}
@@ -263,13 +303,26 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
+        {activeTab === 'properties' && isLoadingVideos ? (
+          <View style={{ paddingVertical: scaleHeight(24) }}>
+            <ActivityIndicator color={Colors.bronze} />
+          </View>
+        ) : null}
+
         <FlatList
           data={displayedProperties}
           renderItem={renderPropertyItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           numColumns={3}
           scrollEnabled={false}
           contentContainerStyle={styles.gridContainer}
+          ListEmptyComponent={
+            activeTab === 'properties' ? (
+              <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center' }}>
+                <Text style={{ color: Colors.textSecondary }}>No videos yet</Text>
+              </View>
+            ) : null
+          }
         />
       </ScrollView>
     </View>

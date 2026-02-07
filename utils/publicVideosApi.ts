@@ -1,6 +1,6 @@
 import { fetchJson } from '@/utils/api';
 
-const BASE_URL = 'https://api.saqan.com/api/public';
+const BASE_URL = 'https://www.saqan.com/api/public';
 
 export interface PublicVideosResponse {
   data: PublicVideo[];
@@ -91,6 +91,13 @@ export interface PublicVideo {
 export async function fetchPublicVideos(params: { page: number; perPage?: number }) {
   const perPage = params.perPage ?? 20;
   const url = `${BASE_URL}/videos?per_page=${perPage}&page=${params.page}`;
+  return fetchJson<PublicVideosResponse>(url, { method: 'GET' });
+}
+
+export async function fetchPublicAgentVideos(params: { agentId: number | string; page?: number; perPage?: number }) {
+  const perPage = params.perPage ?? 20;
+  const page = params.page ?? 1;
+  const url = `${BASE_URL}/videos/agent/${params.agentId}?per_page=${perPage}&page=${page}`;
   return fetchJson<PublicVideosResponse>(url, { method: 'GET' });
 }
 

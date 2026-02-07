@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Pressable, FlatList ,Linking} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Grid, Heart } from 'lucide-react-native';
+import { ArrowLeft, Grid, Heart, Mail, MessageCircle, Phone } from 'lucide-react-native';
 import { Image } from 'expo-image';
-
+import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
@@ -47,6 +47,46 @@ export default function AgentProfileScreen() {
     </Pressable>
   );
 
+   const openPhone = async () => {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const telUrl = `tel:${''}`;
+      if (await Linking.canOpenURL(telUrl)) {
+        await Linking.openURL(telUrl);
+      }
+    };
+  
+    const openWhatsApp = async () => {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  
+      const text = `Hi, I would like to inquiry about your property`;
+      const encodedText = encodeURIComponent(text);
+  
+      // App deep link
+      const appUrl = `whatsapp://send?phone=${''}&text=${encodedText}`;
+  
+      // Universal web fallback
+      const webUrl = `https://wa.me/${''}?text=${encodedText}`;
+  
+      if (await Linking.canOpenURL(appUrl)) {
+        await Linking.openURL(appUrl);
+        return;
+      }
+  
+      await Linking.openURL(webUrl);
+    };
+  
+    const openEmail = async () => {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  
+      const subject = encodeURIComponent(`Inquiry about property`);
+      const body = encodeURIComponent(
+        `Hi ${agentName}`
+      );
+      const mailtoUrl = `mailto:${''}?subject=${subject}&body=${body}`;
+      if (await Linking.canOpenURL(mailtoUrl)) {
+        await Linking.openURL(mailtoUrl);
+      }
+    };
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -72,12 +112,12 @@ export default function AgentProfileScreen() {
           <Text style={styles.userBio}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            {/* <View style={styles.statItem}>
               <Text style={styles.statNumber}>{agentProperties.length}</Text>
               <Text style={styles.statLabel}>Properties</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+            </View> */}
+           {/* <View style={styles.statDivider} />
+             <View style={styles.statItem}>
               <Text style={styles.statNumber}>—</Text>
               <Text style={styles.statLabel}>Followers</Text>
             </View>
@@ -85,12 +125,32 @@ export default function AgentProfileScreen() {
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>—</Text>
               <Text style={styles.statLabel}>Following</Text>
-            </View>
+            </View> */}
           </View>
 
-          <Pressable style={styles.editButton} onPress={() => {}}>
+          {/* <Pressable style={styles.editButton} onPress={() => {}}>
             <Text style={styles.editButtonText}>Contact Agent</Text>
+          </Pressable> */}
+          <View style={styles.contactButtons}>
+          <Pressable
+            style={styles.contactIconButton}
+            onPress={openPhone}
+          >
+            <Phone size={scaleWidth(20)} color={Colors.bronze} />
           </Pressable>
+          <Pressable
+            style={styles.contactIconButton}
+            onPress={openWhatsApp}
+          >
+            <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+          </Pressable>
+          <Pressable
+            style={styles.contactIconButton}
+            onPress={openEmail}
+          >
+            <Mail size={scaleWidth(20)} color={Colors.bronze} />
+          </Pressable>
+        </View>
         </View>
 
         <View style={styles.tabsContainer}>
@@ -140,6 +200,20 @@ const styles = StyleSheet.create({
     height: scaleHeight(40),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contactIconButton: {
+    width: scaleWidth(48),
+    height: scaleWidth(48),
+    borderRadius: scaleWidth(24),
+    backgroundColor: Colors.background,
+    borderWidth:1,
+    borderColor: Colors.bronze,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+   contactButtons: {
+    flexDirection: 'row',
+    gap: scaleWidth(12),
   },
   headerRightSpacer: {
     width: scaleWidth(40),
