@@ -30,6 +30,7 @@ import AppHeader from '@/components/AppHeader';
 import LocationsModal from '@/components/LocationsModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import PropertyFooter from '@/components/PropertyFooter';
 import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
 import { Play } from 'lucide-react-native';
@@ -695,7 +696,7 @@ export default function FeedScreen() {
           //   }
           // } catch {}
 
-          router.push(`/property/${propertyReference}`);
+          router.push(buildPropertyDetailsRoute({ propertyReference, id: item.id }));
         }}
         onShare={handleShare}
         globalSubtitleLanguageCode={globalSubtitleLanguageCode}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ActivityIndicator, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Settings, Grid, Heart, MessageSquare, Edit, Gift, Briefcase, Star } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -135,7 +136,7 @@ export default function ProfileScreen() {
   const renderPropertyItem = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.gridItem}
-      onPress={() => router.push(`/property/${item.propertyReference ?? item.id}` as any)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }) as any)}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}

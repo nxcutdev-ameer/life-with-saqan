@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -50,6 +50,7 @@ export default function PropertyDetailScreen() {
   const { id, videoId } = useLocalSearchParams<{ id?: string | string[]; videoId?: string | string[] }>();
   const propertyReference = Array.isArray(id) ? id[0] : id;
   const videoIdParam = Array.isArray(videoId) ? videoId[0] : videoId;
+  // `videoId` is optional; when provided, we keep it as the local property id for engagement tracking.
 
   const [property, setProperty] = useState<Property | null>(() => {
     // Allow mocked items to still work in dev.
@@ -61,9 +62,8 @@ export default function PropertyDetailScreen() {
   });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [agentAvatarError, setAgentAvatarError] = useState(false);
   const propertiesToken = useAuthStore((st) => st.session?.tokens?.propertiesToken) ?? null;
-  const requestSeq = useRef(0);
-
   const mapApiPayloadToProperty = (payload: PropertyDetailsPayload, videoIdOverride?: string): Property => {
     const parseNum = (value: unknown, fallback = 0) => {
       const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
@@ -132,13 +132,15 @@ export default function PropertyDetailScreen() {
         id: String(payload.agent?.id ?? '0'),
         name: payload.agent?.name ?? `Agent ${payload.agent?.id ?? ''}`.trim(),
         agency: payload.agency?.agency_name ?? 'Agency',
-        photo: payload.agent?.avatar?.url || fallbackThumb,
+        // Use real avatar URL if provided; otherwise keep empty so UI can fall back to initials.
+        photo: payload.agent?.avatar?.url ?? '',
         phone: payload.agent?.phone ?? '+971501234567',
         email: payload.agent?.email ?? 'agent@vzite.com',
         isVerified: true,
       },
       agentName: payload.agent?.name ??(`Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent'),
-      agentPhoto: payload.agent?.avatar?.url || fallbackThumb,
+      // Keep empty when missing so initials render correctly.
+      agentPhoto: payload.agent?.avatar?.url ?? '',
       likesCount: 0,
       savesCount: 0,
       sharesCount: 0,
@@ -171,7 +173,7 @@ export default function PropertyDetailScreen() {
         });
 
         const payload = response.payload;
-        const mapped = mapApiPayloadToProperty(payload);
+        const mapped = mapApiPayloadToProperty(payload, videoIdParam);
                 setProperty(mapped);
         await AsyncStorage.setItem(`@property_cache_${propertyReference}`, JSON.stringify(mapped));
       } catch (e: any) {
@@ -180,7 +182,7 @@ export default function PropertyDetailScreen() {
                 setLoading(false);
       }
     })();
-  }, [propertyReference]);
+  }, [propertyReference, propertiesToken, videoIdParam]);
 
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
   const likeVideoId = property?.id ? String(property.id) : null;
@@ -197,7 +199,10 @@ export default function PropertyDetailScreen() {
     if (!likeVideoId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await toggleLikeGlobal(likeVideoId);
+      const res = await toggleLikeGlobal(likeVideoId);
+      // Store will keep latest likesCount so feed can reflect it when navigating back.
+      // (No local UI count shown on this screen yet.)
+      void res;
     } catch {
       // ignore
     }
@@ -223,7 +228,23 @@ export default function PropertyDetailScreen() {
   const hasMedia = allMedia.length > 0;
 
   const agentPhoneRaw = property.agent?.phone ?? '+971501234567';
-  const agentEmail = property.agent?.email ?? `${property.agentName.toLowerCase().replace(' ', '.')}@saqan.com`;
+
+  const getInitials = (name: string) => {
+    const cleaned = (name ?? '').trim();
+    if (!cleaned) return 'A';
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] ?? '';
+    const second = parts.length > 1 ? parts[1]?.[0] ?? '' : '';
+    const initials = `${first}${second}`.toUpperCase();
+    return initials || 'A';
+  };
+
+  const agentDisplayName = (property.agent?.name || property.agentName || 'Agent').trim() || 'Agent';
+  const agentAvatarUrl = (property.agent?.photo || property.agentPhoto || '').trim();
+  const agentInitials = getInitials(agentDisplayName);
+
+  const agentEmail =
+    property.agent?.email ?? `${agentDisplayName.toLowerCase().replace(/\s+/g, '.')}@saqan.com`;
 
   const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
 
@@ -260,7 +281,7 @@ export default function PropertyDetailScreen() {
 
     const subject = encodeURIComponent(`Inquiry about ${property.title}`);
     const body = encodeURIComponent(
-      `Hi ${property.agentName},\n\nI'm interested in ${property.title}. Could you share more details?\n\nThanks!`
+      `Hi ${agentDisplayName},\n\nI'm interested in ${property.title}. Could you share more details?\n\nThanks!`
     );
 
     const mailtoUrl = `mailto:${agentEmail}?subject=${subject}&body=${body}`;
@@ -464,18 +485,19 @@ export default function PropertyDetailScreen() {
           <View style={styles.agentCard}>
             <Text style={styles.sectionTitle}>Agent Information</Text>
             <View style={styles.agentRow}>
-               {property.agentPhoto ? (
+               {agentAvatarUrl && !agentAvatarError ? (
                 <Image
-                  source={{ uri: property.agentPhoto }}
+                  source={{ uri: agentAvatarUrl }}
                   style={styles.agentAvatar}
+                  onError={() => setAgentAvatarError(true)}
                 />
               ) : (
                 <View style={[styles.agentAvatar, { overflow: 'hidden' }]}>
-                  <Text style={styles.agentInitial}>{property.agentName.charAt(0)}</Text>
+                  <Text style={styles.agentInitial}>{agentInitials}</Text>
                 </View>
               )}
               <View style={styles.agentInfo}>
-                <Text style={styles.agentName}>{property.agentName}</Text>
+                <Text style={styles.agentName}>{agentDisplayName}</Text>
                 <Text style={styles.agentRole}>Real Estate Agent</Text>
                 <Text style={styles.agentStats}>12 Properties • 4.8 ⭐</Text>
               </View>

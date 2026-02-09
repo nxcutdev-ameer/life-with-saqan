@@ -10,6 +10,7 @@ import { feedStyles as styles } from '@/constants/feedStyles';
 import PropertyProgressBar from '@/components/PropertyProgressBar';
 import PropertyInfo from '@/components/PropertyInfo';
 import EngagementButtons from '@/components/EngagementButtons';
+import { useEngagementStore } from '@/stores/engagementStore';
 import VideoPlayerOverlay from '@/components/VideoPlayerOverlay';
 import TranslationOverlay from '@/components/TranslationOverlay';
 
@@ -74,6 +75,7 @@ export default function PropertyFooter({
   onScrubEnd,
   scrubbing = false,
 }: PropertyFooterProps) {
+  const likesCount = useEngagementStore((s) => s.getLikesCount(item.id, item.likesCount));
   const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
@@ -205,6 +207,7 @@ export default function PropertyFooter({
           item={item}
           isLiked={isLiked}
           isSaved={isSaved}
+          likesCount={likesCount}
           onToggleLike={onToggleLike}
           onToggleSave={onToggleSave}
           onOpenComments={onOpenComments}

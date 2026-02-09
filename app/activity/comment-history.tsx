@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { ArrowLeft } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
@@ -46,7 +47,7 @@ export default function CommentHistoryScreen() {
   const CommentCard = ({ item }: { item: CommentHistoryItem }) => (
     <Pressable
       style={styles.commentCard}
-      onPress={() => router.push(`/property/${item.propertyId}` as any)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyId, id: item.propertyId }) as any)}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}

@@ -12,6 +12,7 @@ import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { mockProperties, filterProperties } from '@/mocks/properties';
 import { Property } from '@/types';
@@ -330,7 +331,7 @@ export default function ReelsScreen() {
           setSelectedPropertyId(id);
           setCommentsModalVisible(true);
         }}
-        onNavigateToProperty={(id) => router.push(`/property/${id}`)}
+        onNavigateToProperty={(id) => router.push(buildPropertyDetailsRoute({ propertyReference: id, id }))}
       />
     );
   };

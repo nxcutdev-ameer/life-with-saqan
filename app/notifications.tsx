@@ -7,6 +7,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { Bell, Heart, MessageSquare, Home, TrendingUp, Info, Check } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { Notification } from '@/types';
@@ -133,7 +134,9 @@ export default function NotificationsScreen() {
   const handleNotificationPress = (notification: Notification) => {
     markAsRead(notification.id);
     if (notification.propertyId) {
-      router.push(`/property/${notification.propertyId}` as any);
+      router.push(
+        buildPropertyDetailsRoute({ propertyReference: notification.propertyId, id: notification.propertyId }) as any
+      );
     }
   };
 

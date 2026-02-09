@@ -6,14 +6,26 @@ const STORAGE_KEY = '@liked_videos_v1';
 
 type EngagementState = {
   likedVideoIds: Set<string>;
+
+  /** Latest known likes count for a given video id (from API responses). */
+  likesCountByVideoId: Record<string, number>;
+
   hydrated: boolean;
   hydrate: () => Promise<void>;
+
   isLiked: (videoId: string | number) => boolean;
+
+  /**
+   * Returns the best known likes count. If we don't have an override, returns `fallback`.
+   */
+  getLikesCount: (videoId: string | number, fallback: number) => number;
+
   toggleLike: (videoId: string | number) => Promise<{ likesCount?: number } | null>;
 };
 
 export const useEngagementStore = create<EngagementState>((set, get) => ({
   likedVideoIds: new Set(),
+  likesCountByVideoId: {},
   hydrated: false,
 
   hydrate: async () => {
@@ -36,36 +48,68 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     return get().likedVideoIds.has(String(videoId));
   },
 
+  getLikesCount: (videoId, fallback) => {
+    const id = String(videoId);
+    const override = get().likesCountByVideoId[id];
+    return typeof override === 'number' ? override : fallback;
+  },
+
   toggleLike: async (videoId) => {
     const id = String(videoId);
     const wasLiked = get().likedVideoIds.has(id);
     const nextLiked = !wasLiked;
 
-    // optimistic update
+    // optimistic update (liked state)
     set((state) => {
       const next = new Set(state.likedVideoIds);
       if (nextLiked) next.add(id);
       else next.delete(id);
-      return { likedVideoIds: next };
+
+      // optimistic count update only if we already know a baseline
+      const currentCount = state.likesCountByVideoId[id];
+      const nextCounts = { ...state.likesCountByVideoId };
+      if (typeof currentCount === 'number') {
+        nextCounts[id] = Math.max(0, currentCount + (nextLiked ? 1 : -1));
+      }
+
+      return { likedVideoIds: next, likesCountByVideoId: nextCounts };
     });
 
     try {
       const res = await setPublicVideoLike({ videoId: id, liked: nextLiked });
       const likesCount = res?.data?.likes_count;
 
-      // persist
+      // If backend returns a count, treat it as the source of truth
+      if (typeof likesCount === 'number') {
+        set((state) => ({
+          likesCountByVideoId: {
+            ...state.likesCountByVideoId,
+            [id]: likesCount,
+          },
+        }));
+      }
+
+      // persist liked ids
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(get().likedVideoIds))).catch(() => {
         // ignore
       });
 
       return typeof likesCount === 'number' ? { likesCount } : {};
     } catch (e) {
-      // revert
+      // revert liked state (and revert optimistic count, if we changed it)
       set((state) => {
         const next = new Set(state.likedVideoIds);
         if (wasLiked) next.add(id);
         else next.delete(id);
-        return { likedVideoIds: next };
+
+        // revert count optimistic change if baseline exists
+        const currentCount = state.likesCountByVideoId[id];
+        const nextCounts = { ...state.likesCountByVideoId };
+        if (typeof currentCount === 'number') {
+          nextCounts[id] = Math.max(0, currentCount + (wasLiked ? 1 : -1));
+        }
+
+        return { likedVideoIds: next, likesCountByVideoId: nextCounts };
       });
 
       // persist reverted state

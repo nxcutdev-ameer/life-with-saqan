@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, FlatList, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Grid, List, Folder, Plus } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -45,7 +46,7 @@ export default function SavedScreen() {
   const renderGridItem = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.gridItem}
-      onPress={() => router.push(`/property/${item.id}`)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }))}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}
@@ -65,7 +66,7 @@ export default function SavedScreen() {
   const renderListItem = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.listItem}
-      onPress={() => router.push(`/property/${item.id}`)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }))}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}

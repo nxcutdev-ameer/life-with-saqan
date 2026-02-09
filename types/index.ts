@@ -15,6 +15,7 @@ export interface Agent {
   id: string;
   name: string;
   agency: string;
+  /** URL to agent avatar image. Empty string when not provided by backend. */
   photo: string;
   phone: string;
   email: string;
@@ -51,8 +52,10 @@ export interface Property {
   amenities: string[];
   lifestyle: LifestyleType[];
   agent: Agent;
-  agentName: string;
-  agentPhoto: string;
+  /** @deprecated Prefer `agent.name`. Kept for backward compatibility with existing components. */
+  agentName?: string;
+  /** @deprecated Prefer `agent.photo`. Kept for backward compatibility with existing components. */
+  agentPhoto?: string;
   likesCount: number;
   savesCount: number;
   sharesCount: number;

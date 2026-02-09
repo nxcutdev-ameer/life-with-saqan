@@ -10,6 +10,7 @@ interface EngagementButtonsProps {
   item: Property;
   isLiked: boolean;
   isSaved: boolean;
+  likesCount?: number;
   onToggleLike: (propertyId: string) => void;
   onToggleSave: (propertyId: string) => void;
   onOpenComments: (propertyId: string) => void;
@@ -24,6 +25,7 @@ export default function EngagementButtons({
   item,
   isLiked,
   isSaved,
+  likesCount,
   onToggleLike,
   onToggleSave,
   onOpenComments,
@@ -146,7 +148,7 @@ export default function EngagementButtons({
           />
         </Animated.View>
         <Text style={styles.footerActionText}>
-          {formatEngagementMetric(item.likesCount)}
+          {formatEngagementMetric(typeof likesCount === 'number' ? likesCount : item.likesCount)}
         </Text>
       </Pressable>
 

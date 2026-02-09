@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, FlatList ,Linking} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Grid, Heart, Mail, MessageCircle, Phone } from 'lucide-react-native';
 import { Image } from 'expo-image';
@@ -8,9 +9,13 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
-import { Property } from '@/types';
+import type { Agent, Property } from '@/types';
+import { fetchPublicAgentVideos } from '@/utils/publicVideosApi';
+import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 
 type TabType = 'properties' | 'liked';
+
+const isNumericId = (value: string) => /^\d+$/.test(value);
 
 export default function AgentProfileScreen() {
   const router = useRouter();
@@ -18,23 +23,65 @@ export default function AgentProfileScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<TabType>('properties');
 
-  const agentId = params.id;
+  const agentIdParam = params.id;
+  const shouldUseApi = Boolean(agentIdParam && isNumericId(agentIdParam));
 
-  // UI-only for now: until a dedicated agent profile endpoint is implemented.
-  const agentProperties = useMemo(() => {
-    // mockProperties currently uses string ids; try to match either agent.id or agent.agentId.
-    return mockProperties.filter((p) => p.agent?.id === agentId || String((p.agent as any)?.agentId) === agentId);
-  }, [agentId]);
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [agentProperties, setAgentProperties] = useState<Property[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const agent = agentProperties[0]?.agent;
+  const mockAgentProperties = useMemo(() => {
+    if (!agentIdParam) return [];
+    return mockProperties.filter((p) => p.agent?.id === agentIdParam || String((p.agent as any)?.agentId) === agentIdParam);
+  }, [agentIdParam]);
 
-  const agentName = (agent?.name ?? `Agent ${agentId}`).trim() || `Agent ${agentId}`;
+  useEffect(() => {
+    if (activeTab !== 'properties') return;
+
+    // If agent id is not numeric, we can't call the public endpoint; fall back to mock.
+    if (!agentIdParam || !shouldUseApi) {
+      setAgentProperties(mockAgentProperties);
+      setAgent(mockAgentProperties[0]?.agent ?? null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetchPublicAgentVideos({ agentId: agentIdParam, perPage: 20, page: 1 });
+        const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
+
+        if (cancelled) return;
+
+        setAgentProperties(mapped);
+        setAgent(mapped[0]?.agent ?? null);
+      } catch (e: any) {
+        if (cancelled) return;
+
+        // Graceful fallback: still show something for non-prod / mocked agents.
+        setAgentProperties(mockAgentProperties);
+        setAgent(mockAgentProperties[0]?.agent ?? null);
+
+        Alert.alert('Error', e?.message ?? 'Failed to load agent profile');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, agentIdParam, shouldUseApi, mockAgentProperties]);
+
+  const agentName = (agent?.name ?? (agentIdParam ? `Agent ${agentIdParam}` : 'Agent')).trim() || 'Agent';
   const agentInitial = agentName.charAt(0).toUpperCase();
 
   const displayedProperties = activeTab === 'properties' ? agentProperties : mockProperties.slice(0, 6);
 
   const renderPropertyItem = ({ item }: { item: Property }) => (
-    <Pressable style={styles.gridItem} onPress={() => router.push(`/property/${item.id}` as any)}>
+    <Pressable style={styles.gridItem} onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }) as any)}>
       <Image source={{ uri: item.thumbnailUrl }} style={styles.gridImage} contentFit="cover" />
       <View style={styles.gridOverlay}>
         <View style={styles.gridStats}>
@@ -47,46 +94,51 @@ export default function AgentProfileScreen() {
     </Pressable>
   );
 
-   const openPhone = async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const telUrl = `tel:${''}`;
-      if (await Linking.canOpenURL(telUrl)) {
-        await Linking.openURL(telUrl);
-      }
-    };
-  
-    const openWhatsApp = async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  
-      const text = `Hi, I would like to inquiry about your property`;
-      const encodedText = encodeURIComponent(text);
-  
-      // App deep link
-      const appUrl = `whatsapp://send?phone=${''}&text=${encodedText}`;
-  
-      // Universal web fallback
-      const webUrl = `https://wa.me/${''}?text=${encodedText}`;
-  
-      if (await Linking.canOpenURL(appUrl)) {
-        await Linking.openURL(appUrl);
-        return;
-      }
-  
-      await Linking.openURL(webUrl);
-    };
-  
-    const openEmail = async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  
-      const subject = encodeURIComponent(`Inquiry about property`);
-      const body = encodeURIComponent(
-        `Hi ${agentName}`
-      );
-      const mailtoUrl = `mailto:${''}?subject=${subject}&body=${body}`;
-      if (await Linking.canOpenURL(mailtoUrl)) {
-        await Linking.openURL(mailtoUrl);
-      }
-    };
+  const openPhone = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const phone = agent?.phone ?? '';
+    if (!phone) return;
+    const telUrl = `tel:${phone}`;
+    if (await Linking.canOpenURL(telUrl)) {
+      await Linking.openURL(telUrl);
+    }
+  };
+
+  const openWhatsApp = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const phone = (agent?.phone ?? '').replace(/\s+/g, '');
+    if (!phone) return;
+
+    const text = `Hi, I would like to inquiry about your property`;
+    const encodedText = encodeURIComponent(text);
+
+    const appUrl = `whatsapp://send?phone=${phone}&text=${encodedText}`;
+    const webUrl = `https://wa.me/${phone}?text=${encodedText}`;
+
+    if (await Linking.canOpenURL(appUrl)) {
+      await Linking.openURL(appUrl);
+      return;
+    }
+
+    await Linking.openURL(webUrl);
+  };
+
+  const openEmail = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const email = agent?.email ?? '';
+    if (!email) return;
+
+    const subject = encodeURIComponent(`Inquiry about property`);
+    const body = encodeURIComponent(`Hi ${agentName}`);
+    const mailtoUrl = `mailto:${email}?subject=${subject}&body=${body}`;
+
+    if (await Linking.canOpenURL(mailtoUrl)) {
+      await Linking.openURL(mailtoUrl);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -97,14 +149,15 @@ export default function AgentProfileScreen() {
         <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + scaleHeight(16) }}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + scaleHeight(16) }}>
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{agentInitial}</Text>
+              {agent?.photo ? (
+                <Image source={{ uri: agent.photo }} style={styles.avatarImage} contentFit="cover" />
+              ) : (
+                <Text style={styles.avatarText}>{agentInitial}</Text>
+              )}
             </View>
           </View>
 
@@ -112,45 +165,23 @@ export default function AgentProfileScreen() {
           <Text style={styles.userBio}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
-            {/* <View style={styles.statItem}>
+            <View style={styles.statItem}>
               <Text style={styles.statNumber}>{agentProperties.length}</Text>
               <Text style={styles.statLabel}>Properties</Text>
-            </View> */}
-           {/* <View style={styles.statDivider} />
-             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>—</Text>
-              <Text style={styles.statLabel}>Followers</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>—</Text>
-              <Text style={styles.statLabel}>Following</Text>
-            </View> */}
           </View>
 
-          {/* <Pressable style={styles.editButton} onPress={() => {}}>
-            <Text style={styles.editButtonText}>Contact Agent</Text>
-          </Pressable> */}
           <View style={styles.contactButtons}>
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openPhone}
-          >
-            <Phone size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openWhatsApp}
-          >
-            <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openEmail}
-          >
-            <Mail size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-        </View>
+            <Pressable style={[styles.contactIconButton, !(agent?.phone ?? '') && { opacity: 0.4 }]} onPress={openPhone} disabled={!(agent?.phone ?? '')}>
+              <Phone size={scaleWidth(20)} color={Colors.bronze} />
+            </Pressable>
+            <Pressable style={[styles.contactIconButton, !(agent?.phone ?? '') && { opacity: 0.4 }]} onPress={openWhatsApp} disabled={!(agent?.phone ?? '')}>
+              <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+            </Pressable>
+            <Pressable style={[styles.contactIconButton, !(agent?.email ?? '') && { opacity: 0.4 }]} onPress={openEmail} disabled={!(agent?.email ?? '')}>
+              <Mail size={scaleWidth(20)} color={Colors.bronze} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.tabsContainer}>
@@ -158,19 +189,28 @@ export default function AgentProfileScreen() {
             <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>Properties</Text>
           </Pressable>
-          {/* <Pressable style={[styles.tab, activeTab === 'liked' && styles.tabActive]} onPress={() => setActiveTab('liked')}>
-            <Heart size={scaleWidth(20)} color={activeTab === 'liked' ? Colors.bronze : Colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'liked' && styles.tabTextActive]}>Liked</Text>
-          </Pressable> */}
         </View>
+
+        {activeTab === 'properties' && isLoading ? (
+          <View style={{ paddingVertical: scaleHeight(24) }}>
+            <ActivityIndicator color={Colors.bronze} />
+          </View>
+        ) : null}
 
         <FlatList
           data={displayedProperties}
           renderItem={renderPropertyItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           numColumns={3}
           scrollEnabled={false}
           contentContainerStyle={styles.gridContainer}
+          ListEmptyComponent={
+            activeTab === 'properties' ? (
+              <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center' }}>
+                <Text style={{ color: Colors.textSecondary }}>No properties</Text>
+              </View>
+            ) : null
+          }
         />
       </ScrollView>
     </View>
@@ -206,12 +246,12 @@ const styles = StyleSheet.create({
     height: scaleWidth(48),
     borderRadius: scaleWidth(24),
     backgroundColor: Colors.background,
-    borderWidth:1,
+    borderWidth: 1,
     borderColor: Colors.bronze,
     alignItems: 'center',
     justifyContent: 'center',
   },
-   contactButtons: {
+  contactButtons: {
     flexDirection: 'row',
     gap: scaleWidth(12),
   },
@@ -239,6 +279,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: Colors.textLight,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     fontSize: scaleFont(36),
@@ -276,25 +321,6 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(13),
     color: Colors.textSecondary,
   },
-  statDivider: {
-    width: scaleWidth(1),
-    height: scaleHeight(24),
-    backgroundColor: Colors.border,
-  },
-  editButton: {
-    width: '100%',
-    paddingVertical: scaleHeight(12),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    fontSize: scaleFont(16),
-    fontWeight: '600',
-    color: Colors.text,
-  },
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -314,7 +340,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.bronze,
   },
   tabText: {
-    fontSize: scaleFont(14),
+    fontSize: scaleFont(15),
     fontWeight: '600',
     color: Colors.textSecondary,
   },
@@ -322,31 +348,32 @@ const styles = StyleSheet.create({
     color: Colors.bronze,
   },
   gridContainer: {
-    paddingHorizontal: scaleWidth(2),
+    padding: scaleWidth(2),
   },
   gridItem: {
-    width: '33.33%',
+    flex: 1,
     aspectRatio: 1,
-    padding: scaleWidth(1),
+    margin: scaleWidth(2),
+    backgroundColor: Colors.textLight,
+    position: 'relative' as const,
   },
   gridImage: {
     width: '100%',
     height: '100%',
-    borderRadius: scaleWidth(8),
   },
   gridOverlay: {
-    position: 'absolute',
+    position: 'absolute' as const,
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: scaleWidth(8),
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0)',
     justifyContent: 'flex-end',
+    padding: scaleWidth(8),
   },
   gridStats: {
     flexDirection: 'row',
-    padding: scaleWidth(6),
+    gap: scaleWidth(12),
   },
   gridStat: {
     flexDirection: 'row',
@@ -354,8 +381,11 @@ const styles = StyleSheet.create({
     gap: scaleWidth(4),
   },
   gridStatText: {
-    color: Colors.textLight,
     fontSize: scaleFont(12),
-    fontWeight: '700',
+    fontWeight: '600',
+    color: Colors.textLight,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });

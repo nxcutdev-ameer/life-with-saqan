@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -16,6 +16,8 @@ import { Colors } from '@/constants/colors';
 import { mockProperties, filterProperties } from '@/mocks/properties';
 import { LifestyleType, Property } from '@/types';
 import * as Haptics from 'expo-haptics';
+import { useEngagementStore } from '@/stores/engagementStore';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -36,7 +38,12 @@ export default function FeedScreen() {
   );
 
   const [viewableItems, setViewableItems] = useState<string[]>([]);
-  const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
+  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal, isLiked: isLikedGlobal } =
+    useEngagementStore();
+
+  useEffect(() => {
+    if (!likesHydrated) hydrateLikes();
+  }, [hydrateLikes, likesHydrated]);
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
 
   const viewabilityConfig = useRef({
@@ -47,17 +54,13 @@ export default function FeedScreen() {
     setViewableItems(items.map(item => item.key as string));
   }).current;
 
-  const toggleLike = (propertyId: string) => {
+  const toggleLike = async (propertyId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLikedProperties(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(propertyId)) {
-        newSet.delete(propertyId);
-      } else {
-        newSet.add(propertyId);
-      }
-      return newSet;
-    });
+    try {
+      await toggleLikeGlobal(propertyId);
+    } catch {
+      // ignore (store already reverted optimistic update)
+    }
   };
 
   const toggleSave = (propertyId: string) => {
@@ -75,14 +78,14 @@ export default function FeedScreen() {
 
   const renderProperty = ({ item }: { item: Property }) => {
     const isViewable = viewableItems.includes(item.id);
-    const isLiked = likedProperties.has(item.id);
+    const isLiked = isLikedGlobal(item.id);
     const isSaved = savedProperties.has(item.id);
 
     return (
       <View style={styles.propertyContainer}>
         <Pressable 
           style={styles.videoTouchArea}
-          onPress={() => router.push(`/property/${item.propertyReference ?? item.id}`)}
+          onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }))}
         >
           <Video
             source={{ uri: item.videoUrl }}
@@ -140,14 +143,21 @@ export default function FeedScreen() {
         </View>
 
         <View style={styles.infoCard}>
-          <View style={styles.agentRow}>
+          <Pressable
+            style={styles.agentRow}
+            onPress={() => {
+              const routeAgentId = (item.agent as any)?.agentId ?? item.agent?.id;
+              if (!routeAgentId) return;
+              router.push(`/agent/${routeAgentId}` as any);
+            }}
+          >
             <View style={styles.agentAvatar}>
               <Text style={styles.agentInitial}>
                 {item.agentName.charAt(0)}
               </Text>
             </View>
             <Text style={styles.agentName}>{item.agentName}</Text>
-          </View>
+          </Pressable>
 
           <Text style={styles.propertyTitle} numberOfLines={2}>
             {item.title}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { ArrowLeft } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
@@ -39,7 +40,7 @@ export default function WatchHistoryScreen() {
   const PropertyCard = ({ item }: { item: WatchHistoryItem }) => (
     <Pressable
       style={styles.propertyCard}
-      onPress={() => router.push(`/property/${item.id}` as any)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.id, id: item.id }) as any)}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}

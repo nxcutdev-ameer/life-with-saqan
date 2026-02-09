@@ -193,7 +193,7 @@ export default function OtpVerificationScreen() {
             ? {
                 id: payload.agent.id,
                 name: payload.agent.name,
-                avatarUrl: payload.agent.avatar?.url ?? null,
+                avatarUrl: (payload.agent as any)?.avatar?.url ?? null,
               }
             : null,
         });
@@ -221,7 +221,7 @@ export default function OtpVerificationScreen() {
           ? {
               id: res.payload.agent.id,
               name: res.payload.agent.name,
-              avatarUrl: res.payload.agent.avatar?.url ?? null,
+              avatarUrl: (res.payload.agent as any)?.avatar?.url ?? null,
             }
           : null,
       });

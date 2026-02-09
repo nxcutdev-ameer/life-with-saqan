@@ -9,6 +9,7 @@ import {
   FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { buildPropertyDetailsRoute } from '@/utils/routes';
 import {
   Search as SearchIcon,
   SlidersHorizontal,
@@ -96,7 +97,7 @@ export default function SearchScreen() {
   const renderPropertyCard = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.propertyCard}
-      onPress={() => router.push(`/property/${item.id}`)}
+      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }))}
     >
       <Image
         source={{ uri: item.thumbnailUrl }}
