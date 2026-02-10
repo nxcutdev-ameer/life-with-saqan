@@ -165,10 +165,10 @@ export default function AgentProfileScreen() {
           <Text style={styles.userBio}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            {/* <View style={styles.statItem}>
               <Text style={styles.statNumber}>{agentProperties.length}</Text>
               <Text style={styles.statLabel}>Properties</Text>
-            </View>
+            </View> */}
           </View>
 
           <View style={styles.contactButtons}>
@@ -184,12 +184,12 @@ export default function AgentProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.tabsContainer}>
+        {/* <View style={styles.tabsContainer}>
           <Pressable style={[styles.tab, activeTab === 'properties' && styles.tabActive]} onPress={() => setActiveTab('properties')}>
             <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>Properties</Text>
           </Pressable>
-        </View>
+        </View> */}
 
         {activeTab === 'properties' && isLoading ? (
           <View style={{ paddingVertical: scaleHeight(24) }}>

@@ -17,6 +17,7 @@
       "icon": "./assets/images/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.saqan-lifestyle-real-estate",
+      "buildNumber": "1",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -34,11 +35,12 @@
       },
       "package": "app.rork.saqan_lifestyle_real_estate",
       "permissions": [
-        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "manifest": {
         "android:supportsPictureInPicture": true
@@ -78,6 +80,15 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": "https://rork.com/"
+      },
+      "eas": {
+        "projectId": "88ab3a83-c779-4d16-a445-893fe45c6623"
+      }
+    },
+    "owner": "qdealsllc"
   }
 }

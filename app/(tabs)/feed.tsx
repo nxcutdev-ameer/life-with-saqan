@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text,
   View,
@@ -42,10 +42,13 @@ type FeedVideoItem = Property;
 interface FeedItemProps {
   item: FeedVideoItem;
   index: number;
+  /** Active in viewport (should play / update progress). */
   isViewable: boolean;
-  isLiked: boolean;
   isSaved: boolean;
   scrollY: Animated.Value;
+  bottomTabBarHeight: number;
+  overlayTop: number;
+  overlayBottom: number;
   onToggleLike: (id: string) => void;
   onToggleSave: (id: string) => void;
   onOpenComments: (id: string) => void;
@@ -57,7 +60,9 @@ interface FeedItemProps {
   onScrubbingChange?: (isScrubbing: boolean) => void;
 }
 
-function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+  // Subscribe per-item so only the affected cell re-renders when likes change.
+  const isLiked = useEngagementStore((s) => s.isLiked(item.id));
   const [isPaused, setIsPaused] = useState(false);
 
   const playOverlayOpacity = useRef(new Animated.Value(0)).current;
@@ -84,10 +89,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     });
   }, [isPaused, playOverlayOpacity]);
 
-  const player = useVideoPlayer(item.videoUrl, (player) => {
-    player.loop = true;
-    player.muted = false;
-    player.volume = 0.8;
+  const player = useVideoPlayer(item.videoUrl, (p) => {
+    p.loop = true;
+    p.muted = false;
+    p.volume = 0.8;
   });
 
   // `player.currentTime` is not React state. Track it locally so UI (progress bar) updates live.
@@ -115,6 +120,8 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   const [subtitleCues, setSubtitleCues] = useState<Array<{ start: number; end: number; text: string }>>([]);
   const [activeSubtitle, setActiveSubtitle] = useState('');
   React.useEffect(() => {
+    if (!player) return;
+
     if (isViewable) {
       if (isPaused) {
         player.pause();
@@ -133,21 +140,20 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
       } catch {}
 
       // Pause when not viewable, but DO NOT reset time/isPaused.
-      // This allows resuming from the same currentTime when closing modals or returning to this tab.
       try {
         player.pause();
       } catch {}
     }
-  }, [isPaused, isViewable, player]);
+  }, [isPaused, isViewable, player, onSpeedingChange]);
 
   React.useEffect(() => {
+    if (!player) return;
     if (!isViewable) return;
 
     let rafId: number | null = null;
     let lastUpdate = 0;
 
     const tick = (t: number) => {
-      // Update the progress bar animates between updates for smoothness.
       if (t - lastUpdate >= 100) {
         lastUpdate = t;
         const ct = player.currentTime;
@@ -170,8 +176,8 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   }, [isViewable, player, subtitleCues]);
 
   const handleSeek = (timestamp: number) => {
+    if (!player) return;
     player.currentTime = timestamp;
-    // Keep UI in sync immediately on manual seeks.
     setCurrentTime(timestamp);
     if (subtitleCues.length) {
       setActiveSubtitle(findActiveCue(subtitleCues, timestamp));
@@ -179,6 +185,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   };
 
   React.useEffect(() => {
+    if (!player) return;
     if (!isViewable) return;
 
     // No subtitle selected.
@@ -198,6 +205,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
         const cues = parseVtt(text);
         setSubtitleCues(cues);
+
         setActiveSubtitle(findActiveCue(cues, player.currentTime));
       } catch (e: any) {
         // backend may have missing/bad urls for now
@@ -211,17 +219,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     };
   }, [isViewable, selectedSubtitleUrl, player]);
 
-  const insets = useSafeAreaInsets();
-  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
-
   const EDGE_ZONE_WIDTH = scaleWidth(70);
 
-  // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
-  // or the engagement/video controls (bottom).
-  const OVERLAY_TOP = insets.top + scaleHeight(12) + scaleHeight(16) + scaleHeight(32);
-  const OVERLAY_BOTTOM = scaleHeight(140) + bottomTabBarHeight;
-
   const togglePause = () => {
+    if (!player) return;
     setIsPaused((prev) => {
       const next = !prev;
       if (isViewable) {
@@ -236,6 +237,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   };
 
   const setPlaybackRate = (rate: number) => {
+    if (!player) return;
     try {
       (player as any).playbackRate = rate;
     } catch {}
@@ -247,8 +249,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   const [isSpeeding, setIsSpeeding] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const wasPausedBeforeSpeedRef = useRef(false);
+  const wasPausedBeforeScrubRef = useRef(false);
 
   const startSpeed = () => {
+    if (!player) return;
     wasPausedBeforeSpeedRef.current = isPaused;
 
     // If the video was paused, temporarily resume while holding for 2x.
@@ -264,6 +268,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     setPlaybackRate(2);
   };
   const stopSpeed = () => {
+    if (!player) return;
     setIsSpeeding(false);
     onSpeedingChange?.(false);
     setPlaybackRate(1);
@@ -291,8 +296,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         // Right -> Left swipe
         if (dx < -60 && !swipeHandledRef.current) {
           swipeHandledRef.current = true;
-          player.pause();
-          setIsPaused(true);
+          if (player) {
+            player.pause();
+            setIsPaused(true);
+          }
           onNavigateToProperty(item.propertyReference || item.id);
         }
         setTimeout(() => {
@@ -309,12 +316,7 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     <View style={styles.propertyContainer} {...panResponder.panHandlers}>
       <View style={styles.videoTouchArea}>
         {item.videoUrl ? (
-          <VideoView
-            player={player}
-            style={styles.video}
-            contentFit="cover"
-            nativeControls={false}
-          />
+          <VideoView player={player} style={styles.video} contentFit="cover" nativeControls={false} />
         ) : (
           <View style={[styles.video, { alignItems: 'center', justifyContent: 'center' }]}>
             <Text style={{ color: '#fff', opacity: 0.9, fontWeight: '600' }}>Video unavailable</Text>
@@ -387,10 +389,10 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         pointerEvents={isScrubbing ? 'none' : 'auto'}
         style={{
           position: 'absolute',
-          top: OVERLAY_TOP,
+          top: overlayTop,
           left: 0,
           right: 0,
-          bottom: OVERLAY_BOTTOM,
+          bottom: overlayBottom,
           flexDirection: 'row',
           zIndex: 150,
           elevation: 150,
@@ -422,10 +424,12 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
        <PropertyFooter
          item={item}
          onNavigateAway={() => {
-           try {
-             player.pause();
-           } catch {}
-           setIsPaused(true);
+           if (player) {
+             try {
+               player.pause();
+             } catch {}
+             setIsPaused(true);
+           }
          }}
          currentTime={currentTime}
          duration={duration}
@@ -438,6 +442,11 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
          onSeek={handleSeek}
          scrubbing={isScrubbing}
          onScrubStart={() => {
+           if (!player) return;
+
+           // Remember the pre-scrub state so we can restore it on end.
+           wasPausedBeforeScrubRef.current = isPaused;
+
            // If user starts scrubbing, stop any 2x hold and disable overlay zones.
            stopSpeed();
 
@@ -449,9 +458,25 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
            onScrubbingChange?.(true);
          }}
          onScrubEnd={() => {
-           // Show UI again; keep video paused (user can tap to play).
            setIsScrubbing(false);
            onScrubbingChange?.(false);
+
+           // Resume only if the video was playing before scrubbing.
+           if (!player) return;
+           if (!wasPausedBeforeScrubRef.current) {
+             try {
+               player.play();
+             } catch {}
+             setIsPaused(false);
+           } else {
+             // Keep paused if it was paused before scrubbing.
+             try {
+               player.pause();
+             } catch {}
+             setIsPaused(true);
+           }
+
+           wasPausedBeforeScrubRef.current = false;
          }}
          selectedSubtitleCode={globalSubtitleLanguageCode}
          onSubtitleSelect={(subtitleUrl, languageCode) => {
@@ -459,20 +484,28 @@ function FeedItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
            onGlobalSubtitleLanguageChange?.(languageCode);
          }}
          onNavigateToProperty={() => {
-           player.pause();
-           setIsPaused(true);
+           if (player) {
+             player.pause();
+             setIsPaused(true);
+           }
            onNavigateToProperty(item.propertyReference || item.id);
          }}
        />
      ) : null}
     </View>
   );
-}
+});
 
 export default function FeedScreen() {
   const router = useRouter();
   useUserPreferences();
   const insets = useSafeAreaInsets();
+  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+
+  // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
+  // or the engagement/video controls (bottom).
+  const overlayTop = insets.top + scaleHeight(12) + scaleHeight(16) + scaleHeight(32);
+  const overlayBottom = scaleHeight(140) + bottomTabBarHeight;
 
   const [items, setItems] = useState<FeedVideoItem[]>([]);
   const [page, setPage] = useState(1);
@@ -571,7 +604,7 @@ export default function FeedScreen() {
     if (!firstItemId) return;
     setActiveItemId((prev) => prev ?? firstItemId);
   }, [firstItemId]);
-  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal, isLiked: isLikedGlobal } = useEngagementStore();
+  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
 
   useEffect(() => {
     if (!likesHydrated) {
@@ -585,7 +618,10 @@ export default function FeedScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
 
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 80,
+    // Lower threshold so the next item becomes "viewable" sooner after a swipe,
+    // which helps start playback earlier.
+    itemVisiblePercentThreshold: 25,
+    minimumViewTime: 20,
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
@@ -604,24 +640,25 @@ export default function FeedScreen() {
     }
   }).current;
 
-  const toggleLike = async (propertyId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const toggleLike = useCallback(
+    async (propertyId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    try {
-      const res = await toggleLikeGlobal(propertyId);
-      const likesCount = res?.likesCount;
-      if (typeof likesCount === 'number') {
-        setItems((prev) => prev.map((it) => (it.id === propertyId ? { ...it, likesCount } : it)));
+      try {
+        await toggleLikeGlobal(propertyId);
+        // Do NOT mutate the items array here. Likes count is derived from engagementStore per-item,
+        // which avoids triggering expensive FlatList re-renders.
+      } catch (err: any) {
+        const message = err?.message || 'Failed to update like.';
+        Alert.alert('Error', message);
       }
-    } catch (err: any) {
-      const message = err?.message || 'Failed to update like.';
-      Alert.alert('Error', message);
-    }
-  };
+    },
+    [toggleLikeGlobal]
+  );
 
-  const toggleSave = (propertyId: string) => {
+  const toggleSave = useCallback((propertyId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSavedProperties(prev => {
+    setSavedProperties((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(propertyId)) {
         newSet.delete(propertyId);
@@ -630,9 +667,10 @@ export default function FeedScreen() {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const handleShare = async (id: string) => {
+  const handleShare = useCallback(
+    async (id: string) => {
     const item = items.find((p) => p.id === id);
     const url = item?.videoUrl;
     if (!url) {
@@ -658,52 +696,73 @@ export default function FeedScreen() {
       const message = err?.message || 'Failed to share.';
       Alert.alert('Error', message);
     }
-  };
+  },
+  [items]
+  );
 
   const canPlay = isFocused && !locationsModalVisible && !commentsModalVisible;
 
-  const renderProperty = ({ item, index }: { item: FeedVideoItem; index: number }) => {
-    return (
+  const handleOpenComments = useCallback((id: string) => {
+    setSelectedPropertyId(id);
+    setCommentsModalVisible(true);
+  }, []);
+
+  const handleSpeedingChange = useCallback((speeding: boolean) => {
+    // Hide header while the user is holding left/right for 2x
+    setIsHoldingSpeed(speeding);
+  }, []);
+
+  const handleScrubbingChange = useCallback((scrubbing: boolean) => {
+    setIsScrubbing(scrubbing);
+  }, []);
+
+  const handleNavigateToProperty = useCallback(
+    (propertyReference: string, videoId: string) => {
+      router.push(buildPropertyDetailsRoute({ propertyReference, id: videoId }));
+    },
+    [router]
+  );
+
+  const renderProperty = useCallback(
+    ({ item, index }: { item: FeedVideoItem; index: number }) => (
       <FeedItem
         item={item}
         index={index}
         isViewable={canPlay && activeItemId === item.id}
-        isLiked={isLikedGlobal(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
+        bottomTabBarHeight={bottomTabBarHeight}
+        overlayTop={overlayTop}
+        overlayBottom={overlayBottom}
         onToggleLike={toggleLike}
         onToggleSave={toggleSave}
-        onOpenComments={(id) => {
-          setSelectedPropertyId(id);
-          setCommentsModalVisible(true);
-        }}
-        onSpeedingChange={(speeding) => {
-          // Hide header while the user is holding left/right for 2x
-          setIsHoldingSpeed(speeding);
-        }}
-        onScrubbingChange={(scrubbing) => {
-          setIsScrubbing(scrubbing);
-        }}
-        onNavigateToProperty={async (propertyReference) => {
-          // // Cache item data for the details screen (until a dedicated property endpoint is wired).
-          // try {
-          //   const current = items.find((p) => p.propertyReference === propertyReference || p.id === propertyReference);
-          //   if (current?.propertyReference) {
-          //     await AsyncStorage.setItem(
-          //       `@property_cache_${current.propertyReference}`,
-          //       JSON.stringify(current)
-          //     );
-          //   }
-          // } catch {}
-
-          router.push(buildPropertyDetailsRoute({ propertyReference, id: item.id }));
-        }}
+        onOpenComments={handleOpenComments}
+        onSpeedingChange={handleSpeedingChange}
+        onScrubbingChange={handleScrubbingChange}
+        onNavigateToProperty={(propertyReference) => handleNavigateToProperty(propertyReference, item.id)}
         onShare={handleShare}
         globalSubtitleLanguageCode={globalSubtitleLanguageCode}
         onGlobalSubtitleLanguageChange={(code) => setGlobalSubtitleLanguageCode(code)}
       />
-    );
-  };
+    ),
+    [
+      activeItemId,
+      canPlay,
+      globalSubtitleLanguageCode,
+      handleNavigateToProperty,
+      handleOpenComments,
+      handleScrubbingChange,
+      handleShare,
+      handleSpeedingChange,
+      savedProperties,
+      scrollY,
+      setGlobalSubtitleLanguageCode,
+      toggleLike,
+      toggleSave,
+    ]
+  );
+
+  const keyExtractor = useCallback((item: FeedVideoItem) => item.id, []);
 
   if (!isFetching && filteredProperties.length === 0) {
     return (
@@ -713,6 +772,7 @@ export default function FeedScreen() {
       </View>
     );
   }
+
   return (
     <View style={styles.container}>
       {!isHoldingSpeed && !isScrubbing ? (
@@ -728,7 +788,7 @@ export default function FeedScreen() {
       <Animated.FlatList
         data={filteredProperties}
         renderItem={renderProperty}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         scrollEnabled={!isScrubbing && !isHoldingSpeed}
         pagingEnabled
         showsVerticalScrollIndicator={false}
@@ -749,16 +809,20 @@ export default function FeedScreen() {
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         removeClippedSubviews
-        initialNumToRender={6}
-        maxToRenderPerBatch={6}
-        windowSize={9}
-        updateCellsBatchingPeriod={16}
+        // For a paged, full-screen video feed we want the next/prev item mounted,
+        // but avoid rendering too many players at once.
+        initialNumToRender={3}
+        maxToRenderPerBatch={4}
+        // Keep a small window of items mounted so the next video is ready instantly.
+        // (windowSize counts screens, so 7 ~= current + 3 above + 3 below)
+        windowSize={7}
+        updateCellsBatchingPeriod={8}
         getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
-        scrollEventThrottle={20} // Throttle scroll events to improve performance was 8
+        scrollEventThrottle={16} // ~60fps; keeps animations responsive without flooding JS
         onMomentumScrollBegin={() => {
           endReachedCalledDuringMomentum.current = false;
         }}
@@ -770,7 +834,7 @@ export default function FeedScreen() {
             loadPage(pageRef.current + 1);
           }
         }}
-        onEndReachedThreshold={1.6} // Load more when user reaches the end of the list was 0.5
+        onEndReachedThreshold={0.8} // Prefetch next page a bit before the end without over-triggering
       />
       <CommentsModal
         visible={commentsModalVisible}

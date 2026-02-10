@@ -1,4 +1,5 @@
 import type { Property } from '@/types';
+import type { Href } from 'expo-router';
 
 /**
  * Build a route to the property details screen.
@@ -9,15 +10,25 @@ import type { Property } from '@/types';
 export function buildPropertyDetailsRoute(input: {
   propertyReference?: string | null;
   id?: string | null;
-}): string {
+}): Href {  
+  // Using an object Href keeps expo-router types happy (avoids pushing arbitrary strings).
+
   const ref = (input.propertyReference || input.id || '').trim();
-  if (!ref) return '/property/';
+  if (!ref) {
+    return { pathname: '/property/[id]', params: { id: '' } } as unknown as Href;
+  }
 
   const videoId = (input.id || '').trim();
 
-  // Only append videoId when it's meaningfully different from the reference.
   if (videoId && videoId !== ref) {
-    return `/property/${encodeURIComponent(ref)}?videoId=${encodeURIComponent(videoId)}`;
+    return {
+      pathname: '/property/[id]',
+      params: { id: ref, videoId },
+    } as unknown as Href;
   }
-  return `/property/${encodeURIComponent(ref)}`;
+
+  return {
+    pathname: '/property/[id]',
+    params: { id: ref },
+  } as unknown as Href;
 }
