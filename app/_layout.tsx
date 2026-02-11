@@ -25,6 +25,14 @@ function RootLayoutNav() {
       <Stack.Screen name="messages" options={{ presentation: 'card' }} />
       <Stack.Screen name="messages/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+      <Stack.Screen
+        name="record-video"
+        options={{ presentation: 'card', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="record-video-preview"
+        options={{ presentation: 'card', animation: 'slide_from_right' }}
+      />
     </Stack>
   );
 }

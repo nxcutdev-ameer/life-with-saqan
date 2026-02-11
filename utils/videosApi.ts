@@ -1,6 +1,6 @@
 import { fetchJson } from '@/utils/api';
 
-const BASE_URL = 'https://api.saqan.com/api/videos';
+const BASE_URL = 'https://www.saqan.com/api/videos';
 
 export type UploadWithPropertySuccessResponse = {
   success?: boolean;

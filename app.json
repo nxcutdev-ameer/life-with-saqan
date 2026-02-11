@@ -16,7 +16,7 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "supportsTablet": false,
-      "bundleIdentifier": "app.rork.saqan-lifestyle-real-estate",
+      "bundleIdentifier": "com.saqan.lifestyle",
       "buildNumber": "1",
       "infoPlist": {
         "UIBackgroundModes": [
@@ -33,7 +33,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "app.rork.saqan_lifestyle_real_estate",
+      "package": "com.saqan.lifestyle",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE",

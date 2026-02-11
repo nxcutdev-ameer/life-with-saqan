@@ -149,6 +149,7 @@ export default function PropertyDetailScreen() {
   };
 
   React.useEffect(() => {
+    console.log(propertyReference)
         if (!propertyReference) return;
 
     (async () => {
@@ -173,6 +174,7 @@ export default function PropertyDetailScreen() {
         });
 
         const payload = response.payload;
+        console.log(response)
         const mapped = mapApiPayloadToProperty(payload, videoIdParam);
                 setProperty(mapped);
         await AsyncStorage.setItem(`@property_cache_${propertyReference}`, JSON.stringify(mapped));
@@ -216,7 +218,7 @@ export default function PropertyDetailScreen() {
         ) : (
           <Text style={styles.errorText}>Property not found</Text>
         )}
-        {loadError ? <Text style={[styles.errorText, { marginTop: 12 }]}>{loadError}</Text> : null}
+        {/* {loadError ? <Text style={[styles.errorText, { marginTop: 12 }]}>{loadError}</Text> : null} */}
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </Pressable>

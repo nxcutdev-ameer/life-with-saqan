@@ -152,7 +152,7 @@ export default function PropertyFooter({
         >
         <View style={styles.agentSection}>
        <TranslationOverlay
-            agentName={item.agentName}
+            agentName={(item.agentName || item.agent?.name || 'Agent').trim()}
             languages={translations}
             selectedCode={selectedSubtitleCode}
             onLanguageSelect={(lang) => {
@@ -232,7 +232,7 @@ export default function PropertyFooter({
               translationContent={
                 selectedLanguage && selectedLanguage.translation
                   ? {
-                      agentName: item.agentName,
+                      agentName: (item.agentName || item.agent?.name || 'Agent').trim(),
                       translation: selectedLanguage.translation,
                     }
                   : null

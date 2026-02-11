@@ -46,7 +46,7 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'] as any,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.9,
@@ -342,9 +342,11 @@ const styles = StyleSheet.create({
     paddingTop: scaleHeight(60),
     paddingHorizontal: scaleWidth(20),
     paddingBottom: scaleHeight(16),
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: scaleFont(32),
+    fontSize: scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -359,35 +361,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(20),
     paddingTop: scaleHeight(24),
   },
-  authGateCard: {
+ authGateCard: {
+    marginTop: scaleHeight(16),
     backgroundColor: Colors.textLight,
     borderRadius: scaleWidth(16),
     padding: scaleWidth(20),
     borderWidth: 1,
     borderColor: Colors.border,
+    alignItems: 'center',
   },
   authGateTitle: {
     fontSize: scaleFont(20),
-    fontWeight: '700',
+    fontWeight: '800',
     color: Colors.text,
-    marginBottom: scaleHeight(8),
+    marginBottom: scaleHeight(6),
   },
   authGateDescription: {
     fontSize: scaleFont(14),
     color: Colors.textSecondary,
-    lineHeight: scaleHeight(20),
-    marginBottom: scaleHeight(16),
+    textAlign: 'center',
+    lineHeight: scaleFont(20),
+    marginBottom: scaleHeight(14),
   },
   authGateButton: {
+    width: '100%',
     backgroundColor: Colors.bronze,
+    paddingVertical: scaleHeight(14),
     borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
     alignItems: 'center',
+    marginBottom: scaleHeight(12),
   },
   authGateButtonText: {
     color: Colors.textLight,
+    fontSize: scaleFont(16),
     fontWeight: '700',
+  },
+  authGateLink: {
+    color: Colors.brown,
     fontSize: scaleFont(14),
+    fontWeight: '700',
   },
   profileSection: {
     alignItems: 'center',

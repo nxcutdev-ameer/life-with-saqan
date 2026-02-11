@@ -19,8 +19,9 @@ import {
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Video } from 'expo-av';
-import { useRouter } from 'expo-router';
+import { ResizeMode, Video } from 'expo-av';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRecordingStore } from '@/stores/recordingStore';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import {
@@ -77,13 +78,14 @@ const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroo
 export default function UploadScreen() { 
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
+  const { openTextOverlay } = useLocalSearchParams<{ openTextOverlay?: string }>();
   const navigation = useNavigation();
   const setUploadLocked = useUiLockStore((s) => s.setUploadLocked);
   const shouldResetOnNextFocus = React.useRef(false);
   const wasHighlightsPlayingRef = React.useRef(false);
   const isHighlightsScrubbingRef = React.useRef(false);
   const pendingSeekSecRef = React.useRef(0);
-  const [step, setStep] = useState<'select' | 'edit' | 'selectHighlights' | 'details'>('select');
+  const [step, setStep] = useState<'select' | 'preview' | 'edit' | 'selectHighlights' | 'details'>('select');
 
   type DetailsFlow =
     | 'status'
@@ -181,6 +183,8 @@ export default function UploadScreen() {
   const [overlayTextSize, setOverlayTextSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [overlayTextColor, setOverlayTextColor] = useState<'white' | 'black' | 'yellow'>('white');
   const [overlayTextPosition, setOverlayTextPosition] = useState<'top' | 'center' | 'bottom'>('center');
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [isEditPreviewPlaying, setIsEditPreviewPlaying] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
   type HighlightOption = (typeof DEFAULT_HIGHLIGHT_OPTIONS)[number];
@@ -213,6 +217,7 @@ export default function UploadScreen() {
   }, []);
 
   const videoRef = React.useRef<Video>(null);
+  const editVideoRef = React.useRef<Video>(null);
   const [videoCurrentTimeSec, setVideoCurrentTimeSec] = useState(0);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
   const [isHighlightsPlaying, setIsHighlightsPlaying] = useState(false);
@@ -684,7 +689,7 @@ export default function UploadScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: ['videos'] as any,
       allowsEditing: true,
       aspect: [9, 16],
       quality: 1,
@@ -692,28 +697,15 @@ export default function UploadScreen() {
 
     if (!result.canceled) {
       setSelectedVideoUri(result.assets[0].uri);
-      setStep('edit');
+      setStep('preview');
     }
   };
 
-  const recordVideo = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please grant camera permissions to record videos.');
-      return;
-    }
+  const consumeRecordedVideoUri = useRecordingStore((s) => s.consumeRecordedVideoUri);
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      allowsEditing: true,
-      aspect: [9, 16],
-      quality: 1,
-    });
-    if (!result.canceled) {
-      setSelectedVideoUri(result.assets[0].uri);
-      setStep('edit');
-    }
+  const recordVideo = async () => {
+    // Use in-app recorder screen (hold to record).
+    router.push('/record-video' as any);
   };
 
   const DISABLE_SUBSCRIPTION_GUARD = true; // TODO: re-enable when backend subscription is ready
@@ -865,10 +857,18 @@ export default function UploadScreen() {
         shouldResetOnNextFocus.current = false;
         resetUploadFlow();
       }
+
+      // Consume in-app recorded video when returning from /record-video.
+      const recordedUri = consumeRecordedVideoUri();
+      if (recordedUri) {
+        setSelectedVideoUri(recordedUri);
+        const wantsTextOverlay = openTextOverlay === '1' || openTextOverlay === 'true';
+        setStep(wantsTextOverlay ? 'edit' : 'preview');
+      }
     });
 
     return unsubscribe;
-  }, [navigation, isPublishing, resetUploadFlow]);
+  }, [navigation, isPublishing, resetUploadFlow, consumeRecordedVideoUri]);
 
   const toggleAmenity = (id: number) => {
     setSelectedAmenityIds((prev) =>
@@ -1191,7 +1191,7 @@ export default function UploadScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'] as any,
       allowsMultipleSelection: true,
       quality: 1,
     });
@@ -1781,6 +1781,76 @@ export default function UploadScreen() {
    );
  }
 
+ if (step === 'preview') {
+   if (!selectedVideoUri) {
+     setStep('select');
+     return null;
+   }
+
+   return (
+     <View style={styles.container}>
+       <View style={styles.header}>
+         <Pressable onPress={() => setStep('select')}>
+           <X size={scaleWidth(24)} color={Colors.text} />
+         </Pressable>
+         <Text style={styles.headerTitle}>Preview</Text>
+         <View style={{ width: scaleWidth(24) }} />
+       </View>
+
+       <View style={styles.videoPreviewContainer}>
+         <Video
+           ref={editVideoRef}
+           source={{ uri: selectedVideoUri }}
+           style={styles.videoPreview}
+           resizeMode={'cover' as any}
+           shouldPlay={isPreviewPlaying}
+           isLooping
+           onPlaybackStatusUpdate={(status: any) => {
+             if (!status?.isLoaded) return;
+             if (typeof status.isPlaying === 'boolean') setIsPreviewPlaying(status.isPlaying);
+           }}
+         />
+
+         <View pointerEvents="box-none" style={styles.editPreviewControlsOverlay}>
+           <Pressable
+             style={styles.editPreviewCenterControl}
+             onPress={() => setIsPreviewPlaying((p) => !p)}
+             hitSlop={10}
+           >
+             {isPreviewPlaying ? (
+               <Pause size={scaleWidth(22)} color={Colors.textLight} />
+             ) : (
+               <Play size={scaleWidth(22)} color={Colors.textLight} />
+             )}
+           </Pressable>
+         </View>
+       </View>
+
+       <View style={styles.previewActionsRow}>
+         <Pressable
+           style={[styles.previewActionButton, styles.previewActionSecondary]}
+           onPress={() => {
+             setIsPreviewPlaying(false);
+             router.push('/record-video' as any);
+           }}
+         >
+           <Text style={styles.previewActionSecondaryText}>Retake</Text>
+         </Pressable>
+
+         <Pressable
+           style={[styles.previewActionButton, styles.previewActionPrimary]}
+           onPress={() => {
+             setIsPreviewPlaying(false);
+             setStep('edit');
+           }}
+         >
+           <Text style={styles.previewActionPrimaryText}>Use Video</Text>
+         </Pressable>
+       </View>
+     </View>
+   );
+ }
+
  if (step === 'edit') {
     return (
       <View style={styles.container}>
@@ -1806,11 +1876,55 @@ export default function UploadScreen() {
         >
           <View style={styles.videoPreviewContainer}>
             <Video
+              ref={editVideoRef}
               source={{ uri: selectedVideoUri! }}
               style={styles.videoPreview}
-              resizeMode={'cover' as any}
-              useNativeControls={true}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={isEditPreviewPlaying}
+              isLooping={false}
+              onPlaybackStatusUpdate={async (status: any) => {
+                if (!status?.isLoaded) return;
+
+                // Restart from beginning when finished.
+                if (status.didJustFinish) {
+                  try {
+                    await editVideoRef.current?.setPositionAsync(0);
+                    // If user intended it to be playing, continue playing from start.
+                    if (isEditPreviewPlaying) {
+                      await editVideoRef.current?.playAsync();
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  return;
+                }
+
+                // Do not sync play/pause state from status updates here.
+                // Rely on `shouldPlay` (driven by `isEditPreviewPlaying`) to avoid UI flicker.
+                // Status updates (buffering, seeking) can momentarily flip `status.isPlaying`.
+
+              }}
             />
+
+            {/* Tap anywhere on the video to play/pause */}
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setIsEditPreviewPlaying((p) => !p)}
+            />
+
+            <View pointerEvents="box-none" style={styles.editPreviewControlsOverlay}>
+              <Pressable
+                style={styles.editPreviewCenterControl}
+                onPress={() => setIsEditPreviewPlaying((p) => !p)}
+                hitSlop={10}
+              >
+                {isEditPreviewPlaying ? (
+                  <Pause size={scaleWidth(22)} color={Colors.textLight} />
+                ) : (
+                  <Play size={scaleWidth(22)} color={Colors.textLight} />
+                )}
+              </Pressable>
+
             {overlayText && (
               <View style={[
                 styles.textOverlayPreview,
@@ -1831,6 +1945,7 @@ export default function UploadScreen() {
                 </Text>
               </View>
             )}
+          </View>
           </View>
 
           <View style={styles.controlSection}>
@@ -1980,7 +2095,8 @@ export default function UploadScreen() {
     );
   }
 
-  return (
+  if (step === 'details') {
+    return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Pressable
@@ -3587,6 +3703,9 @@ export default function UploadScreen() {
       })()}
     </View>
   );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -4075,6 +4194,7 @@ const styles = StyleSheet.create({
   },
   videoPreview: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
   },
   textOverlayPreview: {
     position: 'absolute',
@@ -4432,6 +4552,55 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Center play/pause button on the "Edit Video" preview
+  editPreviewControlsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
+    elevation: 999,
+  },
+  editPreviewCenterControl: {
+    width: scaleWidth(44),
+    height: scaleWidth(44),
+    borderRadius: scaleWidth(22),
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  previewActionsRow: {
+    flexDirection: 'row',
+    gap: scaleWidth(12),
+    paddingHorizontal: scaleWidth(16),
+    paddingVertical: scaleHeight(14),
+  },
+  previewActionButton: {
+    flex: 1,
+    paddingVertical: scaleHeight(14),
+    borderRadius: scaleWidth(12),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewActionPrimary: {
+    backgroundColor: Colors.bronze,
+  },
+  previewActionPrimaryText: {
+    color: Colors.textLight,
+    fontWeight: '800',
+    fontSize: scaleFont(14),
+  },
+  previewActionSecondary: {
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  previewActionSecondaryText: {
+    color: Colors.text,
+    fontWeight: '800',
+    fontSize: scaleFont(14),
   },
   highlightsScroll: {
     flex: 1,

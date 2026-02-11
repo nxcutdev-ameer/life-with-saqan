@@ -153,7 +153,7 @@ export default function FeedScreen() {
           >
             <View style={styles.agentAvatar}>
               <Text style={styles.agentInitial}>
-                {item.agentName.charAt(0)}
+                {(item.agentName || item.agent?.name || 'A').trim().charAt(0).toUpperCase()}
               </Text>
             </View>
             <Text style={styles.agentName}>{item.agentName}</Text>
