@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ActivityIndicator, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { uploadProfileAvatar } from '@/utils/profileApi';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuthStore } from '@/stores/authStore';
+import { SavingSpinner } from '@/components/SavingSpinner';
 
 type TabType = 'properties' | 'liked';
 
@@ -306,7 +307,7 @@ export default function ProfileScreen() {
 
         {activeTab === 'properties' && isLoadingVideos ? (
           <View style={{ paddingVertical: scaleHeight(24) }}>
-            <ActivityIndicator color={Colors.bronze} />
+            <SavingSpinner color={Colors.bronze} accessibilityLabel="Loading videos" />
           </View>
         ) : null}
 

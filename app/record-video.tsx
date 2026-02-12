@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, BackHandler, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SavingSpinner } from '@/components/SavingSpinner';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ArrowLeft, RefreshCcw } from 'lucide-react-native';
@@ -187,7 +188,7 @@ export default function RecordVideoScreen() {
             onPressOut={stopRecording}
           >
             {isSaving ? (
-              <ActivityIndicator color="#fff" />
+              <SavingSpinner color="#fff" accessibilityLabel="Saving video" />
             ) : (
               <View style={styles.recordButtonInnerWrap}>
                 <Animated.View

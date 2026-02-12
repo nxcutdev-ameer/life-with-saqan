@@ -13,7 +13,6 @@ import {
   Keyboard,
   useWindowDimensions,
   Image,
-  ActivityIndicator,
   Animated,
   Easing,
 } from 'react-native';
@@ -71,11 +70,15 @@ import {
   updateProperty,
   uploadMedia,
 } from '@/utils/propertiesApi';
+import { styles } from '@/constants/uploadStyles';
+import CustomToast from '@/components/customToast';
+import { FontAwesome } from '@expo/vector-icons';
+import { SavingSpinner } from '@/components/SavingSpinner';
 
 type HighlightStep = string;
 const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
 
-export default function UploadScreen() { 
+export default function UploadScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const { openTextOverlay } = useLocalSearchParams<{ openTextOverlay?: string }>();
@@ -187,6 +190,56 @@ export default function UploadScreen() {
   const [isEditPreviewPlaying, setIsEditPreviewPlaying] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
+  // Publish toasts (replaces Alert.alert for publish success/errors)
+  const [showPublishToast, setShowPublishToast] = useState(false);
+  const [publishErrorToast, setPublishErrorToast] = useState<null | { title: string; message: string }>(null);
+
+  const renderPublishToast = () => {
+    if (!showPublishToast && !publishErrorToast) return null;
+
+    // Error toast takes precedence.
+    if (publishErrorToast) {
+      return (
+        <View style={styles.publishToastWrapper} pointerEvents="box-none">
+          <View pointerEvents="none" style={styles.publishToastBackdrop} />
+          <CustomToast
+            icon={<FontAwesome name="exclamation-triangle" size={46} color="#F44336" />}
+            title={publishErrorToast.title}
+            subTitle={publishErrorToast.message}
+            buttonOneText="OK"
+            onButtonOnePress={() => setPublishErrorToast(null)}
+            animationType="slideUp"
+            autoDismiss={false}
+          />
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.publishToastWrapper} pointerEvents="box-none">
+        <View pointerEvents="none" style={styles.publishToastBackdrop} />
+        <CustomToast
+          icon={<FontAwesome name="check-circle" size={50} color="#4CAF50" />}
+          title="Property Published!"
+          subTitle="Your property has been published successfully."
+          buttonOneText="View Property"
+          buttonTwoText="Upload Another"
+          onButtonOnePress={() => {
+            setShowPublishToast(false);
+            shouldResetOnNextFocus.current = true;
+            router.replace('/(tabs)/profile');
+          }}
+          onButtonTwoPress={() => {
+            setShowPublishToast(false);
+            resetUploadFlow();
+          }}
+          animationType="slideUp"
+          autoDismiss={false}
+        />
+      </View>
+    );
+  };
+
   type HighlightOption = (typeof DEFAULT_HIGHLIGHT_OPTIONS)[number];
 
   const [highlightSteps, setHighlightSteps] = useState<HighlightStep[]>([...DEFAULT_HIGHLIGHT_OPTIONS]);
@@ -241,12 +294,56 @@ export default function UploadScreen() {
 
   const [offPlanPickerOpen, setOffPlanPickerOpen] = useState(false);
   const [offPlanSearch, setOffPlanSearch] = useState('');
+  const pendingReadyTitleFromOffPlanRef = React.useRef<string | null>(null);
   const [debouncedOffPlanSearch, setDebouncedOffPlanSearch] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedOffPlanSearch(offPlanSearch), 300);
     return () => clearTimeout(t);
   }, [offPlanSearch]);
+
+  const handleAddReadyPropertyFromOffPlanEmpty = async () => {
+    const titleSeed = offPlanSearch.trim();
+    pendingReadyTitleFromOffPlanRef.current = titleSeed || null;
+
+    // 1) Close offplan picker
+    setOffPlanPickerOpen(false);
+
+    // 2) Switch to READY flow and clear OFF_PLAN selection.
+    setPropertyDetails((prev) => ({
+      ...prev,
+      developmentStatus: 'READY',
+      offPlanProjectId: null,
+      offPlanProjectReferenceId: '',
+      offPlanProjectTitle: '',
+    }));
+
+    // 3) Navigate UI to READY step 1
+    setStep('details');
+    await animateToFlow('ready_step_1', 'back');
+
+    // 4) Ensure draft exists, then wait a second for the debounced save to settle.
+    //    (We don't want to fill title before the draft exists.)
+    try {
+      // Let state update apply before checking developmentStatus inside ensureDraftPropertyReferenceId.
+      await new Promise((r) => setTimeout(r, 0));
+      await ensureDraftPropertyReferenceId({ force: true });
+      await new Promise((r) => setTimeout(r, 1000));
+    } catch {
+      // ignore
+    }
+
+    // 5) Auto-fill title only if still empty (don't overwrite user input)
+    const seed = pendingReadyTitleFromOffPlanRef.current;
+    if (seed) {
+      setPropertyDetails((prev) => {
+        if (prev.title?.trim()) return prev;
+        return { ...prev, title: seed };
+      });
+    }
+
+    pendingReadyTitleFromOffPlanRef.current = null;
+  };
 
   const [draftPropertyReferenceId, setDraftPropertyReferenceId] = useState<string | null>(null);
   const createDraftInflightRef = React.useRef<Promise<string | null> | null>(null);
@@ -318,10 +415,10 @@ export default function UploadScreen() {
     });
   };
 
-  const ensureDraftPropertyReferenceId = async (): Promise<string | null> => {
+  const ensureDraftPropertyReferenceId = async (opts?: { force?: boolean }): Promise<string | null> => {
     const propertiesToken = sessionTokens?.propertiesToken;
     if (!propertiesToken) return null;
-    if (propertyDetails.developmentStatus !== 'READY') return null;
+    if (!opts?.force && propertyDetails.developmentStatus !== 'READY') return null;
 
     // Already have one
     if (draftPropertyReferenceId) return draftPropertyReferenceId;
@@ -925,13 +1022,14 @@ export default function UploadScreen() {
           Boolean((res as any)?.data?.video_id);
 
         if (isSuccess) {
-          Alert.alert('Success', res?.message || 'Uploaded successfully.', [
-            { text: 'OK', onPress: resetUploadFlow },
-          ]);
+          setShowPublishToast(true);
           return;
         }
 
-        Alert.alert('Upload failed', res?.message || 'Something went wrong.');
+        setPublishErrorToast({
+          title: 'Upload failed',
+          message: res?.message || 'Something went wrong.',
+        });
       } catch (err: any) {
         const body = err?.body as any;
         const message = body?.message || err?.message || 'Upload failed. Please try again.';
@@ -942,11 +1040,17 @@ export default function UploadScreen() {
           for (const [field, msgs] of Object.entries(errors)) {
             if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
           }
-          Alert.alert(message, lines.join('\n'));
+          setPublishErrorToast({
+            title: 'Upload failed',
+            message: `${message}\n${lines.join('\n')}`,
+          });
           return;
         }
 
-        Alert.alert('Upload failed', message);
+        setPublishErrorToast({
+          title: 'Upload failed',
+          message,
+        });
       } finally {
         setIsPublishing(false);
       }
@@ -1004,13 +1108,14 @@ export default function UploadScreen() {
           Boolean((res as any)?.data?.video_id);
 
         if (isSuccess) {
-          Alert.alert('Success', res?.message || 'Uploaded successfully.', [
-            { text: 'OK', onPress: resetUploadFlow },
-          ]);
+          setShowPublishToast(true);
           return;
         }
 
-        Alert.alert('Upload failed', res?.message || 'Something went wrong.');
+        setPublishErrorToast({
+          title: 'Upload failed',
+          message: res?.message || 'Something went wrong.',
+        });
       } catch (err: any) {
         const body = err?.body as any;
         const message =
@@ -1024,11 +1129,17 @@ export default function UploadScreen() {
           for (const [field, msgs] of Object.entries(errors)) {
             if (Array.isArray(msgs)) lines.push(`${field}: ${msgs.join(', ')}`);
           }
-          Alert.alert(message, lines.join('\n'));
+          setPublishErrorToast({
+            title: 'Upload failed',
+            message: `${message}\n${lines.join('\n')}`,
+          });
           return;
         }
 
-        Alert.alert('Upload failed', message);
+        setPublishErrorToast({
+          title: 'Upload failed',
+          message,
+        });
       } finally {
         setIsPublishing(false);
       }
@@ -1103,7 +1214,10 @@ export default function UploadScreen() {
         Boolean((res as any)?.data?.video_id);
 
       if (!isSuccess) {
-        Alert.alert('Upload failed', res?.message || 'Upload failed. Please try again.');
+        setPublishErrorToast({
+          title: 'Upload failed',
+          message: res?.message || 'Upload failed. Please try again.',
+        });
         return;
       }
 
@@ -1112,23 +1226,13 @@ export default function UploadScreen() {
       await AsyncStorage.setItem(`@posts_used_${currentMonth}`, (current + 1).toString());
       await refreshSubscription();
 
-      Alert.alert('Property Published!', 'Your property has been published successfully.', [
-        {
-          text: 'View Property',
-          onPress: () => {
-            shouldResetOnNextFocus.current = true;
-            router.replace('/(tabs)/profile');
-          },
-        },
-        {
-          text: 'Upload Another',
-          onPress: resetUploadFlow,
-        },
-      ]);
-
+      setShowPublishToast(true);
       return;
     } catch (err: any) {
-      Alert.alert('Upload failed', err?.message || 'Upload failed. Please try again.');
+      setPublishErrorToast({
+        title: 'Upload failed',
+        message: err?.message || 'Upload failed. Please try again.',
+      });
     } finally {
       setIsPublishing(false);
     }
@@ -1136,7 +1240,7 @@ export default function UploadScreen() {
 
   const handleShareModalClose = () => {
     setShowShareModal(false);
-    setStep('details');
+    setStep('selectHighlights');
   };
 
   const uploadMediaAndAttachToProperty = async (params: {
@@ -1800,30 +1904,22 @@ export default function UploadScreen() {
        <View style={styles.videoPreviewContainer}>
          <Video
            ref={editVideoRef}
+           pointerEvents="none"
            source={{ uri: selectedVideoUri }}
            style={styles.videoPreview}
-           resizeMode={'cover' as any}
+           resizeMode={ResizeMode.COVER}
            shouldPlay={isPreviewPlaying}
-           isLooping
+           isLooping={true}
            onPlaybackStatusUpdate={(status: any) => {
              if (!status?.isLoaded) return;
-             if (typeof status.isPlaying === 'boolean') setIsPreviewPlaying(status.isPlaying);
+             // Don't sync state from status updates to avoid flicker
            }}
          />
 
-         <View pointerEvents="box-none" style={styles.editPreviewControlsOverlay}>
-           <Pressable
-             style={styles.editPreviewCenterControl}
-             onPress={() => setIsPreviewPlaying((p) => !p)}
-             hitSlop={10}
-           >
-             {isPreviewPlaying ? (
-               <Pause size={scaleWidth(22)} color={Colors.textLight} />
-             ) : (
-               <Play size={scaleWidth(22)} color={Colors.textLight} />
-             )}
-           </Pressable>
-         </View>
+         <Pressable
+           style={[StyleSheet.absoluteFill, { zIndex: 2 }]}
+           onPress={() => setIsPreviewPlaying((p) => !p)}
+         />
        </View>
 
        <View style={styles.previewActionsRow}>
@@ -1851,6 +1947,7 @@ export default function UploadScreen() {
    );
  }
 
+ {/* edit step */}
  if (step === 'edit') {
     return (
       <View style={styles.container}>
@@ -1877,6 +1974,7 @@ export default function UploadScreen() {
           <View style={styles.videoPreviewContainer}>
             <Video
               ref={editVideoRef}
+              pointerEvents="none"
               source={{ uri: selectedVideoUri! }}
               style={styles.videoPreview}
               resizeMode={ResizeMode.COVER}
@@ -1899,34 +1997,18 @@ export default function UploadScreen() {
                   return;
                 }
 
-                // Do not sync play/pause state from status updates here.
-                // Rely on `shouldPlay` (driven by `isEditPreviewPlaying`) to avoid UI flicker.
-                // Status updates (buffering, seeking) can momentarily flip `status.isPlaying`.
-
               }}
             />
 
             {/* Tap anywhere on the video to play/pause */}
             <Pressable
-              style={StyleSheet.absoluteFill}
+              style={[StyleSheet.absoluteFill, { zIndex: 2 }]}
               onPress={() => setIsEditPreviewPlaying((p) => !p)}
             />
 
             <View pointerEvents="box-none" style={styles.editPreviewControlsOverlay}>
-              <Pressable
-                style={styles.editPreviewCenterControl}
-                onPress={() => setIsEditPreviewPlaying((p) => !p)}
-                hitSlop={10}
-              >
-                {isEditPreviewPlaying ? (
-                  <Pause size={scaleWidth(22)} color={Colors.textLight} />
-                ) : (
-                  <Play size={scaleWidth(22)} color={Colors.textLight} />
-                )}
-              </Pressable>
-
             {overlayText && (
-              <View style={[
+              <View pointerEvents="none" style={[
                 styles.textOverlayPreview,
                 overlayTextPosition === 'top' && styles.textTop,
                 overlayTextPosition === 'center' && styles.textCenter,
@@ -2095,6 +2177,8 @@ export default function UploadScreen() {
     );
   }
 
+  {/* details flow */}
+
   if (step === 'details') {
     return (
     <View style={styles.container}>
@@ -2121,7 +2205,7 @@ export default function UploadScreen() {
 
       {isPublishing && (
         <View style={styles.publishingOverlay}>
-          <ActivityIndicator size="large" color={Colors.bronze} />
+          <SavingSpinner size={42} color={Colors.bronze} />
           <Text style={styles.publishingOverlayText}>Uploading...</Text>
         </View>
       )}
@@ -2335,6 +2419,8 @@ export default function UploadScreen() {
           </View>
         )}
 
+{/* ready step 1 flow */}
+
           {detailsFlow === 'ready_step_1' && propertyDetails.developmentStatus === 'READY' && (
             <>
               {/* BUY/RENT: show main Price (AED) only. STAY: hide main price and show Default Pricing + Prices */}
@@ -2450,7 +2536,7 @@ export default function UploadScreen() {
             </>
           )}
 
-
+{/* off plan flow */}
         {detailsFlow === 'offplan_project' && propertyDetails.developmentStatus === 'OFF_PLAN' && (
           <View style={styles.formSection}>
             <Text style={styles.formLabel}>Off-plan project *</Text>
@@ -2470,6 +2556,8 @@ export default function UploadScreen() {
             </Pressable>
           </View>
         )}
+
+{/* ready step 2 flow */}
 
         {detailsFlow === 'ready_step_2' && propertyDetails.developmentStatus === 'READY' && (
           <>
@@ -2564,6 +2652,8 @@ export default function UploadScreen() {
             </View> */}
           </>
         )}
+
+{/* ready step 3 flow */}
 
         {detailsFlow === 'ready_step_3' && propertyDetails.developmentStatus === 'READY' && (
           <>
@@ -2717,6 +2807,8 @@ export default function UploadScreen() {
       </>
         )}
 
+{/* ready step 4 flow */}
+
         {detailsFlow === 'ready_step_4' && propertyDetails.developmentStatus === 'READY' && (
         <> 
         <View style={styles.formSection}>
@@ -2785,7 +2877,7 @@ export default function UploadScreen() {
                   <Image source={{ uri: img.uri }} style={styles.imageThumb} />
                   {img.uploading ? (
                     <View style={styles.imageUploadingOverlay} pointerEvents="none">
-                      <ActivityIndicator size="small" color="#fff" />
+                      <SavingSpinner size={18} color="#fff" accessibilityLabel="Uploading image" />
                     </View>
                   ) : null}
                   <Pressable
@@ -3028,7 +3120,7 @@ export default function UploadScreen() {
 
                     {isBuildingsLoading ? (
                       <View style={{ paddingVertical: scaleHeight(16) }}>
-                        <ActivityIndicator />
+                        <SavingSpinner accessibilityLabel="Loading buildings" />
                       </View>
                     ) : (
                       <FlatList<Building>
@@ -3086,7 +3178,7 @@ export default function UploadScreen() {
 
                     {isAreasLoading ? (
                       <View style={{ paddingVertical: scaleHeight(16) }}>
-                        <ActivityIndicator />
+                        <SavingSpinner accessibilityLabel="Loading areas" />
                       </View>
                     ) : (
                       <FlatList<Area>
@@ -3180,7 +3272,7 @@ export default function UploadScreen() {
                 <View style={{ flex: 1 }}>
                   {isAmenitiesLoading ? (
                     <View style={{ paddingVertical: scaleHeight(16) }}>
-                      <ActivityIndicator />
+                      <SavingSpinner accessibilityLabel="Loading amenities" />
                     </View>
                   ) : (
                     <FlatList<Amenity>
@@ -3346,13 +3438,24 @@ export default function UploadScreen() {
                     );
                   }}
                   ListEmptyComponent={
-                    <Text style={styles.emptyPickerText}>
-                      {isOffPlanLoading
-                        ? 'Loading projects...'
-                        : offPlanSearch.trim().length
-                          ? 'No projects match your search'
-                          : 'No projects'}
-                    </Text>
+                    <View style={styles.emptyPickerContainer}>
+                      <Text style={styles.emptyPickerText}>
+                        {isOffPlanLoading
+                          ? 'Loading projects...'
+                          : offPlanSearch.trim().length
+                            ? 'No projects match your search'
+                            : 'No projects'}
+                      </Text>
+
+                      {!isOffPlanLoading && offPlanSearch.trim().length > 0 && (
+                        <Pressable
+                          style={styles.emptyPickerActionButton}
+                          onPress={handleAddReadyPropertyFromOffPlanEmpty}
+                        >
+                          <Text style={styles.emptyPickerActionButtonText}>Add Ready Property</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   }
                 />
               </Pressable>
@@ -3550,6 +3653,8 @@ export default function UploadScreen() {
         </View>
       </Modal>
 
+      {renderPublishToast()}
+
       {(() => {
         const isReadyStep1Valid = Boolean(propertyDetails.title?.trim());
         const isReadyStep3Valid = Boolean(propertyDetails.emirateId) && Boolean(propertyDetails.districtId);
@@ -3707,1159 +3812,3 @@ export default function UploadScreen() {
 
   return null;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: scaleHeight(60),
-    paddingHorizontal: scaleWidth(20),
-    paddingBottom: scaleHeight(16),
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  headerTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  publishButton: {
-    backgroundColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleHeight(10),
-    minWidth: scaleWidth(110),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  publishButtonDisabled: {
-    opacity: 0.6,
-  },
-  publishButtonText: {
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-    color: Colors.textLight,
-  },
-  wizardFooter: {
-    flexDirection: 'row',
-    gap: scaleWidth(12),
-    paddingHorizontal: scaleWidth(20),
-    paddingVertical: scaleHeight(16),
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.background,
-  },
-  wizardButton: {
-    flex: 1,
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.bronze,
-  },
-  wizardButtonSecondary: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  wizardButtonText: {
-    fontSize: scaleFont(15),
-    fontWeight: '700',
-    color: Colors.textLight,
-  },
-  summaryValueText: {
-    fontSize: scaleFont(14),
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginTop: scaleHeight(6),
-  },
-  wizardButtonTextSecondary: {
-    color: Colors.text,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: scaleWidth(20),
-  },
-  authGateCard: {
-    marginTop: scaleHeight(20),
-    backgroundColor: Colors.textLight,
-    borderRadius: scaleWidth(16),
-    padding: scaleWidth(20),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-  },
-  authGateTitle: {
-    fontSize: scaleFont(20),
-    fontWeight: '800',
-    color: Colors.text,
-    marginBottom: scaleHeight(6),
-  },
-  authGateDescription: {
-    fontSize: scaleFont(14),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: scaleFont(20),
-    marginBottom: scaleHeight(14),
-  },
-  authGateButton: {
-    width: '100%',
-    backgroundColor: Colors.bronze,
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-    marginBottom: scaleHeight(12),
-  },
-  authGateButtonText: {
-    color: Colors.textLight,
-    fontSize: scaleFont(16),
-    fontWeight: '700',
-  },
-  authGateLink: {
-    color: Colors.brown,
-    fontSize: scaleFont(14),
-    fontWeight: '700',
-  },
-  sectionTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: scaleHeight(8),
-  },
-  sectionDescription: {
-    fontSize: scaleFont(14),
-    color: Colors.textSecondary,
-    marginBottom: scaleHeight(32),
-    lineHeight: scaleFont(22),
-  },
-  optionsContainer: {
-    gap: scaleWidth(16),
-  },
-  uploadOption: {
-    backgroundColor: Colors.textLight,
-    borderRadius: scaleWidth(16),
-    padding: scaleWidth(24),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-  },
-  uploadOptionIcon: {
-    width: scaleWidth(64),
-    height: scaleWidth(64),
-    borderRadius: scaleWidth(32),
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: scaleHeight(16),
-  },
-  uploadOptionTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: scaleHeight(4),
-  },
-  uploadOptionDescription: {
-    fontSize: scaleFont(14),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  disabledText: {
-    color: Colors.textSecondary,
-    opacity: 0.5,
-  },
-  form: {
-    flex: 1,
-    padding: scaleWidth(20),
-  },
-  formSection: {
-    marginBottom: scaleHeight(24),
-  },
-  imageDropzone: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderStyle: 'dashed',
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(16),
-    paddingHorizontal: scaleWidth(12),
-    backgroundColor: Colors.textLight,
-  },
-  imageDropzoneText: {
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-    color: Colors.text,
-  },
-  imageDropzoneHint: {
-    marginTop: scaleHeight(6),
-    fontSize: scaleFont(12),
-    color: Colors.textSecondary,
-  },
-  imageThumbRow: {
-    marginTop: scaleHeight(10),
-  },
-  imageThumbWrap: {
-    marginRight: scaleWidth(10),
-    borderRadius: scaleWidth(10),
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  imageThumb: {
-    width: scaleWidth(80),
-    height: scaleWidth(80),
-  },
-  imageUploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderRadius: scaleWidth(12),
-  },
-  imageThumbRemove: {
-    position: 'absolute',
-    top: scaleWidth(6),
-    right: scaleWidth(6),
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    borderRadius: scaleWidth(11),
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(12),
-  },
-  checkbox: {
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    borderRadius: scaleWidth(6),
-    borderWidth: 1,
-    borderColor: 'black',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
-  },
-  checkboxTextWrap: {
-    flex: 1,
-  },
-  helperText: {
-    fontSize: scaleFont(12),
-    color: Colors.textSecondary,
-    marginTop: scaleHeight(4),
-  },
-  amenitiesChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: scaleWidth(8),
-    marginTop: scaleHeight(10),
-  },
-  amenitiesChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(6),
-    paddingVertical: scaleHeight(8),
-    paddingHorizontal: scaleWidth(10),
-    borderRadius: scaleWidth(999),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
-    maxWidth: '100%',
-  },
-  amenitiesChipText: {
-    color: Colors.text,
-    fontSize: scaleFont(12),
-    fontWeight: '700',
-    maxWidth: scaleWidth(220),
-  },
-  modalFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleHeight(12),
-    backgroundColor: Colors.textLight,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  modalDoneButton: {
-    backgroundColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
-    alignItems: 'center',
-  },
-  modalDoneButtonText: {
-    color: Colors.textLight,
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-  },
-  formLabel: {
-    fontSize: scaleFont(15),
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: scaleHeight(8),
-  },
-  formLabelSmall: {
-    fontSize: scaleFont(13),
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: scaleHeight(6),
-  },
-  input: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(12),
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(14),
-    fontSize: scaleFont(16),
-    color: Colors.text,
-  },
-  textArea: {
-    minHeight: scaleHeight(120),
-    paddingTop: scaleHeight(14),
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: scaleWidth(8),
-  },
-  chip: {
-    paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(18),
-    borderRadius: scaleWidth(20),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
-  },
-  chipSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
-  },
-  chipText: {
-    fontSize: scaleFont(14),
-    fontWeight: '500',
-    color: Colors.text,
-  },
-  chipTextSelected: {
-    color: Colors.textLight,
-  },
-  radioRow: {
-    flexDirection: 'column',
-    //gap: scaleWidth(26),
-    flexWrap: 'wrap',
-  },
-  radioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(8),
-    paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(16),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginLeft: scaleWidth(8),
-    width: "90%",
-    height: scaleHeight(80),
-    marginTop: scaleHeight(20),
-  },
-  radioOptionSelected: {
-    borderColor: Colors.bronze,
-  },
-  radioOuter: {
-    width: scaleWidth(20),
-    height: scaleWidth(20),
-    borderRadius: scaleWidth(10),
-    borderWidth: 2,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-  },
-  radioOuterSelected: {
-    borderColor: Colors.bronze,
-  },
-  radioInner: {
-    width: scaleWidth(10),
-    height: scaleWidth(10),
-    borderRadius: scaleWidth(5),
-    backgroundColor: Colors.bronze,
-  },
-  radioLabel: {
-    fontSize: scaleFont(14),
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: scaleWidth(16),
-    marginBottom: scaleHeight(24),
-  },
-  formColumn: {
-    flex: 1,
-  },
-  locationInput: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(12),
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(14),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  selectRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: scaleWidth(10),
-  },
-  locationInputText: {
-    fontSize: scaleFont(16),
-    color: Colors.text,
-  },
-  placeholder: {
-    color: Colors.textSecondary,
-  },
-  toastContainer: {
-    position: 'absolute',
-    top: scaleHeight(64),
-    left: scaleWidth(16),
-    right: scaleWidth(16),
-    alignItems: 'center',
-    zIndex: 9999,
-    elevation: 9999,
-  },
-  toastInner: {
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(14),
-    borderRadius: scaleWidth(10),
-    maxWidth: '100%',
-  },
-  toastText: {
-    color: '#fff',
-    fontSize: scaleFont(13),
-    fontWeight: '800',
-  },
-
-  publishingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  },
-  publishingOverlayText: {
-    marginTop: scaleHeight(12),
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-    color: Colors.text,
-  },
-
-  bottomPadding: {
-    height: scaleHeight(120),
-  },
-  editContent: {
-    flex: 1,
-  },
-  videoPreviewContainer: {
-    width: '100%',
-    aspectRatio: 9/16,
-    backgroundColor: Colors.text,
-    borderRadius: scaleWidth(16),
-    overflow: 'hidden',
-    marginBottom: scaleHeight(24),
-    position: 'relative',
-  },
-  videoPreview: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
-  },
-  textOverlayPreview: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(12),
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    alignItems: 'center',
-  },
-  textTop: {
-    top: scaleHeight(20),
-  },
-  textCenter: {
-    top: '50%',
-    marginTop: -scaleHeight(20),
-  },
-  textBottom: {
-    bottom: scaleHeight(20),
-  },
-  overlayTextPreview: {
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  controlSection: {
-    marginBottom: scaleHeight(20),
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: scaleHeight(12),
-  },
-  modalHeaderSpacer: {
-    width: scaleWidth(24),
-  },
-  modalHeaderCloseButton: {
-    width: scaleWidth(24),
-    height: scaleWidth(24),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: scaleHeight(12),
-  },
-  textInput: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(12),
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(14),
-    fontSize: scaleFont(16),
-    color: Colors.text,
-    marginBottom: scaleHeight(16),
-  },
-  controlSubsection: {
-    marginBottom: scaleHeight(16),
-  },
-  controlLabel: {
-    fontSize: scaleFont(14),
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: scaleHeight(8),
-  },
-  buttonGroup: {
-    flexDirection: 'row',
-    gap: scaleWidth(8),
-  },
-  controlButton: {
-    flex: 1,
-    paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(12),
-    borderRadius: scaleWidth(8),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
-    alignItems: 'center',
-  },
-  controlButtonSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
-  },
-  controlButtonText: {
-    fontSize: scaleFont(13),
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  controlButtonTextSelected: {
-    color: Colors.textLight,
-  },
-  editFooter: {
-    paddingHorizontal: scaleWidth(20),
-    paddingVertical: scaleHeight(16),
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.background,
-  },
-  continueButton: {
-    backgroundColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(14),
-    alignItems: 'center',
-  },
-  continueButtonText: {
-    fontSize: scaleFont(16),
-    fontWeight: '700',
-    color: Colors.textLight,
-  },
-  deleteButton: {
-    fontSize: scaleFont(16),
-    fontWeight: '600',
-    color: '#FF3B30',
-  },
-  modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    zIndex: 9999,
-    elevation: 9999,
-  },
-  locationModal: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    zIndex: 9999,
-    elevation: 9999,
-  },
-  modal: {
-    width: '100%',
-    backgroundColor: Colors.background,
-    paddingHorizontal: scaleWidth(20),
-    paddingVertical: scaleHeight(24),
-    borderTopLeftRadius: scaleWidth(20),
-    borderTopRightRadius: scaleWidth(20),
-  },
-  modalTitle: {
-    fontSize: scaleFont(18),
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  modalDescription: {
-    fontSize: scaleFont(14),
-    color: Colors.textSecondary,
-    marginBottom: scaleHeight(24),
-    lineHeight: scaleFont(20),
-  },
-  modalButtonGroup: {
-    flexDirection: 'row',
-    gap: scaleWidth(12),
-  },
-  modalButton: {
-    flex: 1,
-    backgroundColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(14),
-    alignItems: 'center',
-  },
-  modalButtonSecondary: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  modalButtonText: {
-    fontSize: scaleFont(16),
-    fontWeight: '700',
-    color: Colors.textLight, 
-  },
-  modalButtonTextSecondary: {
-    fontSize: scaleFont(16),
-    fontWeight: '700',
-    color: Colors.text,
-  },
-
-  disabledInput: {
-    opacity: 0.7,
-  },
-  pickerItem: {
-    paddingVertical: scaleHeight(14),
-  },
-  pickerItemText: {
-    fontSize: scaleFont(16),
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  listSeparator: {
-    height: 1,
-    backgroundColor: Colors.border,
-    opacity: 0.2,
-  },
-  emptyPickerText: {
-    paddingVertical: scaleHeight(16),
-    color: Colors.textSecondary,
-  },
-  amenityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: scaleHeight(12),
-    paddingHorizontal: scaleWidth(12),
-  },
-  amenityLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(10),
-    flexShrink: 1,
-  },
-  amenityIcon: {
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    resizeMode: 'contain',
-  },
-  amenityIconFallback: {
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    borderRadius: scaleWidth(6),
-    backgroundColor: Colors.border,
-  },
-  amenityCheck: {
-    width: scaleWidth(22),
-    height: scaleWidth(22),
-    borderRadius: scaleWidth(6),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.textLight,
-  },
-  amenityCheckSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
-  },
-  searchInput: {
-    marginTop: scaleHeight(12),
-    marginBottom: scaleHeight(8),
-  },
-
-  offPlanItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
-  },
-  offPlanThumb: {
-    width: scaleWidth(80),
-    height: scaleWidth(68),
-    borderRadius: scaleWidth(10),
-    overflow: 'hidden',
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  offPlanThumbImage: {
-    width: '100%',
-    height: '100%',
-  },
-  offPlanThumbPlaceholder: {
-    flex: 1,
-    backgroundColor: Colors.border,
-    opacity: 0.25,
-  },
-  offPlanTitle: {
-    flex: 1,
-    fontSize: scaleFont(15),
-    fontWeight: '600',
-    color: Colors.text,
-  },
-
-  highlightsOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 0,
-  },
-  highlightsSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: scaleWidth(20),
-    borderTopRightRadius: scaleWidth(20),
-    overflow: 'hidden',
-  },
-  highlightsHeader: {
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(14),
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  highlightsTitle: {
-    fontSize: scaleFont(16),
-    fontWeight: '800',
-    color: Colors.text,
-  },
-  highlightsBack: {
-    fontSize: scaleFont(14),
-    fontWeight: '700',
-    color: Colors.bronze,
-  },
-  highlightsClose: {
-    fontSize: scaleFont(14),
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-  highlightsVideoContainer: {
-    width: '100%',
-    alignSelf: 'stretch',
-    // Fill available space above the highlight controls.
-    flex: 1,
-    minHeight: 0,
-    backgroundColor: '#000',
-    borderRadius: 0,
-    overflow: 'hidden',
-  },
-  highlightsVideo: {
-    width: '100%',
-    height: '100%',
-    flex: 1,
-    alignSelf: 'stretch',
-  },
-  highlightsVideoControls: {
-    position: 'absolute',
-    // Lift controls above the scrubber overlay
-    bottom: scaleHeight(56),
-    left: scaleWidth(10),
-    flexDirection: 'row',
-    gap: scaleWidth(10),
-    zIndex: 8,
-  },
-  highlightsVideoControlButton: {
-    width: scaleWidth(40),
-    height: scaleWidth(40),
-    borderRadius: scaleWidth(20),
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Center play/pause button on the "Edit Video" preview
-  editPreviewControlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 999,
-    elevation: 999,
-  },
-  editPreviewCenterControl: {
-    width: scaleWidth(44),
-    height: scaleWidth(44),
-    borderRadius: scaleWidth(22),
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  previewActionsRow: {
-    flexDirection: 'row',
-    gap: scaleWidth(12),
-    paddingHorizontal: scaleWidth(16),
-    paddingVertical: scaleHeight(14),
-  },
-  previewActionButton: {
-    flex: 1,
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewActionPrimary: {
-    backgroundColor: Colors.bronze,
-  },
-  previewActionPrimaryText: {
-    color: Colors.textLight,
-    fontWeight: '800',
-    fontSize: scaleFont(14),
-  },
-  previewActionSecondary: {
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  previewActionSecondaryText: {
-    color: Colors.text,
-    fontWeight: '800',
-    fontSize: scaleFont(14),
-  },
-  highlightsScroll: {
-    flex: 1,
-  },
-  highlightsContent: {
-    paddingHorizontal: scaleWidth(16),
-    paddingTop: scaleHeight(10),
-    gap: scaleHeight(10),
-    // Let the controls take only the space they need; video fills the rest.
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  highlightsPicker: {
-    paddingRight: scaleWidth(16),
-    gap: scaleWidth(8),
-  },
-  highlightsPickerChip: {
-    paddingHorizontal: scaleWidth(14),
-    paddingVertical: scaleHeight(8),
-    borderRadius: scaleWidth(2),
-    borderBottomWidth: 2.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
-  },
-  highlightsPickerChipActive: {
-    //backgroundColor: Colors.bronze,
-    borderBottomColor: Colors.bronze,
-  },
-  highlightsPickerChipText: {
-    fontSize: scaleFont(13),
-    fontWeight: '800',
-    color: Colors.text,
-  },
-  highlightsPickerChipTextActive: {
-    color: Colors.bronze,
-  },
-  highlightsVideoOuter: {
-    width: '100%',
-    // Give the video more of the sheet height so there's no unused white area below.
-    flex: 2,
-    minHeight: 0,
-    alignSelf: 'stretch',
-    // Ensure no inset around the edge-to-edge video.
-    paddingHorizontal: 0,
-    marginHorizontal: 0,
-    marginTop: 0,
-  },
-  highlightsScrubberOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: scaleWidth(10),
-    paddingBottom: scaleHeight(10),
-    paddingTop: scaleHeight(10),
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    zIndex: 4,
-  },
-  highlightsNudgeZoneLeft: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: scaleWidth(20),
-    zIndex: 6,
-  },
-  highlightsNudgeZoneRight: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
-    width: scaleWidth(20),
-    zIndex: 6,
-  },
-  highlightsTimeRowOverlay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: scaleHeight(6),
-  },
-  highlightsTimeTextOverlay: {
-    fontSize: scaleFont(12),
-    fontWeight: '800',
-    color: Colors.textLight,
-  },
-  highlightsCirclePicker: {
-    paddingTop: scaleHeight(2),
-    paddingBottom: 0,
-    gap: scaleWidth(14),
-    paddingRight: scaleWidth(16),
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  highlightsCircleItem: {
-    alignItems: 'center',
-    width: scaleWidth(72),
-  },
-  highlightsCircle: {
-    width: scaleWidth(54),
-    height: scaleWidth(54),
-    borderRadius: scaleWidth(27),
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  highlightsCircleActive: {
-    backgroundColor: Colors.textLight,
-    borderColor: Colors.bronze,
-  },
-  highlightsCircleAdd: {
-    width: scaleWidth(54),
-    height: scaleWidth(54),
-    borderRadius: scaleWidth(27),
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  highlightsCircleAddText: {
-    fontSize: scaleFont(26),
-    fontWeight: '400',
-    color: Colors.bronze,
-    marginTop: -2,
-  },
-  highlightsAddOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: scaleWidth(20),
-  },
-  highlightsAddModal: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: Colors.background,
-    borderRadius: scaleWidth(16),
-    padding: scaleWidth(16),
-  },
-  highlightsAddTitle: {
-    fontSize: scaleFont(16),
-    fontWeight: '800',
-    color: Colors.text,
-    marginBottom: scaleHeight(12),
-  },
-  highlightsAddGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: scaleWidth(14),
-  },
-  highlightsAddCircleItem: {
-    width: scaleWidth(86),
-    alignItems: 'center',
-    marginBottom: scaleHeight(10),
-  },
-  highlightsAddCircle: {
-    width: scaleWidth(64),
-    height: scaleWidth(64),
-    borderRadius: scaleWidth(32),
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  highlightsAddCircleLabel: {
-    marginTop: scaleHeight(8),
-    fontSize: scaleFont(13),
-    fontWeight: '800',
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  highlightsAddCancel: {
-    marginTop: scaleHeight(14),
-    paddingVertical: scaleHeight(12),
-    alignItems: 'center',
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  highlightsAddCancelText: {
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-    color: Colors.textSecondary,
-  },
-  highlightsCircleTime: {
-    marginTop: scaleHeight(6),
-    fontSize: scaleFont(10),
-    fontWeight: '800',
-    color: Colors.textSecondary,
-  },
-  highlightsCircleTimeActive: {
-    color: Colors.bronze,
-  },
-  highlightsDoneButton: {
-    flex: 1,
-    marginTop: 0,
-    backgroundColor: Colors.bronze,
-    // borderWidth:1,
-    // borderColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
-    alignItems: 'center',
-  },
-  highlightsDoneButtonText: {
-    color: Colors.textLight,
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-  },
-  highlightsBody: {
-    paddingTop: scaleHeight(2),
-  },
-  highlightsStepTitle: {
-    fontSize: scaleFont(16),
-    fontWeight: '800',
-    color: Colors.text,
-     marginTop: scaleHeight(14),
-  },
-  highlightsStepSubtitle: {
-    //marginTop: scaleHeight(2),
-    marginBottom: scaleHeight(8),
-    fontSize: scaleFont(12),
-    color: Colors.textSecondary,
-    lineHeight: scaleFont(18),
-  },
-  highlightsActionsRow: {
-    marginTop: scaleHeight(14),
-    flexDirection: 'row',
-    gap: scaleWidth(12),
-  },
-  highlightsSelectButton: {
-    flex: 1,
-    backgroundColor: Colors.textLight,
-    borderWidth: 1,
-    borderColor: Colors.bronze,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
-    alignItems: 'center',
-    marginTop: 0,
-  },
-  highlightsSelectButtonText: {
-    color: Colors.bronze,
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-  },
-  highlightsNextButton: {
-    flex: 1,
-    backgroundColor: Colors.textLight,
-    borderRadius: scaleWidth(12),
-    paddingVertical: scaleHeight(12),
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  highlightsNextButtonText: {
-    color: Colors.text,
-    fontSize: scaleFont(14),
-    fontWeight: '800',
-  },
-});

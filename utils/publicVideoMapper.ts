@@ -2,7 +2,9 @@ import type { Property, PropertyType } from '@/types';
 
 // Shared mapping logic for Saqan public videos -> app Property model.
 
-const API_ORIGIN = 'https://api.saqan.com';
+// Public video endpoints are served from saqan.com, and relative playback URLs
+// returned by the public API are hosted on the main site.
+const API_ORIGIN = 'https://www.saqan.com';
 
 const toAbsoluteUrl = (maybePath?: string | null) => {
   if (!maybePath) return '';
@@ -14,8 +16,13 @@ const toAbsoluteUrl = (maybePath?: string | null) => {
 const isDirectMediaUrl = (url?: string | null) => {
   if (!url) return false;
   const u = url.toLowerCase();
+
   // We only want URLs that point to actual media, not Cloudflare's HTML watch page.
-  return u.endsWith('.m3u8') || u.endsWith('.mp4') || u.includes('/manifest/') || u.includes('manifest/video.m3u8');
+  // Some backends append query params to .m3u8/.mp4 URLs, so we must handle that too.
+  const hasM3u8 = u.includes('.m3u8');
+  const hasMp4 = u.includes('.mp4');
+
+  return hasM3u8 || hasMp4 || u.includes('/manifest/') || u.includes('manifest/video.m3u8');
 };
 
 const pickPlaybackUrl = (v: any): { url: string } => {
@@ -24,7 +31,9 @@ const pickPlaybackUrl = (v: any): { url: string } => {
     return { url: v.playback.stream_url };
   }
 
-  if (v?.cloudflare?.status === 'READY' && v?.cloudflare?.requires_signed_urls === false) {
+  if (v?.cloudflare) {
+    // Some videos can be playable before Cloudflare reports READY (e.g. status=UPLOADING/PROCESSING)
+    // as long as the API returns a direct HLS/MP4 URL.
     if (isDirectMediaUrl(v?.cloudflare?.stream_url)) {
       return { url: v.cloudflare.stream_url };
     }
