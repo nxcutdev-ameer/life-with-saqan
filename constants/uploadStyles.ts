@@ -980,18 +980,22 @@ export const styles = StyleSheet.create({
   highlightsNudgeZoneLeft: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
+    // Don't overlap the scrubber overlay at the bottom (so dragging is easy).
+    bottom: scaleHeight(60),
     left: 0,
     width: scaleWidth(20),
-    zIndex: 6,
+    // Keep these zones behind the scrubber overlay so they can't steal scrub gestures.
+    zIndex: 3,
   },
   highlightsNudgeZoneRight: {
     position: 'absolute',
     top: 0,
-    bottom: 0,
+    // Don't overlap the scrubber overlay at the bottom (so dragging is easy).
+    bottom: scaleHeight(60),
     right: 0,
     width: scaleWidth(20),
-    zIndex: 6,
+    // Keep these zones behind the scrubber overlay so they can't steal scrub gestures.
+    zIndex: 3,
   },
   highlightsTimeRowOverlay: {
     flexDirection: 'row',

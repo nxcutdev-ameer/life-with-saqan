@@ -164,6 +164,7 @@ export default function UploadScreen() {
       setUploadLocked(false);
     };
   }, [navigation, setUploadLocked, step]);
+
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
@@ -182,6 +183,25 @@ export default function UploadScreen() {
   const [, setSaveError] = useState<string | null>(null);
   const [selectedVideoUri, setSelectedVideoUri] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Simulated progress: XHR upload.onprogress doesn't fire reliably in React Native
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (isPublishing && uploadProgress < 0.95) {
+      interval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 0.95) return prev;
+          // Gradually increase, slowing down as we approach 95%
+          const increment = (0.95 - prev) * 0.15;
+          return Math.min(prev + increment, 0.95);
+        });
+      }, 800);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPublishing, uploadProgress]);
   const [overlayText, setOverlayText] = useState('');
   const [overlayTextSize, setOverlayTextSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [overlayTextColor, setOverlayTextColor] = useState<'white' | 'black' | 'yellow'>('white');
@@ -222,16 +242,16 @@ export default function UploadScreen() {
           icon={<FontAwesome name="check-circle" size={50} color="#4CAF50" />}
           title="Property Published!"
           subTitle="Your property has been published successfully."
-          buttonOneText="View Property"
-          buttonTwoText="Upload Another"
+          buttonOneText="Upload Another"
+          //buttonTwoText="View Property"
           onButtonOnePress={() => {
             setShowPublishToast(false);
-            shouldResetOnNextFocus.current = true;
-            router.replace('/(tabs)/profile');
+            resetUploadFlow();
           }}
           onButtonTwoPress={() => {
-            setShowPublishToast(false);
-            resetUploadFlow();
+            // setShowPublishToast(false);
+            // shouldResetOnNextFocus.current = true;
+            // router.replace('/(tabs)/profile');
           }}
           animationType="slideUp"
           autoDismiss={false}
@@ -575,10 +595,15 @@ export default function UploadScreen() {
     isFetchingNextPage: isFetchingNextBuildingsPage,
     refetch: refetchBuildings,
   } = useInfiniteQuery({
-    queryKey: ['properties', 'buildings'],
+    queryKey: ['properties', 'buildings', { emirateId: propertyDetails.emirateId, districtId: propertyDetails.districtId }],
     enabled: locationPicker === 'building' && typeof propertiesToken === 'string',
     queryFn: async ({ pageParam }) => {
-      const res = await fetchBuildings({ propertiesToken: propertiesToken as string, page: pageParam });
+      const res = await fetchBuildings({ 
+        propertiesToken: propertiesToken as string, 
+        page: pageParam,
+        emirateId: propertyDetails.emirateId,
+        districtId: propertyDetails.districtId,
+      });
       if (!res.success) throw new Error(res.message || 'Failed to load buildings');
       return res.payload;
     },
@@ -998,6 +1023,7 @@ export default function UploadScreen() {
       // Highlights are optional
 
       setIsPublishing(true);
+      setUploadProgress(0.01);
 
       try {
         const saqanToken = sessionTokens?.saqancomToken;
@@ -1014,6 +1040,10 @@ export default function UploadScreen() {
           uploadToCloudflare: true,
           generateSubtitles: true,
           agentId: 1,
+          onProgress: (progress) => {
+            console.log('Generic upload progress:', progress);
+            setUploadProgress(progress);
+          },
         });
 
         const isSuccess =
@@ -1070,6 +1100,7 @@ export default function UploadScreen() {
       }
 
       setIsPublishing(true);
+      setUploadProgress(0.01);
 
       // If user never tapped “Set <room>”, fall back to whatever is stored in highlightsByRoom.
       const timestampsFromMap = Object.entries(highlightsByRoom)
@@ -1100,6 +1131,10 @@ export default function UploadScreen() {
           uploadToCloudflare: true,
           generateSubtitles: true,
           agentId: 1,
+          onProgress: (progress) => {
+            console.log('Off-plan upload progress:', progress);
+            setUploadProgress(progress);
+          },
         });
 
         const isSuccess =
@@ -1186,6 +1221,7 @@ export default function UploadScreen() {
       }
 
       setIsPublishing(true);
+      setUploadProgress(0.01);
       showToast('Uploading...');
 
       const roomTimestamps = highlightTimestamps.map((t) => ({
@@ -1207,6 +1243,10 @@ export default function UploadScreen() {
         uploadToCloudflare: true,
         generateSubtitles: true,
         agentId: 1,
+        onProgress: (progress) => {
+          console.log('Ready upload progress:', progress);
+          setUploadProgress(progress);
+        },
       });
       const isSuccess =
         res?.success === true ||
@@ -1384,7 +1424,26 @@ export default function UploadScreen() {
     // Video should be paused initially when entering this step.
     setIsHighlightsPlaying(false);
 
+    // Fallback: some devices don't emit `onPlaybackStatusUpdate` until playback starts.
+    // We need duration immediately so the scrubber becomes draggable on mount.
+    let cancelled = false;
+    const initStatus = async () => {
+      try {
+        // Wait a tick for the Video ref to attach.
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        const status: any = await videoRef.current?.getStatusAsync?.();
+        if (cancelled || !status?.isLoaded) return;
+        setIsHighlightsVideoLoaded(true);
+        setVideoCurrentTimeSec((status.positionMillis ?? 0) / 1000);
+        setVideoDurationSec((status.durationMillis ?? 0) / 1000);
+      } catch {
+        // ignore
+      }
+    };
+    void initStatus();
+
     return () => {
+      cancelled = true;
       // stop when leaving
       setIsHighlightsPlaying(false);
     };
@@ -1635,8 +1694,16 @@ export default function UploadScreen() {
                  shouldPlay={isHighlightsPlaying}
                  isMuted={isHighlightsMuted}
                  isLooping
+                 onLoad={(status: any) => {
+                   // Ensure scrubber is enabled immediately on mount.
+                   if (!status?.isLoaded) return;
+                   setIsHighlightsVideoLoaded(true);
+                   setVideoCurrentTimeSec((status.positionMillis ?? 0) / 1000);
+                   setVideoDurationSec((status.durationMillis ?? 0) / 1000);
+                 }}
                  onPlaybackStatusUpdate={(status: any) => {
                    if (!status?.isLoaded) return;
+                   // This can fire before playback starts; keep it as a continuous sync.
                    if (!isHighlightsVideoLoaded) setIsHighlightsVideoLoaded(true);
                    setVideoCurrentTimeSec((status.positionMillis ?? 0) / 1000);
                    setVideoDurationSec((status.durationMillis ?? 0) / 1000);
@@ -2205,8 +2272,37 @@ export default function UploadScreen() {
 
       {isPublishing && (
         <View style={styles.publishingOverlay}>
-          <SavingSpinner size={42} color={Colors.bronze} />
-          <Text style={styles.publishingOverlayText}>Uploading...</Text>
+           <SavingSpinner size={42} color={Colors.bronze} />
+          {uploadProgress > 0 ? (
+            <View style={{ width: '60%', alignItems: 'center', marginTop: scaleHeight(12) }}>
+              <View
+                style={{
+                  width: '100%',
+                  height: scaleHeight(6),
+                  backgroundColor: '#E0E0E0',
+                  borderRadius: scaleHeight(3),
+                  marginBottom: scaleHeight(12),
+                  overflow: 'hidden',
+                }}
+              >
+                <View
+                  style={{
+                    width: `${uploadProgress * 100}%`,
+                    height: '100%',
+                    backgroundColor: Colors.bronze,
+                  }}
+                />
+              </View>
+              <Text style={styles.publishingOverlayText}>
+                {`Uploading ${Math.round(uploadProgress * 100)}%`}
+              </Text>
+            </View>
+          ) : (
+            <>
+              <SavingSpinner size={42} color={Colors.bronze} />
+              <Text style={styles.publishingOverlayText}>Preparing...</Text>
+            </>
+          )}
         </View>
       )}
 
@@ -2877,7 +2973,7 @@ export default function UploadScreen() {
                   <Image source={{ uri: img.uri }} style={styles.imageThumb} />
                   {img.uploading ? (
                     <View style={styles.imageUploadingOverlay} pointerEvents="none">
-                      <SavingSpinner size={18} color="#fff" accessibilityLabel="Uploading image" />
+                      <SavingSpinner size={18} color={Colors.bronze} accessibilityLabel="Uploading image" />
                     </View>
                   ) : null}
                   <Pressable
@@ -3119,7 +3215,7 @@ export default function UploadScreen() {
                     )}
 
                     {isBuildingsLoading ? (
-                      <View style={{ paddingVertical: scaleHeight(16) }}>
+                      <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
                         <SavingSpinner accessibilityLabel="Loading buildings" />
                       </View>
                     ) : (
@@ -3177,7 +3273,7 @@ export default function UploadScreen() {
                     )}
 
                     {isAreasLoading ? (
-                      <View style={{ paddingVertical: scaleHeight(16) }}>
+                      <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
                         <SavingSpinner accessibilityLabel="Loading areas" />
                       </View>
                     ) : (
@@ -3271,7 +3367,7 @@ export default function UploadScreen() {
 
                 <View style={{ flex: 1 }}>
                   {isAmenitiesLoading ? (
-                    <View style={{ paddingVertical: scaleHeight(16) }}>
+                    <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
                       <SavingSpinner accessibilityLabel="Loading amenities" />
                     </View>
                   ) : (

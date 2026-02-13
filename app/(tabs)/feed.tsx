@@ -547,7 +547,17 @@ export default function FeedScreen() {
       const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
       const newItems = (res?.data ?? []).map(mapVideoToProperty);
 
-      const nextHasMore = Boolean(res?.meta?.has_more_pages);
+      const meta = res?.meta;
+      // API may omit `has_more_pages` but include `current_page`/`last_page`/`total`.
+      const nextHasMore =
+        typeof meta?.has_more_pages === 'boolean'
+          ? meta.has_more_pages
+          : typeof meta?.current_page === 'number' && typeof meta?.last_page === 'number'
+            ? meta.current_page < meta.last_page
+            : typeof meta?.to === 'number' && typeof meta?.total === 'number'
+              ? meta.to < meta.total
+              : (res?.data?.length ?? 0) > 0;
+
       hasMorePagesRef.current = nextHasMore;
       pageRef.current = nextPage;
       setHasMorePages(nextHasMore);
@@ -618,10 +628,10 @@ export default function FeedScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
 
   const viewabilityConfig = useRef({
-    // Lower threshold so the next item becomes "viewable" sooner after a swipe,
-    // which helps start playback earlier.
-    itemVisiblePercentThreshold: 25,
-    minimumViewTime: 20,
+    // Aggressive threshold for instant video transitions during fast swipes.
+    itemVisiblePercentThreshold: 15,
+    minimumViewTime: 10,
+    waitForInteraction: false,
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
@@ -804,25 +814,27 @@ export default function FeedScreen() {
         }
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
-        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.25}
-        disableIntervalMomentum
+        decelerationRate={Platform.OS === 'ios' ? 0.98 : 0.98}
+        disableIntervalMomentum={false}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews
-        // For a paged, full-screen video feed we want the next/prev item mounted,
-        // but avoid rendering too many players at once.
-        initialNumToRender={3}
-        maxToRenderPerBatch={4}
-        // Keep a small window of items mounted so the next video is ready instantly.
-        // (windowSize counts screens, so 7 ~= current + 3 above + 3 below)
-        windowSize={7}
-        updateCellsBatchingPeriod={8}
+        removeClippedSubviews={false}
+        // Optimized for fast swiping: keep more items mounted and render batches faster
+        initialNumToRender={4}
+        maxToRenderPerBatch={6}
+        // Larger window ensures videos are ready during fast swipes
+        // windowSize={11} means ~5 screens above + current + 5 screens below
+        windowSize={11}
+        updateCellsBatchingPeriod={5}
         getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+        }}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
-        scrollEventThrottle={16} // ~60fps; keeps animations responsive without flooding JS
+        scrollEventThrottle={8}
         onMomentumScrollBegin={() => {
           endReachedCalledDuringMomentum.current = false;
         }}

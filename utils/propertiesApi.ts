@@ -122,9 +122,20 @@ export type Building = {
 export async function fetchBuildings(params: {
   propertiesToken: string;
   page?: number;
+  emirateId?: number | null;
+  districtId?: number | null;
 }): Promise<ApiResponse<PaginatedPayload<Building>>> {
   const page = params.page ?? 1;
-  const url = `${BASE_URL}/buildings?page=${encodeURIComponent(String(page))}`;
+  let url = `${BASE_URL}/buildings?page=${encodeURIComponent(String(page))}`;
+  
+  if (params.emirateId) {
+    url += `&emirate_id=${encodeURIComponent(String(params.emirateId))}`;
+  }
+  
+  if (params.districtId) {
+    url += `&district_id=${encodeURIComponent(String(params.districtId))}`;
+  }
+  
   return fetchJson<ApiResponse<PaginatedPayload<Building>>>(url, {
     headers: {
       Authorization: `Bearer ${params.propertiesToken}`,
@@ -324,6 +335,29 @@ export async function fetchPropertyByReferenceResponse(
 export async function fetchPropertyByReference(referenceId: string): Promise<PropertyDetailsPayload> {
   const res = await fetchPropertyByReferenceResponse(referenceId);
   return res.payload;
+}
+
+/**
+ * Fetch off-plan property details using the off-plan-specific endpoint.
+ * This is a temporary solution until the backend merges endpoints or provides property type in responses.
+ */
+export async function fetchOffPlanPropertyByReference(
+  referenceId: string,
+  options?: { timeoutMs?: number; propertiesToken?: string | null }
+): Promise<ApiResponse<PropertyDetailsPayload>> {
+  const url = `${BASE_URL}/properties/offplan/${encodeURIComponent(referenceId)}`;
+  console.log('[fetchOffPlanPropertyByReference] URL:', url);
+  console.log('[fetchOffPlanPropertyByReference] referenceId:', referenceId);
+  console.log('[fetchOffPlanPropertyByReference] Has token:', !!options?.propertiesToken);
+
+  return fetchJson<ApiResponse<PropertyDetailsPayload>>(url, {
+    timeoutMs: options?.timeoutMs ?? 15000,
+    headers: options?.propertiesToken
+      ? {
+          Authorization: `Bearer ${options.propertiesToken}`,
+        }
+      : undefined,
+  });
 }
 
 // --- Property media helpers ---

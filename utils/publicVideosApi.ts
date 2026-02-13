@@ -11,7 +11,11 @@ export interface PublicVideosResponse {
     last_page?: number;
     from?: number;
     to?: number;
+    // Some endpoints return this, but others omit it and rely on `last_page`/`total`.
     has_more_pages?: boolean;
+    // Laravel pagination commonly includes `links`/`path` as well.
+    links?: Array<{ url: string | null; label: string; page: number | null; active: boolean }>;
+    path?: string;
   };
 }
 

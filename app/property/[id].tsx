@@ -168,10 +168,28 @@ export default function PropertyDetailScreen() {
       // 2) Fetch the latest from API
       try {
         setLoading(true);
-          const response = await fetchPropertyByReferenceResponse(propertyReference, {
+        let response;
+        
+        // Try regular property endpoint first
+        response = await fetchPropertyByReferenceResponse(propertyReference, {
           timeoutMs: 15000,
           propertiesToken,
         });
+
+        // If regular endpoint returns success: false, try off-plan endpoint
+        if (!response.success) {
+          console.log('[PropertyDetail] Regular endpoint returned error, trying off-plan endpoint...');
+          const { fetchOffPlanPropertyByReference } = await import('@/utils/propertiesApi');
+          response = await fetchOffPlanPropertyByReference(propertyReference, {
+            timeoutMs: 15000,
+            propertiesToken,
+          });
+        }
+
+        // Check if off-plan endpoint also failed
+        if (!response.success) {
+          throw new Error(response.message || 'Property not found');
+        }
 
         const payload = response.payload;
         console.log(response)

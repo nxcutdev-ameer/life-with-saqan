@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Settings, Grid, Heart, MessageSquare, Edit, Gift, Briefcase, Star } from 'lucide-react-native';
@@ -104,35 +105,51 @@ export default function ProfileScreen() {
   // Our auth store's agent.id is numeric and matches that backend id.
   const agentId = agent?.id;
 
-  useEffect(() => {
-    if (activeTab !== 'properties') return;
-    if (!agentId) {
-      // Fallback to mocked properties if agentId is not available.
-      setAgentVideos(mockProperties.slice(0, 6));
-      return;
-    }
+  const loadAgentVideos = useCallback(
+    async (opts?: { isActive?: () => boolean }) => {
+      if (activeTab !== 'properties') return;
 
-    let cancelled = false;
-    (async () => {
+      if (!agentId) {
+        // Fallback to mocked properties if agentId is not available.
+        if (!opts?.isActive || opts.isActive()) setAgentVideos(mockProperties.slice(0, 6));
+        return;
+      }
+
       try {
-        setIsLoadingVideos(true);
+        if (!opts?.isActive || opts.isActive()) setIsLoadingVideos(true);
         const res = await fetchPublicAgentVideos({ agentId, perPage: 20, page: 1 });
         const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
-        if (!cancelled) setAgentVideos(mapped);
+        if (!opts?.isActive || opts.isActive()) setAgentVideos(mapped);
       } catch (e: any) {
-        if (!cancelled) {
+        if (!opts?.isActive || opts.isActive()) {
           setAgentVideos([]);
           Alert.alert('Error', e?.message ?? 'Failed to load your videos');
         }
       } finally {
-        if (!cancelled) setIsLoadingVideos(false);
+        if (!opts?.isActive || opts.isActive()) setIsLoadingVideos(false);
       }
-    })();
+    },
+    [activeTab, agentId]
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, agentId]);
+  // Refresh whenever the screen becomes focused.
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      void loadAgentVideos({ isActive: () => isActive });
+
+      return () => {
+        isActive = false;
+      };
+    }, [loadAgentVideos])
+  );
+
+  // Also refresh when switching back to the Properties tab while staying on this screen.
+  useEffect(() => {
+    if (activeTab !== 'properties') return;
+    void loadAgentVideos();
+  }, [activeTab, loadAgentVideos]);
 
   const renderPropertyItem = ({ item }: { item: Property }) => (
     <Pressable
@@ -306,7 +323,7 @@ export default function ProfileScreen() {
         </View>
 
         {activeTab === 'properties' && isLoadingVideos ? (
-          <View style={{ paddingVertical: scaleHeight(24) }}>
+          <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center'}}>
             <SavingSpinner color={Colors.bronze} accessibilityLabel="Loading videos" />
           </View>
         ) : null}
