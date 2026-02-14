@@ -7,6 +7,7 @@ import { Colors } from '@/constants/colors';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { TransactionType, LifestyleType } from '@/types';
 import { lifestyleOptions } from '@/mocks/properties';
+import { preloadFeedBeforeNavigate } from '@/utils/feedPreload';
 
 export default function LifestyleScreen() {
   const router = useRouter();
@@ -29,14 +30,23 @@ export default function LifestyleScreen() {
     // Persist to global preferences so AppHeader reflects the chosen values.
     updatePreferences(transactionType, location, selectedLifestyles);
 
-    router.push({
-      pathname: '/(tabs)/feed',
-      params: {
-        transactionType,
-        location,
-        lifestyles: selectedLifestyles.join(','),
-      },
-    });
+    (async () => {
+      try {
+        // Warm up the feed so first video starts immediately.
+        await preloadFeedBeforeNavigate();
+      } catch {
+        // Ignore preload failures; feed will load normally.
+      }
+
+      router.push({
+        pathname: '/(tabs)/feed',
+        params: {
+          transactionType,
+          location,
+          lifestyles: selectedLifestyles.join(','),
+        },
+      });
+    })();
   };
 
   return (

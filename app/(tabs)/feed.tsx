@@ -22,8 +22,10 @@ import { Property } from '@/types';
 import { fetchPublicVideos, sharePublicVideo } from '@/utils/publicVideosApi';
 import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 import { useEngagementStore } from '@/stores/engagementStore';
+import { useFeedPreloadStore } from '@/stores/feedPreloadStore';
 import { useSubtitleStore } from '@/stores/subtitleStore';
 import { findActiveCue, parseVtt } from '@/utils/vtt';
+import { fetchSubtitleSegmentUrisFromPlaylist, resolveSubtitleTrackFromHlsMaster } from '@/utils/hlsSubtitles';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
@@ -99,8 +101,6 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  const normalizeSubtitleUrl = (u: string) => (u.startsWith('/') ? `https://api.saqan.com${u}` : u);
-
   const [selectedSubtitleUrl, setSelectedSubtitleUrl] = useState<string>('');
 
   useEffect(() => {
@@ -112,7 +112,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
 
     const match = (item.subtitles ?? []).find((t: any) => t.code === globalSubtitleLanguageCode);
     if (match?.url) {
-      setSelectedSubtitleUrl(normalizeSubtitleUrl(match.url));
+      setSelectedSubtitleUrl(match.url);
     } else {
       setSelectedSubtitleUrl('');
     }
@@ -198,17 +198,54 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(selectedSubtitleUrl);
-        if (cancelled) return;
-        const text = await res.text();
+        const tryFetchVtt = async (url: string) => {
+          const res = await fetch(url, { headers: { Accept: 'text/vtt' } });
+          if (!res.ok) return null;
+          const contentType = res.headers.get('content-type') ?? '';
+          const text = await res.text();
+          // Some servers return HTML on 403/redirect; ignore those.
+          if (contentType.includes('text/html') || /^\s*<!doctype html/i.test(text)) return null;
+          return text;
+        };
+
+        // Prefer Cloudflare subtitle tracks from the HLS manifest. The backend-provided `/storage/...` VTT
+        // URLs are frequently protected (403), which breaks captions in production builds.
+        let vttText: string | null = null;
+
+        // If the selected URL is already a direct, fetchable VTT (e.g. Cloudflare `text/*.vtt`), use it.
+        if (selectedSubtitleUrl && !selectedSubtitleUrl.includes('/storage/')) {
+          vttText = await tryFetchVtt(selectedSubtitleUrl);
+        }
+
+        // Resolve subtitle track from the HLS master manifest and fetch first VTT segment.
+        if (!vttText && item.videoUrl) {
+          const subtitlePlaylistUrl = await resolveSubtitleTrackFromHlsMaster({
+            masterUrl: item.videoUrl,
+            languageCode: globalSubtitleLanguageCode ?? '',
+          });
+
+          if (subtitlePlaylistUrl) {
+            const segs = await fetchSubtitleSegmentUrisFromPlaylist(subtitlePlaylistUrl);
+            const firstSeg = segs[0];
+            if (firstSeg) {
+              // Fetch first segment; usually enough to show subtitles quickly.
+              vttText = await tryFetchVtt(firstSeg);
+            }
+          }
+        }
+
         if (cancelled) return;
 
-        const cues = parseVtt(text);
+        if (!vttText) {
+          setSubtitleCues([]);
+          setActiveSubtitle('');
+          return;
+        }
+
+        const cues = parseVtt(vttText);
         setSubtitleCues(cues);
-
         setActiveSubtitle(findActiveCue(cues, player.currentTime));
       } catch (e: any) {
-        // backend may have missing/bad urls for now
         setSubtitleCues([]);
         setActiveSubtitle('');
       }
@@ -604,6 +641,18 @@ export default function FeedScreen() {
   };
 
   useEffect(() => {
+    const preloaded = useFeedPreloadStore.getState().consumePreloadedItems();
+    if (preloaded && preloaded.length) {
+      setItems(preloaded);
+      // Keep pagination state consistent.
+      pageRef.current = 1;
+      setPage(1);
+      // We'll still allow pagination to fetch more.
+      hasMorePagesRef.current = true;
+      setHasMorePages(true);
+      return;
+    }
+
     loadPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -823,7 +872,6 @@ export default function FeedScreen() {
         initialNumToRender={4}
         maxToRenderPerBatch={6}
         // Larger window ensures videos are ready during fast swipes
-        // windowSize={11} means ~5 screens above + current + 5 screens below
         windowSize={11}
         updateCellsBatchingPeriod={5}
         getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}

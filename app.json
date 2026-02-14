@@ -2,7 +2,7 @@
   "expo": {
     "name": "Saqan Lifestyle Real Estate",
     "slug": "saqan-lifestyle-real-estate",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rork-app",
@@ -17,14 +17,16 @@
       "icon": "./assets/images/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.saqan.lifestyle",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "UIBackgroundModes": [
+          "audio",
           "audio"
         ],
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
-        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera"
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

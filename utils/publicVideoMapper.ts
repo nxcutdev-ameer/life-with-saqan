@@ -89,7 +89,9 @@ export function mapPublicVideoToProperty(v: any): Property {
     .map((s: any) => ({
       code: String(s?.language_code || ''),
       label: s?.label,
-      url: s?.url ?? null,
+      // Backend commonly returns relative paths like `/storage/...`.
+      // Subtitles are served from the main site, same as other public media.
+      url: s?.url ? toAbsoluteUrl(String(s.url)) : null,
       filePath: s?.file_path ?? null,
     }))
     .filter((s: any) => Boolean(s.code));

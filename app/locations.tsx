@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { preloadFeedBeforeNavigate } from '@/utils/feedPreload';
 import { Colors } from '@/constants/colors';
 import { TransactionType } from '@/types';
 import { cities } from '@/mocks/properties';
@@ -30,14 +31,21 @@ export default function LocationsScreen() {
     }, 200);
     }
     else {
-      setTimeout(() => {
-      router.push({
-        pathname: '/(tabs)/feed',
-        params: {
-          location: city,
-        },
-      });
-    }, 200);
+      setTimeout(async () => {
+        try {
+          // Warm up the feed so first video starts immediately.
+          await preloadFeedBeforeNavigate();
+        } catch {
+          // Ignore preload failures; feed will load normally.
+        }
+
+        router.push({
+          pathname: '/(tabs)/feed',
+          params: {
+            location: city,
+          },
+        });
+      }, 200);
     }
   };
 
