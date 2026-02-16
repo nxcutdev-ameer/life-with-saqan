@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,12 +6,12 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
-  Image,
   FlatList,
   Linking,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
@@ -39,7 +39,6 @@ import type { Property, TransactionType, PropertyType, LifestyleType } from '@/t
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
-import { useAuthStore } from '@/stores/authStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -63,7 +62,7 @@ export default function PropertyDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentAvatarError, setAgentAvatarError] = useState(false);
-  const propertiesToken = useAuthStore((st) => st.session?.tokens?.propertiesToken) ?? null;
+
   const mapApiPayloadToProperty = (payload: PropertyDetailsPayload, videoIdOverride?: string): Property => {
     const parseNum = (value: unknown, fallback = 0) => {
       const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
@@ -173,7 +172,6 @@ export default function PropertyDetailScreen() {
         // Try regular property endpoint first
         response = await fetchPropertyByReferenceResponse(propertyReference, {
           timeoutMs: 15000,
-          propertiesToken,
         });
 
         // If regular endpoint returns success: false, try off-plan endpoint
@@ -182,7 +180,6 @@ export default function PropertyDetailScreen() {
           const { fetchOffPlanPropertyByReference } = await import('@/utils/propertiesApi');
           response = await fetchOffPlanPropertyByReference(propertyReference, {
             timeoutMs: 15000,
-            propertiesToken,
           });
         }
 
@@ -202,7 +199,7 @@ export default function PropertyDetailScreen() {
                 setLoading(false);
       }
     })();
-  }, [propertyReference, propertiesToken, videoIdParam]);
+  }, [propertyReference, videoIdParam]);
 
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
   const likeVideoId = property?.id ? String(property.id) : null;
@@ -210,6 +207,65 @@ export default function PropertyDetailScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const flatListRef = useRef<FlatList<string>>(null);
+
+  const isVideoUrl = useCallback((url: string) => {
+    const u = (url ?? '').toLowerCase();
+    return u.endsWith('.mp4') || u.includes('video');
+  }, []);
+
+  const allMedia = useMemo(() => {
+    if (!property) return [] as string[];
+    return [...(property.videoUrl ? [property.videoUrl] : []), ...(property.images ?? [])];
+  }, [property]);
+
+  const hasMedia = allMedia.length > 0;
+
+  // Prefetch current/adjacent images so swiping feels instant.
+  useEffect(() => {
+    if (!hasMedia) return;
+
+    const candidates = [
+      allMedia[currentImageIndex],
+      allMedia[currentImageIndex + 1],
+      allMedia[currentImageIndex - 1],
+      allMedia[currentImageIndex + 2],
+    ].filter((u): u is string => typeof u === 'string' && u.length > 0 && !isVideoUrl(u));
+
+    Image.prefetch(candidates);
+  }, [allMedia, currentImageIndex, hasMedia, isVideoUrl]);
+
+  const renderMediaItem = useCallback(
+    ({ item }: { item: string }) => {
+      if (isVideoUrl(item)) {
+        return (
+          <View style={styles.mediaItem}>
+            <Video
+              source={{ uri: item }}
+              style={styles.video}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay={false}
+              useNativeControls
+              isLooping
+            />
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.mediaItem}>
+          <Image
+            source={{ uri: item }}
+            style={styles.image}
+            contentFit="cover"
+            transition={150}
+            cachePolicy="disk"
+            recyclingKey={item}
+          />
+        </View>
+      );
+    },
+    [isVideoUrl]
+  );
 
   React.useEffect(() => {
     if (!likesHydrated) hydrateLikes();
@@ -220,8 +276,6 @@ export default function PropertyDetailScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const res = await toggleLikeGlobal(likeVideoId);
-      // Store will keep latest likesCount so feed can reflect it when navigating back.
-      // (No local UI count shown on this screen yet.)
       void res;
     } catch {
       // ignore
@@ -243,9 +297,6 @@ export default function PropertyDetailScreen() {
       </View>
     );
   }
-
-  const allMedia = [...(property.videoUrl ? [property.videoUrl] : []), ...(property.images ?? [])];
-  const hasMedia = allMedia.length > 0;
 
   const agentPhoneRaw = property.agent?.phone ?? '+971501234567';
 
@@ -315,31 +366,6 @@ export default function PropertyDetailScreen() {
     setCurrentImageIndex(index);
   };
 
-  const renderMediaItem = ({ item }: { item: string }) => {
-    const isVideo = item.endsWith('.mp4') || item.includes('video');
-
-    if (isVideo) {
-      return (
-        <View style={styles.mediaItem}>
-          <Video
-            source={{ uri: item }}
-            style={styles.video}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-            useNativeControls
-            isLooping
-          />
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.mediaItem}>
-        <Image source={{ uri: item }} style={styles.image} resizeMode="cover" />
-      </View>
-    );
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -366,16 +392,20 @@ export default function PropertyDetailScreen() {
               ref={flatListRef}
               data={allMedia}
               renderItem={renderMediaItem}
-              keyExtractor={(item, index) => `${index}`}
+              keyExtractor={(item, index) => `${index}-${item}`}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
+              removeClippedSubviews
+              initialNumToRender={1}
+              maxToRenderPerBatch={2}
+              windowSize={3}
               onScroll={(e) => {
                 const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
                 setCurrentImageIndex(index);
               }}
               scrollEventThrottle={16}
-              getItemLayout={(data, index) => ({
+              getItemLayout={(_, index) => ({
                 length: SCREEN_WIDTH,
                 offset: SCREEN_WIDTH * index,
                 index,

@@ -41,6 +41,8 @@ export interface Property {
   price: number;
   currency: string;
   listingType: TransactionType;
+  /** Backend transaction type (e.g. RENT/BUY/SALE/STAY) for strict filtering. */
+  transactionType?: string;
   propertyType: PropertyType;
   bedrooms: number;
   bathrooms: number;

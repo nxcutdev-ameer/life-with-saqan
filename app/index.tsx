@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { warmPublicVideosPage1 } from '@/stores/publicVideosCacheStore';
 import { StyleSheet, Text, View, Pressable, ImageBackground } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Menu } from 'lucide-react-native';
@@ -8,6 +9,13 @@ import { Platform } from 'react-native';
 
 export default function LandingScreen() {
   const router = useRouter();
+
+  // Background preload: fetch public videos page-1 early so later filters are instant.
+  useEffect(() => {
+    warmPublicVideosPage1().catch(() => {
+      // ignore
+    });
+  }, []);
 
   return (
     <ImageBackground

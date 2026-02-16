@@ -7,7 +7,7 @@ import { Colors } from '@/constants/colors';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { TransactionType, LifestyleType } from '@/types';
 import { lifestyleOptions } from '@/mocks/properties';
-import { preloadFeedBeforeNavigate } from '@/utils/feedPreload';
+import { preloadFeedFromCacheBeforeNavigate } from '@/utils/preloadFeedFromCache';
 
 export default function LifestyleScreen() {
   const router = useRouter();
@@ -30,23 +30,27 @@ export default function LifestyleScreen() {
     // Persist to global preferences so AppHeader reflects the chosen values.
     updatePreferences(transactionType, location, selectedLifestyles);
 
-    (async () => {
-      try {
-        // Warm up the feed so first video starts immediately.
-        await preloadFeedBeforeNavigate();
-      } catch {
-        // Ignore preload failures; feed will load normally.
-      }
+    // Use LandingScreen-warmed cache to prepare the exact feed (strict type+city) before navigating.
+    // Commit filtered items synchronously (fast, from cache) so Feed mounts already filtered.
+    // Warm players in background so we don't block navigation on player init.
+    const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
 
-      router.push({
-        pathname: '/(tabs)/feed',
-        params: {
-          transactionType,
-          location,
-          lifestyles: selectedLifestyles.join(','),
-        },
+    preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city: location }, { warmPlayers: false })
+      .catch(() => {
+        // Ignore preload failures; feed will load normally.
+      })
+      .finally(() => {
+        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city: location }, { warmPlayers: true }).catch(() => {});
       });
-    })();
+
+    router.push({
+      pathname: '/(tabs)/feed',
+      params: {
+        transactionType: backendTransactionType,
+        location,
+        lifestyles: selectedLifestyles.join(','),
+      },
+    });
   };
 
   return (

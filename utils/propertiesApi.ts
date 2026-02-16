@@ -318,17 +318,12 @@ export type PropertyDetailsPayload = {
 
 export async function fetchPropertyByReferenceResponse(
   referenceId: string,
-  options?: { timeoutMs?: number; propertiesToken?: string | null }
+  options?: { timeoutMs?: number }
 ): Promise<ApiResponse<PropertyDetailsPayload>> {
-  const url = `${BASE_URL}/properties/${encodeURIComponent(referenceId)}`;
+  const url = `${BASE_URL}/properties/public/${encodeURIComponent(referenceId)}`;
 
   return fetchJson<ApiResponse<PropertyDetailsPayload>>(url, {
     timeoutMs: options?.timeoutMs ?? 15000,
-    headers: options?.propertiesToken
-      ? {
-          Authorization: `Bearer ${options.propertiesToken}`,
-        }
-      : undefined,
   });
 }
 
@@ -337,26 +332,17 @@ export async function fetchPropertyByReference(referenceId: string): Promise<Pro
   return res.payload;
 }
 
-/**
- * Fetch off-plan property details using the off-plan-specific endpoint.
- * This is a temporary solution until the backend merges endpoints or provides property type in responses.
- */
+
 export async function fetchOffPlanPropertyByReference(
   referenceId: string,
-  options?: { timeoutMs?: number; propertiesToken?: string | null }
+  options?: { timeoutMs?: number }
 ): Promise<ApiResponse<PropertyDetailsPayload>> {
   const url = `${BASE_URL}/properties/offplan/${encodeURIComponent(referenceId)}`;
   console.log('[fetchOffPlanPropertyByReference] URL:', url);
   console.log('[fetchOffPlanPropertyByReference] referenceId:', referenceId);
-  console.log('[fetchOffPlanPropertyByReference] Has token:', !!options?.propertiesToken);
 
   return fetchJson<ApiResponse<PropertyDetailsPayload>>(url, {
     timeoutMs: options?.timeoutMs ?? 15000,
-    headers: options?.propertiesToken
-      ? {
-          Authorization: `Bearer ${options.propertiesToken}`,
-        }
-      : undefined,
   });
 }
 

@@ -45,6 +45,10 @@ export interface PublicVideo {
     description?: string;
     default_pricing?: string;
     meta?: {
+      // Backend also returns a transaction type here (e.g. RENT/BUY/SALE/STAY)
+      type?: string | null;
+      sale_price?: string | number | null;
+      square?: string | number | null;
       month_price?: string | number | null;
       week_price?: string | number | null;
       year_price?: string | number | null;

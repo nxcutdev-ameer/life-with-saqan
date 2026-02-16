@@ -13,7 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +23,10 @@ import { fetchPublicVideos, sharePublicVideo } from '@/utils/publicVideosApi';
 import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 import { useEngagementStore } from '@/stores/engagementStore';
 import { useFeedPreloadStore } from '@/stores/feedPreloadStore';
+import { makeFeedFilterKey } from '@/utils/feedFilter';
+import { useLocalSearchParams } from 'expo-router';
+import { warmUpExpoVideoPlayers } from '@/utils/expoVideoWarmup';
+import { useVideoPlayerPoolStore } from '@/stores/videoPlayerPoolStore';
 import { useSubtitleStore } from '@/stores/subtitleStore';
 import { findActiveCue, parseVtt } from '@/utils/vtt';
 import { fetchSubtitleSegmentUrisFromPlaylist, resolveSubtitleTrackFromHlsMaster } from '@/utils/hlsSubtitles';
@@ -44,6 +48,8 @@ type FeedVideoItem = Property;
 interface FeedItemProps {
   item: FeedVideoItem;
   index: number;
+  pooledPlayer?: any;
+  autoPlay?: boolean;
   /** Active in viewport (should play / update progress). */
   isViewable: boolean;
   isSaved: boolean;
@@ -62,10 +68,18 @@ interface FeedItemProps {
   onScrubbingChange?: (isScrubbing: boolean) => void;
 }
 
-const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
   // Subscribe per-item so only the affected cell re-renders when likes change.
   const isLiked = useEngagementStore((s) => s.isLiked(item.id));
   const [isPaused, setIsPaused] = useState(false);
+
+  // Do not persist pause state across videos: whenever a cell becomes viewable again,
+  // it should autoplay (unless the user pauses it while currently viewable).
+  useEffect(() => {
+    if (isViewable) {
+      setIsPaused(false);
+    }
+  }, [isViewable]);
 
   const playOverlayOpacity = useRef(new Animated.Value(0)).current;
   const [showPlayOverlay, setShowPlayOverlay] = useState(false);
@@ -91,11 +105,27 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
     });
   }, [isPaused, playOverlayOpacity]);
 
-  const player = useVideoPlayer(item.videoUrl, (p) => {
+  const hookPlayer = useVideoPlayer(item.videoUrl, (p) => {
+    // Setup for the hook-managed player.
     p.loop = true;
     p.muted = false;
     p.volume = 0.8;
+    try {
+      p.timeUpdateEventInterval = 0.25;
+    } catch {}
   });
+
+  const pooledOk = pooledPlayer && (pooledPlayer as any).status !== 'error';
+  const player = pooledOk ? pooledPlayer : hookPlayer;
+
+  // Ensure pooled players get the same setup as hook players.
+  useEffect(() => {
+    if (!player) return;
+    player.loop = true;
+    try {
+      player.timeUpdateEventInterval = 0.25;
+    } catch {}
+  }, [player]);
 
   // `player.currentTime` is not React state. Track it locally so UI (progress bar) updates live.
   const [currentTime, setCurrentTime] = useState(0);
@@ -123,12 +153,38 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
     if (!player) return;
 
     if (isViewable) {
+      // Only unmute when the item is viewable.
+      try {
+        player.muted = false;
+        player.volume = 0.8;
+      } catch {}
+
       if (isPaused) {
         player.pause();
       } else {
-        player.play();
+        // Autoplay can be flaky on the first mount while the player is still loading.
+        // Do a couple best-effort retries (without overriding an explicit user pause).
+        const tryPlay = () => {
+          try {
+            player.play();
+          } catch {}
+        };
+
+        tryPlay();
+        const t1 = setTimeout(tryPlay, 120);
+        const t2 = setTimeout(tryPlay, 320);
+
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+        };
       }
     } else {
+      // Mute when not viewable to avoid audio bleed from pooled players.
+      try {
+        player.muted = true;
+        player.volume = 0;
+      } catch {}
       // Ensure we never keep a feed item at 2x when it leaves the viewport.
       setIsSpeeding(false);
       onSpeedingChange?.(false);
@@ -145,6 +201,35 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
       } catch {}
     }
   }, [isPaused, isViewable, player, onSpeedingChange]);
+
+  // Forced autoplay fallback for the first cell. This handles cases where FlatList viewability
+  // doesn't fire immediately on navigation (common with fast mounts + pagingEnabled).
+  React.useEffect(() => {
+    if (!autoPlay) return;
+    if (!player) return;
+    if (isPaused) return;
+
+    const tryPlay = () => {
+      try {
+        player.muted = false;
+        player.volume = 0.8;
+      } catch {}
+      try {
+        player.play();
+      } catch {}
+    };
+
+    tryPlay();
+    const t1 = setTimeout(tryPlay, 120);
+    const t2 = setTimeout(tryPlay, 320);
+    const t3 = setTimeout(tryPlay, 600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [autoPlay, isPaused, player]);
 
   React.useEffect(() => {
     if (!player) return;
@@ -535,6 +620,13 @@ const FeedItem = React.memo(function FeedItem({ item, index, isViewable, isSaved
 
 export default function FeedScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ transactionType?: string; location?: string }>();
+  const preloadKey = useMemo(() => {
+    const transactionType = String(params.transactionType ?? '');
+    const city = String(params.location ?? '');
+    if (!transactionType || !city) return null;
+    return makeFeedFilterKey({ transactionType, city });
+  }, [params.location, params.transactionType]);
   useUserPreferences();
   const insets = useSafeAreaInsets();
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
@@ -545,6 +637,17 @@ export default function FeedScreen() {
   const overlayBottom = scaleHeight(140) + bottomTabBarHeight;
 
   const [items, setItems] = useState<FeedVideoItem[]>([]);
+  const itemsLenRef = useRef(0);
+  useEffect(() => {
+    itemsLenRef.current = items.length;
+  }, [items.length]);
+
+  const preloadedItems = useFeedPreloadStore((s) => s.preloadedItems);
+  const consumePreloadedItems = useFeedPreloadStore((s) => s.consumePreloadedItems);
+  const consumePreloadedItemsForKey = useFeedPreloadStore((s) => s.consumePreloadedItemsForKey);
+  const keyedPreloads = useFeedPreloadStore((s) => s.byKey);
+
+  const warmupDoneRef = useRef(false);
   const [page, setPage] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(true);
@@ -557,12 +660,21 @@ export default function FeedScreen() {
 
   const endReachedCalledDuringMomentum = useRef(false);
 
-  // NOTE: Backend videos don't currently include the fields our local filters expect
-  // (listingType/location/lifestyle). For now, we display the fetched videos as-is.
+  // Apply strict filters client-side (until backend supports server-side filtering).
+  // This must match `preloadFeedFromCacheBeforeNavigate` so the feed remains consistent across pagination.
+  // `items` is already filtered in `loadPage()` when params are present.
   const filteredProperties = useMemo(() => items, [items]);
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const listRef = useRef<Animated.FlatList<any> | null>(null);
   const isFocused = useIsFocused();
+  const [screenActive, setScreenActive] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setScreenActive(true);
+      return () => setScreenActive(false);
+    }, [])
+  );
   const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -582,7 +694,10 @@ export default function FeedScreen() {
       isFetchingRef.current = true;
       setIsFetching(true);
       const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
-      const newItems = (res?.data ?? []).map(mapVideoToProperty);
+      const fetched = (res?.data ?? []).map(mapVideoToProperty);
+
+      // TEMP: filtering disabled; show all videos.
+      const newItems = fetched;
 
       const meta = res?.meta;
       // API may omit `has_more_pages` but include `current_page`/`last_page`/`total`.
@@ -634,6 +749,11 @@ export default function FeedScreen() {
       pageRef.current = 1;
       setPage(1);
       setActiveItemId(null);
+
+      // Refresh should reset the pool to avoid reusing stale players.
+      releasePoolExcept([]);
+      warmupDoneRef.current = false;
+
       await loadPage(1);
     } finally {
       setIsRefreshing(false);
@@ -641,28 +761,119 @@ export default function FeedScreen() {
   };
 
   useEffect(() => {
-    const preloaded = useFeedPreloadStore.getState().consumePreloadedItems();
-    if (preloaded && preloaded.length) {
-      setItems(preloaded);
-      // Keep pagination state consistent.
+    const applyItems = (next: FeedVideoItem[]) => {
+      setItems(next);
       pageRef.current = 1;
       setPage(1);
-      // We'll still allow pagination to fetch more.
       hasMorePagesRef.current = true;
       setHasMorePages(true);
-      return;
+
+      // Force list to start at the very top so we don't sometimes land on index 1.
+      requestAnimationFrame(() => {
+        try {
+          (listRef.current as any)?.scrollToOffset?.({ offset: 0, animated: false });
+        } catch {}
+      });
+    };
+
+    // 1) Prefer keyed preloads (transactionType+city) coming from selection screens.
+    if (preloadKey) {
+      const entry = keyedPreloads[preloadKey];
+      if (entry?.items?.length) {
+        const consumed = consumePreloadedItemsForKey(preloadKey);
+        if (consumed && consumed.length) {
+          applyItems(consumed);
+          return;
+        }
+      }
     }
 
+    // 2) Legacy single-slot preload.
+    if (preloadedItems && preloadedItems.length) {
+      const consumed = consumePreloadedItems();
+      if (consumed && consumed.length) {
+        applyItems(consumed);
+        return;
+      }
+    }
+
+    // 3) Fall back to network load.
     loadPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [preloadKey, keyedPreloads, consumePreloadedItemsForKey]);
+
+  useEffect(() => {
+    // If a keyed preload arrives shortly after mount, hydrate from it.
+    if (itemsLenRef.current > 0) return;
+
+    if (preloadKey) {
+      const entry = keyedPreloads[preloadKey];
+      if (entry?.items?.length) {
+        const consumed = consumePreloadedItemsForKey(preloadKey);
+        if (consumed && consumed.length) {
+          setItems(consumed);
+          pageRef.current = 1;
+          setPage(1);
+          hasMorePagesRef.current = true;
+          setHasMorePages(true);
+          return;
+        }
+      }
+    }
+
+    // Legacy preloads.
+    if (!preloadedItems || preloadedItems.length === 0) return;
+
+    const consumed = consumePreloadedItems();
+    if (!consumed || consumed.length === 0) return;
+
+    setItems(consumed);
+    pageRef.current = 1;
+    setPage(1);
+    hasMorePagesRef.current = true;
+    setHasMorePages(true);
+  }, [consumePreloadedItems, consumePreloadedItemsForKey, keyedPreloads, preloadKey, preloadedItems]);
+
+  // Warm up expo-video players for the first few items once we have data.
+  useEffect(() => {
+    if (warmupDoneRef.current) return;
+    if (!items || items.length === 0) return;
+
+    const urls = items
+      .map((it) => it.videoUrl)
+      .filter(Boolean)
+      .slice(0, 3) as string[];
+
+    if (urls.length === 0) return;
+
+    warmupDoneRef.current = true;
+    warmUpExpoVideoPlayers(urls, { count: 3, playMs: 350, keepInPool: true }).catch(() => {
+      // ignore
+    });
+  }, [items]);
 
   // Ensure the first item is considered viewable when landing on the feed,
   // so the first video starts playing immediately.
   useEffect(() => {
     if (!firstItemId) return;
-    setActiveItemId((prev) => prev ?? firstItemId);
+
+    // Always set an active item when we have data; avoids landing with all videos paused.
+    setActiveItemId(firstItemId);
+
+    // Ensure list offset is at 0 when first item becomes available.
+    requestAnimationFrame(() => {
+      try {
+        (listRef.current as any)?.scrollToOffset?.({ offset: 0, animated: false });
+      } catch {}
+    });
   }, [firstItemId]);
+
+  // When the screen becomes active, re-assert the active item to trigger the play effect.
+  useEffect(() => {
+    if (!screenActive) return;
+    if (!firstItemId) return;
+    setActiveItemId(firstItemId);
+  }, [firstItemId, screenActive]);
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
 
   useEffect(() => {
@@ -687,11 +898,29 @@ export default function FeedScreen() {
     // With pagingEnabled, at most one item should be predominantly visible.
     const active = viewable.find((it) => it.isViewable);
     const activeId = (active?.key as string) || null;
-    setActiveItemId(activeId);
+
+    // During initial mount/layout, FlatList can report no viewable items briefly.
+    // Don't clear activeItemId in that case (it would pause all videos).
+    if (activeId) {
+      setActiveItemId(activeId);
+    } else {
+      return;
+    }
+
+    const activeIndex = items.findIndex((p) => p.id === activeId);
+
+    // Once the user scrolls past the first few items, we can release pooled warmup players
+    // to reduce memory usage.
+    if (activeIndex >= 3) {
+      const keepUrls = items
+        .slice(activeIndex, activeIndex + 2)
+        .map((it) => it.videoUrl)
+        .filter(Boolean) as string[];
+      // keep the current and next item (best-effort)
+      releasePoolExcept(keepUrls);
+    }
 
     // Prefetch the next page when the user is within the last ~3 items.
-    if (!activeId) return;
-    const activeIndex = items.findIndex((p) => p.id === activeId);
     if (activeIndex >= 0 && items.length - activeIndex <= 4) {
       if (hasMorePagesRef.current && !isFetchingRef.current) {
         loadPage(pageRef.current + 1);
@@ -759,7 +988,9 @@ export default function FeedScreen() {
   [items]
   );
 
-  const canPlay = isFocused && !locationsModalVisible && !commentsModalVisible;
+  // `useIsFocused()` can be flaky on initial mount with Expo Router + tabs.
+  // Use a focus-effect-backed flag to ensure autoplay works immediately on navigation.
+  const canPlay = screenActive && !locationsModalVisible && !commentsModalVisible;
 
   const handleOpenComments = useCallback((id: string) => {
     setSelectedPropertyId(id);
@@ -782,11 +1013,16 @@ export default function FeedScreen() {
     [router]
   );
 
+  const pooledByUrl = useVideoPlayerPoolStore((s) => s.byUrl);
+  const releasePoolExcept = useVideoPlayerPoolStore((s) => s.releaseExcept);
+
   const renderProperty = useCallback(
     ({ item, index }: { item: FeedVideoItem; index: number }) => (
       <FeedItem
         item={item}
         index={index}
+        pooledPlayer={index < 3 && item.videoUrl ? pooledByUrl[item.videoUrl]?.player : undefined}
+        autoPlay={index === 0 && canPlay && activeItemId === item.id}
         isViewable={canPlay && activeItemId === item.id}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
@@ -818,6 +1054,10 @@ export default function FeedScreen() {
       setGlobalSubtitleLanguageCode,
       toggleLike,
       toggleSave,
+      bottomTabBarHeight,
+      overlayBottom,
+      overlayTop,
+      pooledByUrl,
     ]
   );
 
@@ -845,6 +1085,11 @@ export default function FeedScreen() {
         />
       ) : null}
       <Animated.FlatList
+        initialScrollIndex={0}
+        ref={(r) => {
+          // @ts-ignore
+          listRef.current = r;
+        }}
         data={filteredProperties}
         renderItem={renderProperty}
         keyExtractor={keyExtractor}
@@ -875,9 +1120,9 @@ export default function FeedScreen() {
         windowSize={11}
         updateCellsBatchingPeriod={5}
         getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
-        maintainVisibleContentPosition={{
-          minIndexForVisible: 0,
-        }}
+        // Avoid landing on index 1 due to "maintain visible position" heuristics when data changes.
+        // We want the feed to always start from the top on entry.
+        // maintainVisibleContentPosition={undefined as any}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }

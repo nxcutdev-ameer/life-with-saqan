@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { preloadFeedBeforeNavigate } from '@/utils/feedPreload';
+import { preloadFeedFromCacheBeforeNavigate } from '@/utils/preloadFeedFromCache';
 import { Colors } from '@/constants/colors';
 import { TransactionType } from '@/types';
 import { cities } from '@/mocks/properties';
@@ -19,8 +19,7 @@ export default function LocationsScreen() {
     setSelectedCity(city);
     updatePreferences(transactionType, city, lifestyles);
 
-    if(transactionType === 'STAY') {
-       setTimeout(() => {
+    if (transactionType === 'STAY') {
       router.push({
         pathname: '/lifestyle',
         params: {
@@ -28,24 +27,27 @@ export default function LocationsScreen() {
           location: city,
         },
       });
-    }, 200);
-    }
-    else {
-      setTimeout(async () => {
-        try {
-          // Warm up the feed so first video starts immediately.
-          await preloadFeedBeforeNavigate();
-        } catch {
-          // Ignore preload failures; feed will load normally.
-        }
+    } else {
+        // Use LandingScreen-warmed cache to prepare the exact feed (strict type+city) before navigating.
+        // Commit filtered items synchronously (fast, from cache) so Feed mounts already filtered.
+        // Warm players in background so we don't block navigation on player init.
+        const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+
+        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
+          .catch(() => {
+            // Ignore preload failures; feed will load normally.
+          })
+          .finally(() => {
+            preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: true }).catch(() => {});
+          });
 
         router.push({
           pathname: '/(tabs)/feed',
           params: {
+            transactionType: backendTransactionType,
             location: city,
           },
         });
-      }, 200);
     }
   };
 
