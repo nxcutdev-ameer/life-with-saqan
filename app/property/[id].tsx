@@ -28,27 +28,42 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  FileText,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
 import {
+  fetchOffPlanPropertyByReference,
   fetchPropertyByReferenceResponse,
   PropertyDetailsPayload,
 } from '@/utils/propertiesApi';
+import {
+  isOffplanApiResponsePayload,
+  mapOffplanPayloadToDetails,
+  type OffplanDetails,
+} from '@/utils/offplanMapper';
 import type { Property, TransactionType, PropertyType, LifestyleType } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
+import { SavingSpinner } from '@/components/SavingSpinner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function PropertyDetailScreen() {
   const router = useRouter();
   // Route param is treated as the property reference.
-  const { id, videoId } = useLocalSearchParams<{ id?: string | string[]; videoId?: string | string[] }>();
+  const { id, videoId, mode } = useLocalSearchParams<{
+    id?: string | string[];
+    videoId?: string | string[];
+    mode?: string | string[];
+  }>();
   const propertyReference = Array.isArray(id) ? id[0] : id;
   const videoIdParam = Array.isArray(videoId) ? videoId[0] : videoId;
+  const modeParam = Array.isArray(mode) ? mode[0] : mode;
+  const isOffplanMode = (modeParam || '').toLowerCase() === 'offplan';
   // `videoId` is optional; when provided, we keep it as the local property id for engagement tracking.
 
   const [property, setProperty] = useState<Property | null>(() => {
@@ -62,6 +77,7 @@ export default function PropertyDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [agentAvatarError, setAgentAvatarError] = useState(false);
+  const [offplanDetails, setOffplanDetails] = useState<OffplanDetails | null>(null);
 
   const mapApiPayloadToProperty = (payload: PropertyDetailsPayload, videoIdOverride?: string): Property => {
     const parseNum = (value: unknown, fallback = 0) => {
@@ -100,7 +116,7 @@ export default function PropertyDetailScreen() {
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
 
     const videoUrl = mediaUrls.find((u) => u.endsWith('.mp4')) ?? '';
-    // Filter out video from images list if needed, or keep all. Usually images are non-mp4.
+    // Filter out video from images list if needed
     const images = mediaUrls.filter((u) => !u.endsWith('.mp4'));
 
     return {
@@ -133,8 +149,8 @@ export default function PropertyDetailScreen() {
         agency: payload.agency?.agency_name ?? 'Agency',
         // Use real avatar URL if provided; otherwise keep empty so UI can fall back to initials.
         photo: payload.agent?.avatar?.url ?? '',
-        phone: payload.agent?.phone ?? '+971501234567',
-        email: payload.agent?.email ?? 'agent@vzite.com',
+        phone: payload.agent?.phone ?? '',
+        email: payload.agent?.email ?? '',
         isVerified: true,
       },
       agentName: payload.agent?.name ??(`Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent'),
@@ -156,9 +172,14 @@ export default function PropertyDetailScreen() {
 
       // 1) Hydrate quickly from cache (if any)
       try {
-        const cached = await AsyncStorage.getItem(`@property_cache_${propertyReference}`);
+        const cacheKey = isOffplanMode
+          ? `@property_cache_offplan_${propertyReference}`
+          : `@property_cache_ready_${propertyReference}`;
+        const cached = await AsyncStorage.getItem(cacheKey);
         if (cached) {
-          setProperty(JSON.parse(cached));
+          const parsed = JSON.parse(cached);
+          if (isOffplanMode) setOffplanDetails(parsed);
+          else setProperty(parsed);
         }
       } catch {
         // ignore
@@ -167,45 +188,48 @@ export default function PropertyDetailScreen() {
       // 2) Fetch the latest from API
       try {
         setLoading(true);
-        let response;
-        
-        // Try regular property endpoint first
-        response = await fetchPropertyByReferenceResponse(propertyReference, {
-          timeoutMs: 15000,
-        });
 
-        // If regular endpoint returns success: false, try off-plan endpoint
-        if (!response.success) {
-          console.log('[PropertyDetail] Regular endpoint returned error, trying off-plan endpoint...');
-          const { fetchOffPlanPropertyByReference } = await import('@/utils/propertiesApi');
-          response = await fetchOffPlanPropertyByReference(propertyReference, {
-            timeoutMs: 15000,
-          });
-        }
+        const response = isOffplanMode
+          ? await fetchOffPlanPropertyByReference(propertyReference, { timeoutMs: 15000 })
+          : await fetchPropertyByReferenceResponse(propertyReference, { timeoutMs: 15000 });
 
-        // Check if off-plan endpoint also failed
         if (!response.success) {
           throw new Error(response.message || 'Property not found');
         }
 
-        const payload = response.payload;
-        console.log(response)
-        const mapped = mapApiPayloadToProperty(payload, videoIdParam);
-                setProperty(mapped);
-        await AsyncStorage.setItem(`@property_cache_${propertyReference}`, JSON.stringify(mapped));
+        const payload = response.payload as any;
+
+        if (isOffplanMode && isOffplanApiResponsePayload(payload)) {
+          const details = mapOffplanPayloadToDetails(payload);
+          setOffplanDetails(details);
+          setActivePaymentPlanId(details.paymentPlans[0]?.id ?? null);
+
+          const cacheKey = `@property_cache_offplan_${propertyReference}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(details));
+        } else {
+          const mapped = mapApiPayloadToProperty(payload as PropertyDetailsPayload, videoIdParam);
+          setProperty(mapped);
+
+          const cacheKey = `@property_cache_ready_${propertyReference}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(mapped));
+        }
       } catch (e: any) {
-                        setLoadError(e?.message ?? 'Failed to load property');
+        setLoadError(e?.message ?? 'Failed to load property');
       } finally {
-                setLoading(false);
+        setLoading(false);
       }
     })();
-  }, [propertyReference, videoIdParam]);
+  }, [propertyReference, videoIdParam, isOffplanMode]);
 
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
   const likeVideoId = property?.id ? String(property.id) : null;
   const isLiked = useEngagementStore((s) => (likeVideoId ? s.isLiked(likeVideoId) : false));
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
+  const [unitsExpanded, setUnitsExpanded] = useState(false);
+  const [unitsSectionY, setUnitsSectionY] = useState(0);
+  const [activePaymentPlanId, setActivePaymentPlanId] = useState<number | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   const flatListRef = useRef<FlatList<string>>(null);
 
   const isVideoUrl = useCallback((url: string) => {
@@ -214,9 +238,13 @@ export default function PropertyDetailScreen() {
   }, []);
 
   const allMedia = useMemo(() => {
+    if (isOffplanMode) {
+      return offplanDetails?.images ?? [];
+    }
+
     if (!property) return [] as string[];
     return [...(property.videoUrl ? [property.videoUrl] : []), ...(property.images ?? [])];
-  }, [property]);
+  }, [isOffplanMode, offplanDetails, property]);
 
   const hasMedia = allMedia.length > 0;
 
@@ -282,23 +310,22 @@ export default function PropertyDetailScreen() {
     }
   };
 
-  if (!property) {
+  if (!property && !(isOffplanMode && offplanDetails)) {
     return (
       <View style={styles.errorContainer}>
         {loading ? (
-          <ActivityIndicator color={Colors.bronze} />
+             <SavingSpinner size={40} color={Colors.bronze} accessibilityLabel="Loading..." />
         ) : (
           <Text style={styles.errorText}>Property not found</Text>
         )}
-        {/* {loadError ? <Text style={[styles.errorText, { marginTop: 12 }]}>{loadError}</Text> : null} */}
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
+        {/* <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
-        </Pressable>
+        </Pressable> */}
       </View>
     );
   }
 
-  const agentPhoneRaw = property.agent?.phone ?? '+971501234567';
+  const agentPhoneRaw = property?.agent?.phone ?? '+971501234567';
 
   const getInitials = (name: string) => {
     const cleaned = (name ?? '').trim();
@@ -310,12 +337,12 @@ export default function PropertyDetailScreen() {
     return initials || 'A';
   };
 
-  const agentDisplayName = (property.agent?.name || property.agentName || 'Agent').trim() || 'Agent';
-  const agentAvatarUrl = (property.agent?.photo || property.agentPhoto || '').trim();
+  const agentDisplayName = (property?.agent?.name || property?.agentName || 'Agent').trim() || 'Agent';
+  const agentAvatarUrl = (property?.agent?.photo || property?.agentPhoto || '').trim();
   const agentInitials = getInitials(agentDisplayName);
 
   const agentEmail =
-    property.agent?.email ?? `${agentDisplayName.toLowerCase().replace(/\s+/g, '.')}@saqan.com`;
+    property?.agent?.email ?? `${agentDisplayName.toLowerCase().replace(/\s+/g, '.')}@saqan.com`;
 
   const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
 
@@ -330,7 +357,7 @@ export default function PropertyDetailScreen() {
   const openWhatsApp = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const text = `Hi, I'm interested in ${property.title}`;
+    const text = `Hi, I'm interested in ${property?.title ?? offplanDetails?.title ?? 'this property'}`;
     const encodedText = encodeURIComponent(text);
 
     // App deep link
@@ -350,9 +377,9 @@ export default function PropertyDetailScreen() {
   const openEmail = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const subject = encodeURIComponent(`Inquiry about ${property.title}`);
+    const subject = encodeURIComponent(`Inquiry about ${property?.title ?? offplanDetails?.title ?? 'a property'}`);
     const body = encodeURIComponent(
-      `Hi ${agentDisplayName},\n\nI'm interested in ${property.title}. Could you share more details?\n\nThanks!`
+      `Hi ${agentDisplayName},\n\nI'm interested in ${property?.title ?? offplanDetails?.title ?? 'this property'}. Could you share more details?\n\nThanks!`
     );
 
     const mailtoUrl = `mailto:${agentEmail}?subject=${subject}&body=${body}`;
@@ -368,7 +395,7 @@ export default function PropertyDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollViewRef} style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.mediaContainer}>
           {loading ? (
             <View style={[styles.mediaItem, { alignItems: 'center', justifyContent: 'center' }]}>
@@ -463,63 +490,280 @@ export default function PropertyDetailScreen() {
         </View>
 
         <View style={styles.content}>
-          <View style={styles.headerSection}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.propertyTitle}>{property.title}</Text>
-              <View style={styles.locationRow}>
-                <MapPin size={scaleWidth(14)} color={Colors.textSecondary} />
-                <Text style={styles.locationText}>
-                  {property.location.area}, {property.location.city}
-                </Text>
+          {isOffplanMode && offplanDetails ? (
+            <>
+              <View style={styles.headerSection}>
+                <View style={styles.headerLeft}>
+                  <Text style={styles.propertyTitle}>{offplanDetails.title}</Text>
+                  <View style={styles.locationRow}>
+                    <MapPin size={scaleWidth(14)} color={Colors.textSecondary} />
+                    <Text style={styles.locationText}>{offplanDetails.locationLabel}</Text>
+                  </View>
+                </View>
               </View>
-            </View>
-          </View>
 
-          <View style={styles.priceCard}>
-            <Text style={styles.price}>
-              {property.currency} {property.price.toLocaleString()}
-              {property.defaultPricing ? `/${property.defaultPricing}` : property.listingType === 'RENT' ? '/year' : ''}
-            </Text>
-            <View style={styles.listingTypeBadge}>
-              <Text style={styles.listingTypeText}>{property.listingType}</Text>
-            </View>
-          </View>
+              <View style={styles.offplanSummaryCard}>
+                <View style={styles.offplanRow}>
+                  <Text style={styles.offplanLabel}>Price</Text>
+                  <Text style={styles.offplanValue}>{offplanDetails.priceRangeLabel}</Text>
+                </View>
+                <View style={styles.offplanDivider} />
+                <View style={styles.offplanRow}>
+                  <Text style={styles.offplanLabel}>Developer</Text>
+                  <Text style={styles.offplanValue}>{offplanDetails.developerName}</Text>
+                </View>
+                {offplanDetails.developerWebsite ? (
+                  <>
+                    <View style={styles.offplanDivider} />
+                    <Pressable
+                      onPress={() => Linking.openURL(offplanDetails.developerWebsite!)}
+                      style={styles.offplanRow}
+                    >
+                      <Text style={styles.offplanLabel}>Developer website</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: scaleWidth(6) }}>
+                        <Text style={styles.offplanValue}>Open</Text>
+                        <ExternalLink size={scaleWidth(14)} color={Colors.textSecondary} />
+                      </View>
+                    </Pressable>
+                  </>
+                ) : null}
+                <View style={styles.offplanDivider} />
+                <View style={styles.offplanRow}>
+                  <Text style={styles.offplanLabel}>Delivery date</Text>
+                  <Text style={styles.offplanValue}>{offplanDetails.deliveryDateLabel}</Text>
+                </View>
+                <View style={styles.offplanDivider} />
+                <View style={styles.offplanRow}>
+                  <Text style={styles.offplanLabel}>Reference ID</Text>
+                  <Text style={styles.offplanValue}>{offplanDetails.referenceId}</Text>
+                </View>
+                <View style={styles.offplanDivider} />
+                <View style={styles.offplanRow}>
+                  <Text style={styles.offplanLabel}>Location</Text>
+                  <Text style={styles.offplanValue}>{offplanDetails.locationLabel}</Text>
+                </View>
+              </View>
 
-          <View style={styles.keyDetailsCard}>
-            <View style={styles.detailItem}>
-              <Bed size={scaleWidth(28)} color={Colors.bronze} />
-              <Text style={styles.detailLabel}>Bedrooms</Text>
-              <Text style={styles.detailValue}>{property.bedrooms}</Text>
-            </View>
-            <View style={styles.detailDivider} />
-            <View style={styles.detailItem}>
-              <Bath size={scaleWidth(28)} color={Colors.bronze} />
-              <Text style={styles.detailLabel}>Bathrooms</Text>
-              <Text style={styles.detailValue}>{property.bathrooms}</Text>
-            </View>
-            <View style={styles.detailDivider} />
-            <View style={styles.detailItem}>
-              <Maximize size={scaleWidth(28)} color={Colors.bronze} />
-              <Text style={styles.detailLabel}>Size</Text>
-              <Text style={styles.detailValue}>{property.sizeSqft.toLocaleString()} sqft</Text>
-            </View>
-          </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.headerSection}>
+                <View style={styles.headerLeft}>
+                  <Text style={styles.propertyTitle}>{property?.title}</Text>
+                  <View style={styles.locationRow}>
+                    <MapPin size={scaleWidth(14)} color={Colors.textSecondary} />
+                    <Text style={styles.locationText}>
+                      {property?.location.area}, {property?.location.city}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.priceCard}>
+                <Text style={styles.price}>
+                  {property?.currency} {property?.price.toLocaleString()}
+                  {property?.defaultPricing
+                    ? `/${property?.defaultPricing}`
+                    : property?.listingType === 'RENT'
+                      ? '/year'
+                      : ''}
+                </Text>
+                <View style={styles.listingTypeBadge}>
+                  <Text style={styles.listingTypeText}>{property?.listingType}</Text>
+                </View>
+              </View>
+
+              <View style={styles.keyDetailsCard}>
+                <View style={styles.detailItem}>
+                  <Bed size={scaleWidth(28)} color={Colors.bronze} />
+                  <Text style={styles.detailLabel}>Bedrooms</Text>
+                  <Text style={styles.detailValue}>{property?.bedrooms}</Text>
+                </View>
+                <View style={styles.detailDivider} />
+                <View style={styles.detailItem}>
+                  <Bath size={scaleWidth(28)} color={Colors.bronze} />
+                  <Text style={styles.detailLabel}>Bathrooms</Text>
+                  <Text style={styles.detailValue}>{property?.bathrooms}</Text>
+                </View>
+                <View style={styles.detailDivider} />
+                <View style={styles.detailItem}>
+                  <Maximize size={scaleWidth(28)} color={Colors.bronze} />
+                  <Text style={styles.detailLabel}>Size</Text>
+                  <Text style={styles.detailValue}>{property?.sizeSqft.toLocaleString()} sqft</Text>
+                </View>
+              </View>
+            </>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.description}>{property.description}</Text>
+            <Text style={styles.description}>
+              {isOffplanMode && offplanDetails ? offplanDetails.description : property?.description}
+            </Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Amenities</Text>
-            <View style={styles.amenitiesGrid}>
-              {property.amenities.map((amenity: string, index: number) => (
-                <View key={index} style={styles.amenityChip}>
-                  <Text style={styles.amenityText}>{amenity}</Text>
+          {isOffplanMode && offplanDetails ? (
+            <>
+              {offplanDetails.amenities.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Amenities</Text>
+                  <View style={styles.amenitiesGrid}>
+                    {offplanDetails.amenities.map((amenity, index) => (
+                      <View key={`${amenity}-${index}`} style={styles.amenityChip}>
+                        <Text style={styles.amenityText}>{amenity}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              ))}
+              ) : null}
+
+              {offplanDetails.units.length > 0 ? (
+                <View
+                  style={styles.section}
+                  onLayout={(e) => setUnitsSectionY(e.nativeEvent.layout.y)}
+                >
+                  <Text style={styles.sectionTitle}>Units</Text>
+                  <View style={{ gap: scaleHeight(12) }}>
+                    {(unitsExpanded ? offplanDetails.units : offplanDetails.units.slice(0, 12)).map((u) => (
+                      <View key={u.id} style={styles.unitCard}>
+                        <View style={styles.unitHeaderRow}>
+                          <Text style={styles.unitTitle}>{u.label}</Text>
+                          <Text style={styles.unitPrice}>{u.priceLabel}</Text>
+                        </View>
+                        <View style={styles.unitMetaRow}>
+                          {u.sizeLabel ? <Text style={styles.unitMetaText}>{u.sizeLabel}</Text> : null}
+                          {u.metaLabel ? <Text style={styles.unitMetaText}>{u.metaLabel}</Text> : null}
+                        </View>
+                      </View>
+                    ))}
+
+                    {offplanDetails.units.length > 12 ? (
+                      <Pressable
+                        onPress={() => {
+                          if (unitsExpanded) {
+                            setUnitsExpanded(false);
+                            requestAnimationFrame(() => {
+                              scrollViewRef.current?.scrollTo({ y: unitsSectionY, animated: true });
+                            });
+                          } else {
+                            setUnitsExpanded(true);
+                          }
+                        }}
+                        style={{ alignSelf: 'flex-start' }}
+                      >
+                        <Text style={[styles.helperText, { color: Colors.bronze, fontWeight: '700' }]}>
+                          {unitsExpanded ? 'Show less' : `Show all (${offplanDetails.units.length})`}
+                        </Text>
+                        {!unitsExpanded ? (
+                          <Text style={styles.helperText}>Showing 12 of {offplanDetails.units.length} units</Text>
+                        ) : null}
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+
+              {offplanDetails.paymentPlans.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Payment plans</Text>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+                    {offplanDetails.paymentPlans.map((plan) => {
+                      const active = (activePaymentPlanId ?? offplanDetails.paymentPlans[0]?.id) === plan.id;
+                      return (
+                        <Pressable
+                          key={plan.id}
+                          onPress={() => setActivePaymentPlanId(plan.id)}
+                          style={[styles.tabChip, active && styles.tabChipActive]}
+                        >
+                          <Text style={[styles.tabText, active && styles.tabTextActive]} numberOfLines={1}>
+                            {plan.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {(() => {
+                    const selectedId = activePaymentPlanId ?? offplanDetails.paymentPlans[0]?.id;
+                    const activePlan = offplanDetails.paymentPlans.find((p) => p.id === selectedId) ?? offplanDetails.paymentPlans[0];
+                    if (!activePlan) return null;
+
+                    return (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: scaleHeight(12) }}>
+                        <View style={styles.phaseRow}>
+                          {activePlan.phases.map((ph, idx) => (
+                            <React.Fragment key={ph.id}>
+                              <View style={styles.phaseBox}>
+                                <Text style={styles.phaseValue}>{ph.value}</Text>
+                                <Text style={styles.phaseLabel}>{ph.label}</Text>
+                              </View>
+                              {idx < activePlan.phases.length - 1 ? (
+                                <View style={styles.phaseArrowWrap}>
+                                  <Text style={styles.phaseArrowText}>→</Text>
+                                </View>
+                              ) : null}
+                            </React.Fragment>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    );
+                  })()}
+                </View>
+              ) : null}
+
+              {offplanDetails.attachments.length > 0 ? (
+                <View style={styles.section}>
+                  <View style={styles.sectionTitleRow}>
+                    <Text style={styles.sectionTitle}>Files</Text>
+                    <FileText size={18} color={Colors.bronze} />
+                  </View>
+
+                  <View style={{ gap: scaleHeight(10) }}>
+                    {offplanDetails.attachments.map((att) => (
+                      <View key={att.id} style={styles.attachmentRow}>
+                        <View style={styles.attachmentLeft}>
+                          <FileText size={16} color={Colors.bronze} />
+                          <Text style={styles.attachmentText} numberOfLines={1}>
+                            {att.name}
+                          </Text>
+                        </View>
+
+                        <Pressable
+                          onPress={async () => {
+                            try {
+                              const supported = await Linking.canOpenURL(att.url);
+                              if (!supported) {
+                                Alert.alert('Unable to open file', 'No app available to open this link.');
+                                return;
+                              }
+                              await Linking.openURL(att.url);
+                            } catch (e) {
+                              Alert.alert('Unable to open file', 'Please try again later.');
+                            }
+                          }}
+                          style={styles.attachmentButton}
+                        >
+                          <Text style={styles.attachmentButtonText}>View</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Amenities</Text>
+              <View style={styles.amenitiesGrid}>
+                {(property?.amenities ?? []).map((amenity: string, index: number) => (
+                  <View key={index} style={styles.amenityChip}>
+                    <Text style={styles.amenityText}>{amenity}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
+          )}
 
           {/* <View style={styles.section}>
             <Text style={styles.sectionTitle}>Lifestyle</Text>
@@ -532,6 +776,7 @@ export default function PropertyDetailScreen() {
             </View>
           </View> */}
 
+          {!isOffplanMode ? (
           <View style={styles.agentCard}>
             <Text style={styles.sectionTitle}>Agent Information</Text>
             <View style={styles.agentRow}>
@@ -553,21 +798,23 @@ export default function PropertyDetailScreen() {
               </View>
             </View>
           </View>
+          ) : null}
 
           <View style={styles.spacer} />
         </View>
       </ScrollView>
 
+      {!isOffplanMode ? (
       <View style={styles.footer}>
         <ScheduleVisitModal
           visible={scheduleVisitOpen}
           onClose={() => setScheduleVisitOpen(false)}
-          propertyTitle={property.title}
+          propertyTitle={property?.title ?? ''}
           onSchedule={(date, time) => {
             setScheduleVisitOpen(false);
             Alert.alert(
               'Visit Scheduled',
-              `Your visit to "${property.title}" has been scheduled for ${date.toLocaleDateString()} at ${time.toLocaleTimeString()}.`
+              `Your visit to "${property?.title ?? ''}" has been scheduled for ${date.toLocaleDateString()} at ${time.toLocaleTimeString()}.`
             );
           }}
         />
@@ -604,6 +851,7 @@ export default function PropertyDetailScreen() {
           </Pressable>
         </View>
       </View>
+      ) : null}
     </View>
   );
 }
@@ -747,6 +995,136 @@ const styles = StyleSheet.create({
     fontSize: scaleFont(14),
     fontWeight: '500',
   },
+  offplanSummaryCard: {
+    backgroundColor: Colors.textLight,
+    padding: scaleWidth(20),
+    borderRadius: scaleWidth(16),
+    marginBottom: scaleHeight(20),
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  offplanRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: scaleWidth(12),
+  },
+  offplanLabel: {
+    fontSize: scaleFont(14),
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  offplanValue: {
+    flex: 1,
+    textAlign: 'right' as const,
+    fontSize: scaleFont(12),
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  offplanDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginVertical: scaleHeight(12),
+  },
+  unitCard: {
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: scaleWidth(12),
+    padding: scaleWidth(14),
+  },
+  unitHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: scaleWidth(10),
+  },
+  unitTitle: {
+    flex: 1,
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  unitPrice: {
+    fontSize: scaleFont(14),
+    fontWeight: '700',
+    color: Colors.bronze,
+  },
+  unitMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: scaleWidth(10),
+    marginTop: scaleHeight(8),
+  },
+  unitMetaText: {
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  helperText: {
+    marginTop: scaleHeight(8),
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    gap: scaleWidth(10),
+    paddingVertical: scaleHeight(4),
+  },
+  tabChip: {
+    paddingVertical: scaleHeight(10),
+    paddingHorizontal: scaleWidth(14),
+    borderRadius: scaleWidth(999),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.textLight,
+    marginRight:scaleWidth(14),
+  },
+  tabChipActive: {
+    borderColor: Colors.bronze,
+    backgroundColor: 'rgba(183, 138, 59, 0.12)',
+  },
+  tabText: {
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: Colors.bronze,
+  },
+  phaseRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    flexWrap: 'nowrap',
+  },
+  phaseBox: {
+    width: scaleWidth(120),
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.textLight,
+    padding: scaleWidth(12),
+  },
+  phaseValue: {
+    fontSize: scaleFont(18),
+    fontWeight: '800',
+    color: Colors.bronze,
+  },
+  phaseLabel: {
+    marginTop: scaleHeight(6),
+    fontSize: scaleFont(12),
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  phaseArrowWrap: {
+    width: scaleWidth(26),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  phaseArrowText: {
+    fontSize: scaleFont(18),
+    color: Colors.textSecondary,
+    fontWeight: '900',
+  },
   keyDetailsCard: {
     flexDirection: 'row',
     backgroundColor: Colors.textLight,
@@ -784,6 +1162,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(12),
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: scaleWidth(10),
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: scaleWidth(12),
+    paddingVertical: scaleHeight(12),
+    paddingHorizontal: scaleWidth(14),
+    borderRadius: scaleWidth(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.textLight,
+  },
+  attachmentLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(10),
+  },
+  attachmentText: {
+    flex: 1,
+    fontSize: scaleFont(13),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  attachmentButton: {
+    paddingVertical: scaleHeight(8),
+    paddingHorizontal: scaleWidth(14),
+    borderRadius: scaleWidth(999),
+    borderWidth: 1,
+    borderColor: Colors.bronze,
+    backgroundColor: 'rgba(183, 138, 59, 0.10)',
+  },
+  attachmentButtonText: {
+    fontSize: scaleFont(12),
+    fontWeight: '800',
+    color: Colors.bronze,
   },
   description: {
     fontSize: scaleFont(14),
@@ -930,6 +1351,7 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(14),
     paddingHorizontal: scaleWidth(32),
     borderRadius: scaleWidth(24),
+    marginTop:scaleHeight(14),
   },
   backButtonText: {
     fontSize: scaleFont(16),

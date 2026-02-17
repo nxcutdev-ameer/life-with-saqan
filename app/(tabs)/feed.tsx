@@ -131,6 +131,50 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  const setAudible = useCallback(() => {
+    if (!player) return;
+    try {
+      player.muted = false;
+      player.volume = 0.8;
+    } catch {}
+  }, [player]);
+
+  const setSilent = useCallback(() => {
+    if (!player) return;
+    try {
+      player.muted = true;
+      player.volume = 0;
+    } catch {}
+  }, [player]);
+
+  const pauseSafe = useCallback(() => {
+    if (!player) return;
+    try {
+      player.pause();
+    } catch {}
+  }, [player]);
+
+  const playSafeWithRetry = useCallback(() => {
+    if (!player) return () => {};
+
+    const tryPlay = () => {
+      try {
+        player.play();
+      } catch {}
+    };
+
+    tryPlay();
+    const t1 = setTimeout(tryPlay, 120);
+    const t2 = setTimeout(tryPlay, 320);
+    const t3 = setTimeout(tryPlay, 600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [player]);
+
   const [selectedSubtitleUrl, setSelectedSubtitleUrl] = useState<string>('');
 
   useEffect(() => {
@@ -153,83 +197,41 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
     if (!player) return;
 
     if (isViewable) {
-      // Only unmute when the item is viewable.
-      try {
-        player.muted = false;
-        player.volume = 0.8;
-      } catch {}
+      setAudible();
 
       if (isPaused) {
-        player.pause();
-      } else {
-        // Autoplay can be flaky on the first mount while the player is still loading.
-        // Do a couple best-effort retries (without overriding an explicit user pause).
-        const tryPlay = () => {
-          try {
-            player.play();
-          } catch {}
-        };
-
-        tryPlay();
-        const t1 = setTimeout(tryPlay, 120);
-        const t2 = setTimeout(tryPlay, 320);
-
-        return () => {
-          clearTimeout(t1);
-          clearTimeout(t2);
-        };
+        pauseSafe();
+        return;
       }
-    } else {
-      // Mute when not viewable to avoid audio bleed from pooled players.
-      try {
-        player.muted = true;
-        player.volume = 0;
-      } catch {}
-      // Ensure we never keep a feed item at 2x when it leaves the viewport.
-      setIsSpeeding(false);
-      onSpeedingChange?.(false);
-      try {
-        (player as any).playbackRate = 1;
-      } catch {}
-      try {
-        (player as any).rate = 1;
-      } catch {}
 
-      // Pause when not viewable, but DO NOT reset time/isPaused.
-      try {
-        player.pause();
-      } catch {}
+      return playSafeWithRetry();
     }
-  }, [isPaused, isViewable, player, onSpeedingChange]);
+
+    // Not viewable => silent + paused.
+    setSilent();
+
+    // Ensure we never keep a feed item at 2x when it leaves the viewport.
+    setIsSpeeding(false);
+    onSpeedingChange?.(false);
+    try {
+      (player as any).playbackRate = 1;
+    } catch {}
+    try {
+      (player as any).rate = 1;
+    } catch {}
+
+    pauseSafe();
+  }, [isPaused, isViewable, onSpeedingChange, pauseSafe, playSafeWithRetry, setAudible, setSilent, player]);
 
   // Forced autoplay fallback for the first cell. This handles cases where FlatList viewability
   // doesn't fire immediately on navigation (common with fast mounts + pagingEnabled).
   React.useEffect(() => {
     if (!autoPlay) return;
-    if (!player) return;
     if (isPaused) return;
 
-    const tryPlay = () => {
-      try {
-        player.muted = false;
-        player.volume = 0.8;
-      } catch {}
-      try {
-        player.play();
-      } catch {}
-    };
-
-    tryPlay();
-    const t1 = setTimeout(tryPlay, 120);
-    const t2 = setTimeout(tryPlay, 320);
-    const t3 = setTimeout(tryPlay, 600);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [autoPlay, isPaused, player]);
+    setAudible();
+    return playSafeWithRetry();
+  }, [autoPlay, isPaused, playSafeWithRetry, setAudible]);
 
   React.useEffect(() => {
     if (!player) return;
@@ -667,13 +669,27 @@ export default function FeedScreen() {
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const listRef = useRef<Animated.FlatList<any> | null>(null);
-  const isFocused = useIsFocused();
+  // NOTE: `useIsFocused` is intentionally not used for playback gating; useFocusEffect is more reliable here.
+  const _isFocused = useIsFocused();
   const [screenActive, setScreenActive] = useState(false);
+  const currentIndexRef = useRef(0);
+
   useFocusEffect(
     useCallback(() => {
       setScreenActive(true);
-      return () => setScreenActive(false);
-    }, [])
+
+      // Resume playback on the currently visible item when coming back to this tab/screen.
+      requestAnimationFrame(() => {
+        const item = filteredProperties[currentIndexRef.current];
+        if (item?.id) setActiveItemId(item.id);
+      });
+
+      return () => {
+        // Stop all playback when leaving the feed screen.
+        setScreenActive(false);
+        setActiveItemId(null);
+      };
+    }, [filteredProperties])
   );
   const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -868,12 +884,12 @@ export default function FeedScreen() {
     });
   }, [firstItemId]);
 
-  // When the screen becomes active, re-assert the active item to trigger the play effect.
+  // When the screen becomes active, re-assert the current visible item to trigger the play effect.
   useEffect(() => {
     if (!screenActive) return;
-    if (!firstItemId) return;
-    setActiveItemId(firstItemId);
-  }, [firstItemId, screenActive]);
+    const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
+    if (item?.id) setActiveItemId(item.id);
+  }, [filteredProperties, screenActive]);
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
 
   useEffect(() => {
@@ -895,6 +911,7 @@ export default function FeedScreen() {
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
+    if (!screenActive) return;
     // With pagingEnabled, at most one item should be predominantly visible.
     const active = viewable.find((it) => it.isViewable);
     const activeId = (active?.key as string) || null;
@@ -907,7 +924,10 @@ export default function FeedScreen() {
       return;
     }
 
-    const activeIndex = items.findIndex((p) => p.id === activeId);
+    const activeIndex = filteredProperties.findIndex((p) => p.id === activeId);
+    if (activeIndex >= 0) {
+      currentIndexRef.current = activeIndex;
+    }
 
     // Once the user scrolls past the first few items, we can release pooled warmup players
     // to reduce memory usage.
@@ -1007,8 +1027,9 @@ export default function FeedScreen() {
   }, []);
 
   const handleNavigateToProperty = useCallback(
-    (propertyReference: string, videoId: string) => {
-      router.push(buildPropertyDetailsRoute({ propertyReference, id: videoId }));
+    (propertyReference: string, videoId: string, type?: string) => {
+      const mode = type === 'offplan' ? 'offplan' : undefined;
+      router.push(buildPropertyDetailsRoute({ propertyReference, id: videoId, mode }));
     },
     [router]
   );
@@ -1022,7 +1043,7 @@ export default function FeedScreen() {
         item={item}
         index={index}
         pooledPlayer={index < 3 && item.videoUrl ? pooledByUrl[item.videoUrl]?.player : undefined}
-        autoPlay={index === 0 && canPlay && activeItemId === item.id}
+        autoPlay={canPlay && activeItemId === item.id}
         isViewable={canPlay && activeItemId === item.id}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
@@ -1034,7 +1055,7 @@ export default function FeedScreen() {
         onOpenComments={handleOpenComments}
         onSpeedingChange={handleSpeedingChange}
         onScrubbingChange={handleScrubbingChange}
-        onNavigateToProperty={(propertyReference) => handleNavigateToProperty(propertyReference, item.id)}
+        onNavigateToProperty={(propertyReference) => handleNavigateToProperty(propertyReference, item.id, item.type)}
         onShare={handleShare}
         globalSubtitleLanguageCode={globalSubtitleLanguageCode}
         onGlobalSubtitleLanguageChange={(code) => setGlobalSubtitleLanguageCode(code)}
@@ -1108,26 +1129,38 @@ export default function FeedScreen() {
         }
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
-        decelerationRate={Platform.OS === 'ios' ? 0.98 : 0.98}
-        disableIntervalMomentum={false}
+        overScrollMode="never"
+        decelerationRate="fast"
+        disableIntervalMomentum={true}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews={false}
-        // Optimized for fast swiping: keep more items mounted and render batches faster
-        initialNumToRender={4}
-        maxToRenderPerBatch={6}
-        // Larger window ensures videos are ready during fast swipes
-        windowSize={11}
-        updateCellsBatchingPeriod={5}
+        removeClippedSubviews
+        // Tuned for snappy swipes: render fewer offscreen items to reduce JS/UI work per gesture.
+        // (Players for first items are warmed separately.)
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        updateCellsBatchingPeriod={16}
         getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
         // Avoid landing on index 1 due to "maintain visible position" heuristics when data changes.
         // We want the feed to always start from the top on entry.
         // maintainVisibleContentPosition={undefined as any}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
+          {
+            useNativeDriver: true,
+            listener: (e: any) => {
+              const offsetY = e.nativeEvent.contentOffset.y as number;
+              const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
+              if (nextIndex !== currentIndexRef.current) {
+                currentIndexRef.current = nextIndex;
+                const next = filteredProperties[nextIndex];
+                if (screenActive && next?.id) setActiveItemId(next.id);
+              }
+            },
+          }
         )}
-        scrollEventThrottle={8}
+        scrollEventThrottle={16}
         onMomentumScrollBegin={() => {
           endReachedCalledDuringMomentum.current = false;
         }}
@@ -1140,6 +1173,16 @@ export default function FeedScreen() {
           }
         }}
         onEndReachedThreshold={0.8} // Prefetch next page a bit before the end without over-triggering
+        onMomentumScrollEnd={(e) => {
+          // Deterministic active item selection (fixes wrong item playing after navigating away/back).
+          const offsetY = e.nativeEvent.contentOffset.y;
+          const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
+          currentIndexRef.current = nextIndex;
+          const item = filteredProperties[nextIndex];
+          if (screenActive && item?.id) {
+            setActiveItemId(item.id);
+          }
+        }}
       />
       <CommentsModal
         visible={commentsModalVisible}

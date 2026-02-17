@@ -10,6 +10,7 @@ import type { Href } from 'expo-router';
 export function buildPropertyDetailsRoute(input: {
   propertyReference?: string | null;
   id?: string | null;
+  mode?: 'ready' | 'offplan' | string | null;
 }): Href {  
   // Using an object Href keeps expo-router types happy (avoids pushing arbitrary strings).
 
@@ -20,15 +21,18 @@ export function buildPropertyDetailsRoute(input: {
 
   const videoId = (input.id || '').trim();
 
+  const mode = (input.mode || '').trim();
+  const modeParams = mode ? { mode } : {};
+
   if (videoId && videoId !== ref) {
     return {
       pathname: '/property/[id]',
-      params: { id: ref, videoId },
+      params: { id: ref, videoId, ...modeParams },
     } as unknown as Href;
   }
 
   return {
     pathname: '/property/[id]',
-    params: { id: ref },
+    params: { id: ref, ...modeParams },
   } as unknown as Href;
 }

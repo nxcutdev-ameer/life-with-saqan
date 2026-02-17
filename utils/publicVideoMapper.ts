@@ -125,6 +125,8 @@ export function mapPublicVideoToProperty(v: any): Property {
     id: String(v.video_id),
     // Preserve backend transaction type for strict feed filtering (RENT/BUY/SALE/STAY)
     transactionType: meta?.type ?? backendProperty?.type ?? undefined,
+    // Preserve backend property kind (sale/rent/offplan) for routing.
+    type: backendProperty?.type ?? undefined,
     propertyReference: v?.property_reference,
     title,
     description: backendProperty?.description || v.description || '',

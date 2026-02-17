@@ -33,6 +33,8 @@ export interface Agent {
 export interface Property {
   id: string;
   propertyReference?: string;
+  /** Backend property type returned by APIs (e.g. sale, rent, offplan). */
+  type?: string;
   title: string;
   description: string;
   rooms?: { name: string; timestamp: number }[];
