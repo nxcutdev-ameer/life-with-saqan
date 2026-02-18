@@ -20,6 +20,7 @@ function RootLayoutNav() {
       <Stack.Screen name="lifestyle" />
       <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
       <Stack.Screen name="property/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="pdf-viewer" options={{ presentation: 'card' }} />
       <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
       <Stack.Screen name="agent/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="messages" options={{ presentation: 'card' }} />

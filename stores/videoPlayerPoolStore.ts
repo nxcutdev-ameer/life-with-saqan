@@ -13,6 +13,10 @@ type VideoPlayerPoolState = {
   byUrl: Record<string, VideoPlayerPoolEntry>;
   upsert: (url: string, player: VideoPlayer) => void;
   get: (url: string) => VideoPlayer | null;
+  /** Pause + mute all players (best effort). */
+  pauseAll: () => void;
+  /** Pause + mute all except a set of urls. */
+  pauseAllExcept: (keepUrls: string[]) => void;
   releaseAll: () => void;
   releaseExcept: (keepUrls: string[]) => void;
 };
@@ -36,6 +40,34 @@ export const useVideoPlayerPoolStore = create<VideoPlayerPoolState>((set, get) =
   get: (url) => {
     if (!url) return null;
     return get().byUrl[url]?.player ?? null;
+  },
+  pauseAll: () => {
+    const entries = Object.values(get().byUrl);
+    for (const e of entries) {
+      try {
+        e.player.muted = true;
+        e.player.volume = 0;
+      } catch {}
+      try {
+        e.player.pause();
+      } catch {}
+    }
+  },
+  pauseAllExcept: (keepUrls) => {
+    const keep = new Set(keepUrls.filter(Boolean));
+    const byUrl = get().byUrl;
+    for (const url of Object.keys(byUrl)) {
+      if (keep.has(url)) continue;
+      const p = byUrl[url]?.player;
+      if (!p) continue;
+      try {
+        p.muted = true;
+        p.volume = 0;
+      } catch {}
+      try {
+        p.pause();
+      } catch {}
+    }
   },
   releaseAll: () => {
     const entries = Object.values(get().byUrl);

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Text,
   View,
@@ -7,14 +7,18 @@ import {
   Animated,
   Pressable,
   PanResponder,
+  AppState,
 } from 'react-native';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useVideoPlaybackRegistryStore } from '@/stores/videoPlaybackRegistryStore';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { mockProperties, filterProperties } from '@/mocks/properties';
+import { fetchPublicVideos } from '@/utils/publicVideosApi';
+import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 import { Property } from '@/types';
 import * as Haptics from 'expo-haptics';
 import CommentsModal from '@/components/CommentsModal';
@@ -41,12 +45,20 @@ interface ReelItemProps {
 }
 
 function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: ReelItemProps) {
+  const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
+  const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
   const [isPaused, setIsPaused] = useState(false);
   const player = useVideoPlayer(item.videoUrl, (player) => {
     player.loop = true;
     player.muted = false;
     player.volume = 0.8;
   });
+
+  React.useEffect(() => {
+    if (!player) return;
+    registerPlayer('reels', item.videoUrl, player);
+    return () => unregisterPlayer('reels', item.videoUrl, player);
+  }, [item.videoUrl, player, registerPlayer, unregisterPlayer]);
 
   // `player.currentTime` is not React state. Track it locally so UI (progress bar) updates live.
   const [currentTime, setCurrentTime] = useState(0);
@@ -254,7 +266,9 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           onOpenComments={onOpenComments}
           onSeek={handleSeek}
           onNavigateToProperty={() => {
-            player.pause();
+            try {
+              player.pause();
+            } catch {}
             setIsPaused(true);
             onNavigateToProperty(item.id);
           }}
@@ -265,14 +279,48 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
 
 export default function ReelsScreen() {
   const router = useRouter();
-  const { transactionType, location, lifestyles } = useUserPreferences();
-  
-  const filteredProperties = filterProperties(
-    mockProperties,
-    transactionType,
-    location,
-    lifestyles
+  useUserPreferences();
+
+  const pauseAllRegistry = useVideoPlaybackRegistryStore((s) => s.pauseAll);
+
+  const [items, setItems] = useState<Property[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      (async () => {
+        try {
+          setIsFetching(true);
+          const res = await fetchPublicVideos({ page: 1, perPage: 30 });
+          const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
+          const offplanOnly = mapped.filter((p) => (p.type ?? '').toLowerCase() === 'offplan');
+          if (!cancelled) setItems(offplanOnly);
+        } catch {
+          if (!cancelled) setItems([]);
+        } finally {
+          if (!cancelled) setIsFetching(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+        pauseAllRegistry('reels');
+      };
+    }, [pauseAllRegistry]) 
   );
+
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        pauseAllRegistry('reels');
+      }
+    });
+    return () => sub.remove();
+  }, [pauseAllRegistry]);
+
+  const filteredProperties = items;
 
   const [viewableItems, setViewableItems] = useState<string[]>([]);
   const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
@@ -287,7 +335,7 @@ export default function ReelsScreen() {
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: items }: { viewableItems: ViewToken[] }) => {
-    setViewableItems(items.map(item => item.key as string));
+    setViewableItems(items.map((it) => String(it.key ?? '')));
   }).current;
 
   const toggleLike = (propertyId: string) => {
@@ -336,13 +384,11 @@ export default function ReelsScreen() {
     );
   };
 
-  if (filteredProperties.length === 0) {
+  if (!isFetching && filteredProperties.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No properties found</Text>
-        <Text style={styles.emptyText}>
-          Try adjusting your filters or select different lifestyles
-        </Text>
+        <Text style={styles.emptyTitle}>No offplan videos found</Text>
+        <Text style={styles.emptyText}>Please try again later.</Text>
       </View>
     );
   }
@@ -377,7 +423,11 @@ export default function ReelsScreen() {
         visible={commentsModalVisible}
         onClose={() => setCommentsModalVisible(false)}
         propertyId={selectedPropertyId || ''}
-        commentsCount={selectedPropertyId ? filteredProperties.find(p => p.id === selectedPropertyId)?.commentsCount || 0 : 0}
+        commentsCount={
+          selectedPropertyId
+            ? filteredProperties.find((p) => p.id === selectedPropertyId)?.commentsCount || 0
+            : 0
+        }
       />
       <LocationsModal
         visible={locationsModalVisible}

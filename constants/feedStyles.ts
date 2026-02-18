@@ -138,7 +138,7 @@ export const feedStyles = StyleSheet.create({
   },
   agentAvatarContainer: {
     position: 'absolute' as const, //relative
-    bottom: -(SCREEN_HEIGHT * 0.40),
+    bottom: -(SCREEN_HEIGHT * 0.39),
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     alignItems: 'center',

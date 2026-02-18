@@ -2973,7 +2973,7 @@ export default function UploadScreen() {
                   <Image source={{ uri: img.uri }} style={styles.imageThumb} />
                   {img.uploading ? (
                     <View style={styles.imageUploadingOverlay} pointerEvents="none">
-                      <SavingSpinner size={18} color={Colors.bronze} accessibilityLabel="Uploading image" />
+                      <SavingSpinner size={28} color={Colors.bronze} accessibilityLabel="Uploading image" />
                     </View>
                   ) : null}
                   <Pressable

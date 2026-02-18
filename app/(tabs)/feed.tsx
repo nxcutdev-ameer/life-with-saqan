@@ -11,6 +11,7 @@ import {
   Share,
   RefreshControl,
   Platform,
+  AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -27,6 +28,7 @@ import { makeFeedFilterKey } from '@/utils/feedFilter';
 import { useLocalSearchParams } from 'expo-router';
 import { warmUpExpoVideoPlayers } from '@/utils/expoVideoWarmup';
 import { useVideoPlayerPoolStore } from '@/stores/videoPlayerPoolStore';
+import { useVideoPlaybackRegistryStore } from '@/stores/videoPlaybackRegistryStore';
 import { useSubtitleStore } from '@/stores/subtitleStore';
 import { findActiveCue, parseVtt } from '@/utils/vtt';
 import { fetchSubtitleSegmentUrisFromPlaylist, resolveSubtitleTrackFromHlsMaster } from '@/utils/hlsSubtitles';
@@ -69,6 +71,9 @@ interface FeedItemProps {
 }
 
 const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+  const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
+  const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
+  const OWNER: 'feed' = 'feed';
   // Subscribe per-item so only the affected cell re-renders when likes change.
   const isLiked = useEngagementStore((s) => s.isLiked(item.id));
   const [isPaused, setIsPaused] = useState(false);
@@ -117,6 +122,13 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
 
   const pooledOk = pooledPlayer && (pooledPlayer as any).status !== 'error';
   const player = pooledOk ? pooledPlayer : hookPlayer;
+
+  // Register the *actual* player used for this cell so the feed can hard-pause everything on fast scroll.
+  useEffect(() => {
+    if (!player) return;
+    registerPlayer('feed', item.videoUrl, player);
+    return () => unregisterPlayer('feed', item.videoUrl, player);
+  }, [item.videoUrl, player, registerPlayer, unregisterPlayer]);
 
   // Ensure pooled players get the same setup as hook players.
   useEffect(() => {
@@ -343,7 +355,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
     };
   }, [isViewable, selectedSubtitleUrl, player]);
 
-  const EDGE_ZONE_WIDTH = scaleWidth(70);
+  const EDGE_ZONE_WIDTH = scaleWidth(40);
 
   const togglePause = () => {
     if (!player) return;
@@ -674,22 +686,32 @@ export default function FeedScreen() {
   const [screenActive, setScreenActive] = useState(false);
   const currentIndexRef = useRef(0);
 
+  const pooledByUrl = useVideoPlayerPoolStore((s) => s.byUrl);
+  const releasePoolExcept = useVideoPlayerPoolStore((s) => s.releaseExcept);
+  const pauseAllPool = useVideoPlayerPoolStore((s) => s.pauseAll);
+  const pauseAllPoolExcept = useVideoPlayerPoolStore((s) => s.pauseAllExcept);
+  const pauseAllRegistry = useVideoPlaybackRegistryStore((s) => s.pauseAll);
+  const pauseAllRegistryExcept = useVideoPlaybackRegistryStore((s) => s.pauseAllExcept);
+
   useFocusEffect(
     useCallback(() => {
       setScreenActive(true);
 
-      // Resume playback on the currently visible item when coming back to this tab/screen.
-      requestAnimationFrame(() => {
-        const item = filteredProperties[currentIndexRef.current];
-        if (item?.id) setActiveItemId(item.id);
-      });
+      // Set active immediately on focus to avoid a "paused on landing" frame.
+      const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
+      if (item?.id) {
+        setActiveItemId(item.id);
+      }
 
       return () => {
         // Stop all playback when leaving the feed screen.
         setScreenActive(false);
         setActiveItemId(null);
+        // Hard stop any pooled players (prevents audio continuing after fast navigation/reloads).
+        pauseAllPool();
+        pauseAllRegistry();
       };
-    }, [filteredProperties])
+    }, [filteredProperties, pauseAllPool, pauseAllRegistry])
   );
   const [isHoldingSpeed, setIsHoldingSpeed] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -711,7 +733,7 @@ export default function FeedScreen() {
       setIsFetching(true);
       const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
       const fetched = (res?.data ?? []).map(mapVideoToProperty);
-
+      
       // TEMP: filtering disabled; show all videos.
       const newItems = fetched;
 
@@ -890,6 +912,32 @@ export default function FeedScreen() {
     const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
     if (item?.id) setActiveItemId(item.id);
   }, [filteredProperties, screenActive]);
+
+  // App background/foreground safety: pause everything when app goes inactive.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') {
+        pauseAllPool();
+        pauseAllRegistry();
+      } else {
+        // re-assert active item to resume (FeedItem will handle play)
+        const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
+        if (screenActive && item?.id) setActiveItemId(item.id);
+      }
+    });
+    return () => sub.remove();
+  }, [filteredProperties, pauseAllPool, screenActive]);
+
+  // Ensure only the active item's player can keep playing. Best-effort: pause/mute others.
+  useEffect(() => {
+    if (!screenActive) return;
+    const active = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
+    const keepUrl = active?.videoUrl ? [active.videoUrl] : [];
+    if (!keepUrl.length) return;
+
+    pauseAllPoolExcept(keepUrl);
+    pauseAllRegistryExcept('feed', keepUrl);
+  }, [activeItemId, filteredProperties, pauseAllPoolExcept, pauseAllRegistryExcept, screenActive]);
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
 
   useEffect(() => {
@@ -904,9 +952,9 @@ export default function FeedScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
 
   const viewabilityConfig = useRef({
-    // Aggressive threshold for instant video transitions during fast swipes.
-    itemVisiblePercentThreshold: 15,
-    minimumViewTime: 10,
+    // Fast switching for instant playback, but still avoids tiny overlaps.
+    itemVisiblePercentThreshold: 55,
+    minimumViewTime: 0,
     waitForInteraction: false,
   }).current;
 
@@ -1034,9 +1082,6 @@ export default function FeedScreen() {
     [router]
   );
 
-  const pooledByUrl = useVideoPlayerPoolStore((s) => s.byUrl);
-  const releasePoolExcept = useVideoPlayerPoolStore((s) => s.releaseExcept);
-
   const renderProperty = useCallback(
     ({ item, index }: { item: FeedVideoItem; index: number }) => (
       <FeedItem
@@ -1115,7 +1160,7 @@ export default function FeedScreen() {
         renderItem={renderProperty}
         keyExtractor={keyExtractor}
         scrollEnabled={!isScrubbing && !isHoldingSpeed}
-        pagingEnabled
+        pagingEnabled={Platform.OS === 'ios'}
         showsVerticalScrollIndicator={false}
         // Offset the spinner so it doesn't sit under the absolute AppHeader.
         progressViewOffset={insets.top + scaleHeight(75)}
@@ -1127,14 +1172,16 @@ export default function FeedScreen() {
             progressViewOffset={insets.top + scaleHeight(75)}
           />
         }
-        snapToInterval={SCREEN_HEIGHT}
+        snapToInterval={Platform.OS === 'android' ? SCREEN_HEIGHT : undefined}
         snapToAlignment="start"
         overScrollMode="never"
-        decelerationRate="fast"
-        disableIntervalMomentum={true}
+        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.98}
+        disableIntervalMomentum={Platform.OS === 'android'}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews
+        // NOTE: disabling clipping improves reliability for video players during fast swipes.
+        // Clipping can tear down native views before pause/mute effects run, causing "ghost audio".
+        removeClippedSubviews={false}
         // Tuned for snappy swipes: render fewer offscreen items to reduce JS/UI work per gesture.
         // (Players for first items are warmed separately.)
         initialNumToRender={2}
@@ -1145,24 +1192,34 @@ export default function FeedScreen() {
         // Avoid landing on index 1 due to "maintain visible position" heuristics when data changes.
         // We want the feed to always start from the top on entry.
         // maintainVisibleContentPosition={undefined as any}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          {
-            useNativeDriver: true,
-            listener: (e: any) => {
-              const offsetY = e.nativeEvent.contentOffset.y as number;
-              const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
-              if (nextIndex !== currentIndexRef.current) {
-                currentIndexRef.current = nextIndex;
-                const next = filteredProperties[nextIndex];
-                if (screenActive && next?.id) setActiveItemId(next.id);
-              }
-            },
-          }
-        )}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+        })}
         scrollEventThrottle={16}
+        onScrollBeginDrag={() => {
+          // Hard-stop any lingering audio as the user starts a fast swipe,
+          // but keep the currently active item playing for an instant/continuous feel.
+          const active = filteredProperties[currentIndexRef.current];
+          const keepUrl = active?.videoUrl ? [active.videoUrl] : [];
+          if (keepUrl.length) {
+            pauseAllRegistryExcept('feed', keepUrl);
+            pauseAllPoolExcept(keepUrl);
+          } else {
+            pauseAllRegistry('feed');
+            pauseAllPool();
+          }
+        }}
         onMomentumScrollBegin={() => {
           endReachedCalledDuringMomentum.current = false;
+          const active = filteredProperties[currentIndexRef.current];
+          const keepUrl = active?.videoUrl ? [active.videoUrl] : [];
+          if (keepUrl.length) {
+            pauseAllRegistryExcept('feed', keepUrl);
+            pauseAllPoolExcept(keepUrl);
+          } else {
+            pauseAllRegistry('feed');
+            pauseAllPool();
+          }
         }}
         onEndReached={() => {
           if (endReachedCalledDuringMomentum.current) return;
@@ -1174,7 +1231,7 @@ export default function FeedScreen() {
         }}
         onEndReachedThreshold={0.8} // Prefetch next page a bit before the end without over-triggering
         onMomentumScrollEnd={(e) => {
-          // Deterministic active item selection (fixes wrong item playing after navigating away/back).
+          // Deterministic active item selection.
           const offsetY = e.nativeEvent.contentOffset.y;
           const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
           currentIndexRef.current = nextIndex;

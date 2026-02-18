@@ -40,6 +40,12 @@ export interface Property {
   rooms?: { name: string; timestamp: number }[];
   subtitles?: { code: string; label?: string; url?: string | null; filePath?: string | null }[];
   defaultPricing?: string;
+  /** Optional granular pricing by period (for rent/stay). */
+  periodPrices?: {
+    week?: number;
+    month?: number;
+    year?: number;
+  };
   price: number;
   currency: string;
   listingType: TransactionType;

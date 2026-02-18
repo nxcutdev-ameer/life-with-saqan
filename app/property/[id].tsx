@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+import { openWebUrl } from '@/utils/url';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
 import {
@@ -41,6 +42,7 @@ import {
 import {
   isOffplanApiResponsePayload,
   mapOffplanPayloadToDetails,
+  normalizeOffplanDetails,
   type OffplanDetails,
 } from '@/utils/offplanMapper';
 import type { Property, TransactionType, PropertyType, LifestyleType } from '@/types';
@@ -85,20 +87,51 @@ export default function PropertyDetailScreen() {
       return Number.isFinite(n) ? n : fallback;
     };
 
-    const listingType: TransactionType = payload.type === 'rent' ? 'RENT' : payload.type === 'stay' ? 'STAY' : 'BUY';
+    const weekPrice = parseNum(payload.meta?.week_price, 0);
+    const monthPrice = parseNum(payload.meta?.month_price, 0);
+    const yearPrice = parseNum(payload.meta?.year_price, 0);
+    const salePrice = parseNum(payload.meta?.sale_price, 0);
 
-    const pricing = payload.default_pricing ?? 'month';
-    
+    const hasPeriodPricing = Boolean(weekPrice || monthPrice || yearPrice);
+
+    // Sometimes backend omits `type`. Infer it from available pricing fields.
+    const backendType = (payload.type ?? '').toLowerCase();
+    const inferredListingType: TransactionType = backendType === 'rent'
+      ? 'RENT'
+      : backendType === 'stay'
+        ? 'STAY'
+        : backendType === 'sale'
+          ? 'BUY'
+          : backendType
+            ? 'BUY'
+            : hasPeriodPricing
+              ? 'RENT'
+              : 'BUY';
+
+    const listingType = inferredListingType;
+
+    const pricing = (payload.default_pricing ?? '').toLowerCase();
+
+    const periodPrices = hasPeriodPricing
+      ? {
+          week: weekPrice || undefined,
+          month: monthPrice || undefined,
+          year: yearPrice || undefined,
+        }
+      : undefined;
+
+    // Main `price` used by existing UI is set to the most relevant period.
     let price = 0;
     if (listingType === 'BUY') {
-      price = parseNum(payload.meta?.sale_price);
+      price = salePrice;
     } else {
-        price =
-        pricing === 'week'
-            ? parseNum(payload.meta?.week_price)
-            : pricing === 'year'
-            ? parseNum(payload.meta?.year_price)
-            : parseNum(payload.meta?.month_price);
+      if (pricing === 'week') price = weekPrice;
+      else if (pricing === 'year') price = yearPrice;
+      else if (pricing === 'month') price = monthPrice;
+      else {
+        // No default pricing: prefer month, then year, then week.
+        price = monthPrice || yearPrice || weekPrice;
+      }
     }
 
     const emirateName = payload.emirate?.name ?? 'UAE';
@@ -125,6 +158,7 @@ export default function PropertyDetailScreen() {
       title: payload.title ?? 'Untitled property',
       description: payload.description ?? '',
       defaultPricing: payload.default_pricing ?? undefined,
+      periodPrices,
       price,
       currency: 'AED',
       listingType,
@@ -178,7 +212,7 @@ export default function PropertyDetailScreen() {
         const cached = await AsyncStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (isOffplanMode) setOffplanDetails(parsed);
+          if (isOffplanMode) setOffplanDetails(normalizeOffplanDetails(parsed));
           else setProperty(parsed);
         }
       } catch {
@@ -200,7 +234,8 @@ export default function PropertyDetailScreen() {
         const payload = response.payload as any;
 
         if (isOffplanMode && isOffplanApiResponsePayload(payload)) {
-          const details = mapOffplanPayloadToDetails(payload);
+          const rawDetails = mapOffplanPayloadToDetails(payload);
+          const details = normalizeOffplanDetails(rawDetails) ?? rawDetails;
           setOffplanDetails(details);
           setActivePaymentPlanId(details.paymentPlans[0]?.id ?? null);
 
@@ -346,6 +381,13 @@ export default function PropertyDetailScreen() {
 
   const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
 
+  const showMultiPeriodPricing = Boolean(
+    property &&
+      !property.type &&
+      property.periodPrices &&
+      (property.periodPrices.week || property.periodPrices.month || property.periodPrices.year)
+  );
+
   const openPhone = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const telUrl = `tel:${agentPhoneRaw}`;
@@ -385,6 +427,49 @@ export default function PropertyDetailScreen() {
     const mailtoUrl = `mailto:${agentEmail}?subject=${subject}&body=${body}`;
     if (await Linking.canOpenURL(mailtoUrl)) {
       await Linking.openURL(mailtoUrl);
+    }
+  };
+
+  const developerPhoneRaw = (offplanDetails?.developerContact?.phone ?? '').trim();
+  const developerPhoneDigits = developerPhoneRaw.replace(/[^0-9]/g, '');
+  const developerWebsite = (offplanDetails?.developerContact?.website ?? offplanDetails?.developerWebsite ?? '').trim();
+  const showOffplanFooter = Boolean(isOffplanMode && developerPhoneDigits);
+  const showFooter = isOffplanMode ? showOffplanFooter : true;
+
+  const openDeveloperPhone = async () => {
+    if (!developerPhoneRaw) return;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      const telUrl = `tel:${developerPhoneRaw}`;
+      if (!(await Linking.canOpenURL(telUrl))) {
+        Alert.alert('Unable to call', 'Calling is not supported on this device.');
+        return;
+      }
+      await Linking.openURL(telUrl);
+    } catch {
+      Alert.alert('Unable to call', 'Please try again later.');
+    }
+  };
+
+  const openDeveloperWhatsApp = async () => {
+    if (!developerPhoneDigits) return;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const text = `Hi, I'm interested in ${offplanDetails?.title ?? 'this project'}`;
+    const encodedText = encodeURIComponent(text);
+
+    const appUrl = `whatsapp://send?phone=${developerPhoneDigits}&text=${encodedText}`;
+    const webUrl = `https://wa.me/${developerPhoneDigits}?text=${encodedText}`;
+
+    try {
+      if (await Linking.canOpenURL(appUrl)) {
+        await Linking.openURL(appUrl);
+        return;
+      }
+      await Linking.openURL(webUrl);
+    } catch {
+      Alert.alert('WhatsApp not available', 'Please install WhatsApp to contact the developer.');
     }
   };
 
@@ -516,7 +601,7 @@ export default function PropertyDetailScreen() {
                   <>
                     <View style={styles.offplanDivider} />
                     <Pressable
-                      onPress={() => Linking.openURL(offplanDetails.developerWebsite!)}
+                      onPress={() => openWebUrl(offplanDetails.developerWebsite!)}
                       style={styles.offplanRow}
                     >
                       <Text style={styles.offplanLabel}>Developer website</Text>
@@ -560,17 +645,43 @@ export default function PropertyDetailScreen() {
               </View>
 
               <View style={styles.priceCard}>
-                <Text style={styles.price}>
-                  {property?.currency} {property?.price.toLocaleString()}
-                  {property?.defaultPricing
-                    ? `/${property?.defaultPricing}`
-                    : property?.listingType === 'RENT'
-                      ? '/year'
-                      : ''}
-                </Text>
-                <View style={styles.listingTypeBadge}>
-                  <Text style={styles.listingTypeText}>{property?.listingType}</Text>
+                <View style={{ flex: 1, gap: scaleHeight(6) }}>
+                  {/* If backend `type` is missing but period pricing exists, show all */}
+                  {!property?.type && property?.periodPrices && (property.periodPrices.week || property.periodPrices.month || property.periodPrices.year) ? (
+                    <>
+                      {property.periodPrices.week ? (
+                        <Text style={styles.priceSubLine}>
+                          {property.currency} {property.periodPrices.week.toLocaleString()}/week
+                        </Text>
+                      ) : null}
+                      {property.periodPrices.month ? (
+                        <Text style={styles.priceSubLine}>
+                          {property.currency} {property.periodPrices.month.toLocaleString()}/month
+                        </Text>
+                      ) : null}
+                      {property.periodPrices.year ? (
+                        <Text style={styles.priceSubLine}>
+                          {property.currency} {property.periodPrices.year.toLocaleString()}/year
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text style={styles.price}>
+                      {property?.currency} {property?.price.toLocaleString()}
+                      {property?.defaultPricing
+                        ? `/${property?.defaultPricing}`
+                        : property?.listingType === 'RENT'
+                          ? '/year'
+                          : ''}
+                    </Text>
+                  )}
                 </View>
+
+                {showMultiPeriodPricing ? null : (
+                  <View style={styles.listingTypeBadge}>
+                    <Text style={styles.listingTypeText}>{property?.listingType}</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.keyDetailsCard}>
@@ -604,11 +715,11 @@ export default function PropertyDetailScreen() {
 
           {isOffplanMode && offplanDetails ? (
             <>
-              {offplanDetails.amenities.length > 0 ? (
+              {(offplanDetails.amenities?.length ?? 0) > 0 ? (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Amenities</Text>
                   <View style={styles.amenitiesGrid}>
-                    {offplanDetails.amenities.map((amenity, index) => (
+                    {(offplanDetails.amenities ?? []).map((amenity, index) => (
                       <View key={`${amenity}-${index}`} style={styles.amenityChip}>
                         <Text style={styles.amenityText}>{amenity}</Text>
                       </View>
@@ -617,14 +728,14 @@ export default function PropertyDetailScreen() {
                 </View>
               ) : null}
 
-              {offplanDetails.units.length > 0 ? (
+              {(offplanDetails.units?.length ?? 0) > 0 ? (
                 <View
                   style={styles.section}
                   onLayout={(e) => setUnitsSectionY(e.nativeEvent.layout.y)}
                 >
                   <Text style={styles.sectionTitle}>Units</Text>
                   <View style={{ gap: scaleHeight(12) }}>
-                    {(unitsExpanded ? offplanDetails.units : offplanDetails.units.slice(0, 12)).map((u) => (
+                    {(unitsExpanded ? (offplanDetails.units ?? []) : (offplanDetails.units ?? []).slice(0, 12)).map((u) => (
                       <View key={u.id} style={styles.unitCard}>
                         <View style={styles.unitHeaderRow}>
                           <Text style={styles.unitTitle}>{u.label}</Text>
@@ -637,7 +748,7 @@ export default function PropertyDetailScreen() {
                       </View>
                     ))}
 
-                    {offplanDetails.units.length > 12 ? (
+                    {(offplanDetails.units?.length ?? 0) > 12 ? (
                       <Pressable
                         onPress={() => {
                           if (unitsExpanded) {
@@ -652,10 +763,10 @@ export default function PropertyDetailScreen() {
                         style={{ alignSelf: 'flex-start' }}
                       >
                         <Text style={[styles.helperText, { color: Colors.bronze, fontWeight: '700' }]}>
-                          {unitsExpanded ? 'Show less' : `Show all (${offplanDetails.units.length})`}
+                          {unitsExpanded ? 'Show less' : `Show all (${offplanDetails.units?.length ?? 0})`}
                         </Text>
                         {!unitsExpanded ? (
-                          <Text style={styles.helperText}>Showing 12 of {offplanDetails.units.length} units</Text>
+                          <Text style={styles.helperText}>Showing 12 of {offplanDetails.units?.length ?? 0} units</Text>
                         ) : null}
                       </Pressable>
                     ) : null}
@@ -716,7 +827,6 @@ export default function PropertyDetailScreen() {
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
                     <Text style={styles.sectionTitle}>Files</Text>
-                    <FileText size={18} color={Colors.bronze} />
                   </View>
 
                   <View style={{ gap: scaleHeight(10) }}>
@@ -730,27 +840,25 @@ export default function PropertyDetailScreen() {
                         </View>
 
                         <Pressable
-                          onPress={async () => {
-                            try {
-                              const supported = await Linking.canOpenURL(att.url);
-                              if (!supported) {
-                                Alert.alert('Unable to open file', 'No app available to open this link.');
-                                return;
-                              }
-                              await Linking.openURL(att.url);
-                            } catch (e) {
-                              Alert.alert('Unable to open file', 'Please try again later.');
-                            }
+                          onPress={() => {
+                            router.push({
+                              pathname: '/pdf-viewer' as any,
+                              params: { url: att.url, title: att.name },
+                            });
                           }}
                           style={styles.attachmentButton}
                         >
-                          <Text style={styles.attachmentButtonText}>View</Text>
+                          <Text style={styles.attachmentButtonText}>View{" "}
+                          <ExternalLink size={scaleWidth(12)} color={Colors.bronze} />
+                          </Text>
                         </Pressable>
                       </View>
                     ))}
                   </View>
                 </View>
               ) : null}
+
+        
             </>
           ) : (
             <View style={styles.section}>
@@ -778,7 +886,6 @@ export default function PropertyDetailScreen() {
 
           {!isOffplanMode ? (
           <View style={styles.agentCard}>
-            <Text style={styles.sectionTitle}>Agent Information</Text>
             <View style={styles.agentRow}>
                {agentAvatarUrl && !agentAvatarError ? (
                 <Image
@@ -800,58 +907,79 @@ export default function PropertyDetailScreen() {
           </View>
           ) : null}
 
-          <View style={styles.spacer} />
+          {showFooter ? <View style={styles.spacer} /> : null}
         </View>
       </ScrollView>
 
-      {!isOffplanMode ? (
-      <View style={styles.footer}>
-        <ScheduleVisitModal
-          visible={scheduleVisitOpen}
-          onClose={() => setScheduleVisitOpen(false)}
-          propertyTitle={property?.title ?? ''}
-          onSchedule={(date, time) => {
-            setScheduleVisitOpen(false);
-            Alert.alert(
-              'Visit Scheduled',
-              `Your visit to "${property?.title ?? ''}" has been scheduled for ${date.toLocaleDateString()} at ${time.toLocaleTimeString()}.`
-            );
-          }}
-        />
+      {showFooter ? <View style={styles.footer}>
+        {isOffplanMode ? (
+          <>
+            <Pressable
+              style={[styles.scheduleButton, { flex: 1 }]}
+              onPress={openDeveloperPhone}
+              disabled={!developerPhoneRaw}
+            >
+              <Phone size={scaleWidth(20)} color={Colors.textLight} />
+              <Text style={styles.scheduleButtonText} numberOfLines={1}>
+                Call Developer
+              </Text>
+            </Pressable>
 
-        <Pressable
-          style={styles.scheduleButton}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setScheduleVisitOpen(true);
-          }}
-        >
-          <Calendar size={scaleWidth(20)} color={Colors.textLight} />
-          <Text style={styles.scheduleButtonText}>Schedule Visit</Text>
-        </Pressable>
-        <View style={styles.contactButtons}>
-        
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openPhone}
-          >
-            <Phone size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openWhatsApp}
-          >
-            <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-          <Pressable
-            style={styles.contactIconButton}
-            onPress={openEmail}
-          >
-            <Mail size={scaleWidth(20)} color={Colors.bronze} />
-          </Pressable>
-        </View>
-      </View>
-      ) : null}
+            <View style={styles.contactButtons}>
+              <Pressable
+                style={[styles.contactIconButton, !developerPhoneDigits && { opacity: 0.4 }]}
+                onPress={openDeveloperWhatsApp}
+                disabled={!developerPhoneDigits}
+              >
+                <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+              </Pressable>
+
+              {developerWebsite ? (
+                <Pressable style={styles.contactIconButton} onPress={() => openWebUrl(developerWebsite)}>
+                  <ExternalLink size={scaleWidth(20)} color={Colors.bronze} />
+                </Pressable>
+              ) : null}
+            </View>
+          </>
+        ) : (
+          <>
+            <ScheduleVisitModal
+              visible={scheduleVisitOpen}
+              onClose={() => setScheduleVisitOpen(false)}
+              propertyTitle={property?.title ?? ''}
+              onSchedule={(date, time) => {
+                setScheduleVisitOpen(false);
+                Alert.alert(
+                  'Visit Scheduled',
+                  `Your visit to "${property?.title ?? ''}" has been scheduled for ${date.toLocaleDateString()} at ${time.toLocaleTimeString()}.`
+                );
+              }}
+            />
+
+            <Pressable
+              style={styles.scheduleButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setScheduleVisitOpen(true);
+              }}
+            >
+              <Calendar size={scaleWidth(20)} color={Colors.textLight} />
+              <Text style={styles.scheduleButtonText}>Schedule Visit</Text>
+            </Pressable>
+            <View style={styles.contactButtons}>
+              <Pressable style={styles.contactIconButton} onPress={openPhone}>
+                <Phone size={scaleWidth(20)} color={Colors.bronze} />
+              </Pressable>
+              <Pressable style={styles.contactIconButton} onPress={openWhatsApp}>
+                <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+              </Pressable>
+              <Pressable style={styles.contactIconButton} onPress={openEmail}>
+                <Mail size={scaleWidth(20)} color={Colors.bronze} />
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View> : null}
     </View>
   );
 }
@@ -980,6 +1108,11 @@ const styles = StyleSheet.create({
   price: {
     fontSize: scaleFont(20),
     fontWeight: '500',
+    color: Colors.bronze,
+  },
+  priceSubLine: {
+    fontSize: scaleFont(14),
+    fontWeight: '600',
     color: Colors.bronze,
   },
   listingTypeBadge: {
@@ -1203,9 +1336,32 @@ const styles = StyleSheet.create({
   },
   attachmentButtonText: {
     fontSize: scaleFont(12),
-    fontWeight: '800',
+    fontWeight: '600',
     color: Colors.bronze,
   },
+  developerCard: {
+    backgroundColor: Colors.textLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: scaleWidth(16),
+    padding: scaleWidth(16),
+    gap: scaleHeight(12),
+  },
+  developerNameText: {
+    fontSize: scaleFont(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  developerButtonsRow: {
+    flexDirection: 'row',
+    gap: scaleWidth(12),
+  },
+  developerMetaText: {
+    fontSize: scaleFont(12),
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+
   description: {
     fontSize: scaleFont(14),
     color: Colors.textSecondary,
@@ -1290,7 +1446,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   spacer: {
-    height: scaleHeight(100),
+    height: scaleHeight(120),
   },
   footer: {
     position: 'absolute' as const,
