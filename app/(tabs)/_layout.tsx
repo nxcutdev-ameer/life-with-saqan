@@ -1,12 +1,13 @@
 import { scaleFont, scaleHeight } from '@/utils/responsive';
 import { Tabs, usePathname } from 'expo-router';
 import { useUiLockStore } from '@/stores/uiLockStore';
-import { Home, Play, Bookmark, User, Plus } from 'lucide-react-native';
+import { Play, Bookmark, User, Plus } from 'lucide-react-native';
+import HomeSharp from '@/components/icons/HomeSharp';
 import { StyleSheet, View } from 'react-native';
 // fill="#F3EDDF"
 const IconWithShadow = ({ Icon, color, size }: { Icon: any; color: string; size: number }) => (
   <View style={styles.iconShadow}>
-    <Icon size={size} color={color} fill="#ffffffff" />
+    <Icon size={size} color={color} fill={color} />
   </View>
 );
 
@@ -51,7 +52,7 @@ export default function TabsLayout() {
           }}
           options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={Home} color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <IconWithShadow Icon={HomeSharp} color={color} size={20} />,
         }}
       />
       <Tabs.Screen

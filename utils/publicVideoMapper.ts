@@ -102,18 +102,31 @@ export function mapPublicVideoToProperty(v: any): Property {
   const title = backendProperty?.title || backendProperty?.name || v.title || 'Untitled';
   const defaultPricing = backendProperty?.default_pricing || null;
 
+  const isOffplan = backendProperty?.type === 'offplan';
+
+  // Some endpoints return offplan properties with range objects, e.g.
+  // property.price = { from, to }, property.square = { from, to }.
+  const offplanPriceFrom = toNumberOrZero(backendProperty?.price?.from);
+  const offplanPriceTo = toNumberOrZero(backendProperty?.price?.to);
+  const offplanSquareFrom = toNumberOrZero(backendProperty?.square?.from);
+  const offplanSquareTo = toNumberOrZero(backendProperty?.square?.to);
+
   let priceField = 0;
-  if (defaultPricing === null) {
+  if (isOffplan) {
+    priceField = offplanPriceFrom || offplanPriceTo;
+  } else if (defaultPricing === null) {
     priceField = meta?.sale_price;
   } else {
     priceField = defaultPricing === 'week' ? meta?.week_price : defaultPricing === 'year' ? meta?.year_price : meta?.month_price;
   }
 
   const price = toNumberOrZero(priceField);
+  const priceTo = isOffplan ? offplanPriceTo : undefined;
 
-  const bedrooms = toNumberOrZero(meta?.bedrooms);
-  const bathrooms = toNumberOrZero(meta?.bathrooms);
-  const sizeSqft = toNumberOrZero(meta?.square);
+  const bedrooms = isOffplan ? toNumberOrZero(backendProperty?.bedrooms?.from) : toNumberOrZero(meta?.bedrooms);
+  const bathrooms = isOffplan ? toNumberOrZero(backendProperty?.bathrooms?.from) : toNumberOrZero(meta?.bathrooms);
+  const sizeSqft = isOffplan ? (offplanSquareFrom || offplanSquareTo) : toNumberOrZero(meta?.square);
+  const sizeSqftTo = isOffplan ? offplanSquareTo : undefined;
 
   const city = backendProperty?.emirate?.name || '';
   const area = backendProperty?.district?.name || '';
@@ -125,7 +138,7 @@ export function mapPublicVideoToProperty(v: any): Property {
     id: String(v.video_id),
     // Preserve backend transaction type for strict feed filtering (RENT/BUY/SALE/STAY)
     transactionType: meta?.type ?? backendProperty?.type ?? undefined,
-    // Preserve backend property kind (sale/rent/offplan) for routing.
+    // Preserve backend property type (sale/rent/offplan) for routing.
     type: backendProperty?.type ?? undefined,
     propertyReference: v?.property_reference,
     title,
@@ -134,12 +147,14 @@ export function mapPublicVideoToProperty(v: any): Property {
     subtitles,
     defaultPricing: defaultPricing ?? undefined,
     price,
+    priceTo: priceTo && priceTo !== price ? priceTo : undefined,
     currency: 'AED',
     listingType: backendProperty?.type === 'rent' ? 'RENT' : 'BUY',
     propertyType: 'apartment' as PropertyType,
     bedrooms,
     bathrooms,
     sizeSqft,
+    sizeSqftTo: sizeSqftTo && sizeSqftTo !== sizeSqft ? sizeSqftTo : undefined,
     location: { city, area, latitude: 0, longitude: 0 },
     videoUrl,
     thumbnailUrl: thumbUrl || '',

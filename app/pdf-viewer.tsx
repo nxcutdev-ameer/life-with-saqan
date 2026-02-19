@@ -39,6 +39,7 @@ export default function PdfViewerScreen() {
       Alert.alert('Unable to open file', 'Please try again later.');
     } finally {
       setOpening(false);
+      router.back()
     }
   }, [url]);
 
@@ -47,34 +48,34 @@ export default function PdfViewerScreen() {
     open();
   }, [open]);
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.headerButton}>
-          <ArrowLeft size={20} color={Colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        <View style={{ width: scaleWidth(40) }} />
-      </View>
+ // return (
+    // <View style={styles.container}>
+    //   <View style={styles.header}>
+    //     <Pressable onPress={() => router.back()} style={styles.headerButton}>
+    //       <ArrowLeft size={20} color={Colors.text} />
+    //     </Pressable>
+    //     <Text style={styles.headerTitle} numberOfLines={1}>
+    //       {title}
+    //     </Text>
+    //     <View style={{ width: scaleWidth(40) }} />
+    //   </View>
 
-      <View style={styles.content}>
-        <Text style={styles.helpText}>
-          {opening ? 'Opening…' : 'If the file did not open automatically, tap below.'}
-        </Text>
+    //   <View style={styles.content}>
+    //     <Text style={styles.helpText}>
+    //       {opening ? 'Opening…' : 'If the file did not open automatically, tap below.'}
+    //     </Text>
 
-        <Pressable onPress={open} style={styles.openButton} disabled={opening}>
-          {opening ? <ActivityIndicator color={Colors.textLight} /> : <ExternalLink size={18} color={Colors.textLight} />}
-          <Text style={styles.openButtonText}>{opening ? 'Opening' : 'Open PDF'}</Text>
-        </Pressable>
+    //     <Pressable onPress={open} style={styles.openButton} disabled={opening}>
+    //       {opening ? <ActivityIndicator color={Colors.textLight} /> : <ExternalLink size={18} color={Colors.textLight} />}
+    //       <Text style={styles.openButtonText}>{opening ? 'Opening' : 'Open PDF'}</Text>
+    //     </Pressable>
 
-        <Text style={styles.urlText} numberOfLines={2}>
-          {url}
-        </Text>
-      </View>
-    </View>
-  );
+    //     <Text style={styles.urlText} numberOfLines={2}>
+    //       {url}
+    //     </Text>
+    //   </View>
+    // </View>
+ // );
 }
 
 const styles = StyleSheet.create({

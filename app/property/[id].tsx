@@ -257,7 +257,11 @@ export default function PropertyDetailScreen() {
   }, [propertyReference, videoIdParam, isOffplanMode]);
 
   const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
-  const likeVideoId = property?.id ? String(property.id) : null;
+
+  // Likes are tracked against *public video ids* (see engagementStore + /videos/:id/like endpoint).
+  // - For sale/rent details, `mapApiPayloadToProperty()` sets `property.id` to `videoIdParam` when available.
+  // - For offplan details, we don't build a `Property` object, so we must rely on the route's `videoId`.
+  const likeVideoId = videoIdParam ? String(videoIdParam) : property?.id ? String(property.id) : null;
   const isLiked = useEngagementStore((s) => (likeVideoId ? s.isLiked(likeVideoId) : false));
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);

@@ -46,7 +46,10 @@ export interface Property {
     month?: number;
     year?: number;
   };
+  /** Primary price (for offplan: typically the `from` price). */
   price: number;
+  /** Optional upper bound price (used by offplan cards to show a range). */
+  priceTo?: number;
   currency: string;
   listingType: TransactionType;
   /** Backend transaction type (e.g. RENT/BUY/SALE/STAY) for strict filtering. */
@@ -54,7 +57,10 @@ export interface Property {
   propertyType: PropertyType;
   bedrooms: number;
   bathrooms: number;
+  /** Primary size in sqft (for offplan: typically the `from` square footage). */
   sizeSqft: number;
+  /** Optional upper bound size in sqft (used by offplan cards to show a range). */
+  sizeSqftTo?: number;
   location: Location;
   videoUrl: string;
   thumbnailUrl: string;

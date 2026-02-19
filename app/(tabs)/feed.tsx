@@ -73,7 +73,6 @@ interface FeedItemProps {
 const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
   const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
   const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
-  const OWNER: 'feed' = 'feed';
   // Subscribe per-item so only the affected cell re-renders when likes change.
   const isLiked = useEngagementStore((s) => s.isLiked(item.id));
   const [isPaused, setIsPaused] = useState(false);
@@ -546,11 +545,11 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
           onPress={togglePause}
         />
 
-        <Pressable
+        {/* <Pressable
           style={{ width: EDGE_ZONE_WIDTH, height: '100%', backgroundColor: 'transparent' }}
           onPressIn={startSpeed}
           onPressOut={stopSpeed}
-        />
+        /> */}
       </View>
 
      {/* Centered just above the progress bar */}
@@ -709,7 +708,7 @@ export default function FeedScreen() {
         setActiveItemId(null);
         // Hard stop any pooled players (prevents audio continuing after fast navigation/reloads).
         pauseAllPool();
-        pauseAllRegistry();
+        pauseAllRegistry('feed');
       };
     }, [filteredProperties, pauseAllPool, pauseAllRegistry])
   );
@@ -801,6 +800,7 @@ export default function FeedScreen() {
   useEffect(() => {
     const applyItems = (next: FeedVideoItem[]) => {
       setItems(next);
+
       pageRef.current = 1;
       setPage(1);
       hasMorePagesRef.current = true;
@@ -918,7 +918,7 @@ export default function FeedScreen() {
     const sub = AppState.addEventListener('change', (st) => {
       if (st !== 'active') {
         pauseAllPool();
-        pauseAllRegistry();
+        pauseAllRegistry('feed');
       } else {
         // re-assert active item to resume (FeedItem will handle play)
         const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];

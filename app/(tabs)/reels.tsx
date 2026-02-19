@@ -3,11 +3,11 @@ import {
   Text,
   View,
   Dimensions,
-  ViewToken,
   Animated,
   Pressable,
   PanResponder,
   AppState,
+  Platform,
 } from 'react-native';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +28,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
 import PropertyFooter from '@/components/PropertyFooter';
 import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
+import { Play } from 'lucide-react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -44,15 +45,67 @@ interface ReelItemProps {
   onNavigateToProperty: (id: string) => void;
 }
 
-function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: ReelItemProps) {
+function ReelItemInactive({ item }: { item: Property }) {
+  // Render a lightweight placeholder when Reels is not focused.
+  // Intentionally does NOT create a video player.
+  return <View style={styles.propertyContainer} />;
+}
+
+function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: ReelItemProps) {
   const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
   const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
   const [isPaused, setIsPaused] = useState(false);
+
+  const playOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const [showPlayOverlay, setShowPlayOverlay] = useState(false);
+
+  React.useEffect(() => {
+    if (isPaused) {
+      setShowPlayOverlay(true);
+      Animated.timing(playOverlayOpacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
+    Animated.timing(playOverlayOpacity, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setShowPlayOverlay(false);
+    });
+  }, [isPaused, playOverlayOpacity]);
+
   const player = useVideoPlayer(item.videoUrl, (player) => {
     player.loop = true;
     player.muted = false;
     player.volume = 0.8;
+    try {
+      (player as any).timeUpdateEventInterval = 0.25;
+    } catch {}
   });
+
+  const playSafeWithRetry = useCallback(() => {
+    const tryPlay = () => {
+      try {
+        player.play();
+      } catch {}
+    };
+
+    tryPlay();
+    const t1 = setTimeout(tryPlay, 120);
+    const t2 = setTimeout(tryPlay, 320);
+    const t3 = setTimeout(tryPlay, 600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [player]);
 
   React.useEffect(() => {
     if (!player) return;
@@ -68,21 +121,23 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
     if (isViewable) {
       if (isPaused) {
         player.pause();
-      } else {
-        player.play();
+        return;
       }
-    } else {
-      // Ensure we never keep a reel at 2x when it leaves the viewport.
-      try {
-        (player as any).playbackRate = 1;
-      } catch {}
-      try {
-        (player as any).rate = 1;
-      } catch {}
-
-      player.pause();
+      return playSafeWithRetry();
     }
-  }, [isPaused, isViewable, player]);
+
+    // Ensure we never keep a reel at 2x when it leaves the viewport.
+    try {
+      (player as any).playbackRate = 1;
+    } catch {}
+    try {
+      (player as any).rate = 1;
+    } catch {}
+
+    try {
+      player.pause();
+    } catch {}
+  }, [isPaused, isViewable, player, playSafeWithRetry]);
 
   React.useEffect(() => {
     if (!isViewable) return;
@@ -115,7 +170,7 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
   const insets = useSafeAreaInsets();
   const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
 
-  const EDGE_ZONE_WIDTH = scaleWidth(70);
+  const EDGE_ZONE_WIDTH = scaleWidth(40);
   const isSpeedingRef = useRef(false);
 
   // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
@@ -169,19 +224,19 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
         return Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.8;
       },
       onPanResponderRelease: (_evt, gestureState) => {
-        const { dx } = gestureState;
-        if (dx < -60 && !swipeHandledRef.current) {
-          swipeHandledRef.current = true;
-          player.pause();
-          setIsPaused(true);
-          onNavigateToProperty(item.id);
-        }
-        setTimeout(() => {
-          swipeHandledRef.current = false;
-        }, 250);
-      },
-      onPanResponderTerminate: () => {
-        swipeHandledRef.current = false;
+      //   const { dx } = gestureState;
+      //   if (dx < -60 && !swipeHandledRef.current) {
+      //     swipeHandledRef.current = true;
+      //     player.pause();
+      //     setIsPaused(true);
+      //     onNavigateToProperty(item.id);
+      //   }
+      //   setTimeout(() => {
+      //     swipeHandledRef.current = false;
+      //   }, 250);
+      // },
+      // onPanResponderTerminate: () => {
+      //   swipeHandledRef.current = false;
       },
     })
   ).current;
@@ -241,7 +296,7 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
             onPress={togglePause}
           />
 
-          <Pressable
+          {/* <Pressable
             style={{
               width: EDGE_ZONE_WIDTH,
               height: '100%',
@@ -249,11 +304,40 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
             }}
             onPressIn={startSpeed}
             onPressOut={stopSpeed}
-          />
+          /> */}
         </View>
 
         {/* Centered just above the progress bar */}
         <SpeedBoostOverlay visible={isSpeeding} bottom={bottomTabBarHeight + scaleHeight(10)} />
+
+        {showPlayOverlay ? (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: '42%',
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 250,
+              opacity: playOverlayOpacity,
+            }}
+          >
+            <View
+              style={{
+                width: scaleWidth(72),
+                height: scaleWidth(72),
+                borderRadius: scaleWidth(36),
+                opacity: 0.60,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Play size={36} color="#fff" fill="#fff" />
+            </View>
+          </Animated.View>
+        ) : null}
 
         <PropertyFooter
           item={item}
@@ -266,11 +350,11 @@ function ReelItem({ item, index, isViewable, isLiked, isSaved, scrollY, onToggle
           onOpenComments={onOpenComments}
           onSeek={handleSeek}
           onNavigateToProperty={() => {
-            try {
-              player.pause();
-            } catch {}
-            setIsPaused(true);
-            onNavigateToProperty(item.id);
+            // try {
+            //   player.pause();
+            // } catch {}
+            // setIsPaused(true);
+            // //onNavigateToProperty(item.id);
           }}
         />
       </View>
@@ -282,12 +366,17 @@ export default function ReelsScreen() {
   useUserPreferences();
 
   const pauseAllRegistry = useVideoPlaybackRegistryStore((s) => s.pauseAll);
+  const [screenActive, setScreenActive] = useState(false);
 
   const [items, setItems] = useState<Property[]>([]);
   const [isFetching, setIsFetching] = useState(false);
 
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const currentIndexRef = useRef(0);
+
   useFocusEffect(
     useCallback(() => {
+      setScreenActive(true);
       let cancelled = false;
 
       (async () => {
@@ -296,7 +385,12 @@ export default function ReelsScreen() {
           const res = await fetchPublicVideos({ page: 1, perPage: 30 });
           const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
           const offplanOnly = mapped.filter((p) => (p.type ?? '').toLowerCase() === 'offplan');
-          if (!cancelled) setItems(offplanOnly);
+          if (!cancelled) {
+            setItems(offplanOnly);
+            const first = offplanOnly[0];
+            currentIndexRef.current = 0;
+            setActiveItemId(first?.id ?? null);
+          }
         } catch {
           if (!cancelled) setItems([]);
         } finally {
@@ -306,6 +400,7 @@ export default function ReelsScreen() {
 
       return () => {
         cancelled = true;
+        setScreenActive(false);
         pauseAllRegistry('reels');
       };
     }, [pauseAllRegistry]) 
@@ -322,21 +417,12 @@ export default function ReelsScreen() {
 
   const filteredProperties = items;
 
-  const [viewableItems, setViewableItems] = useState<string[]>([]);
   const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
-
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 80,
-  }).current;
-
-  const onViewableItemsChanged = useRef(({ viewableItems: items }: { viewableItems: ViewToken[] }) => {
-    setViewableItems(items.map((it) => String(it.key ?? '')));
-  }).current;
 
   const toggleLike = (propertyId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -365,11 +451,13 @@ export default function ReelsScreen() {
   };
 
   const renderProperty = ({ item, index }: { item: Property; index: number }) => {
-    return (
-      <ReelItem
+    const isActive = item.id === activeItemId || (index === 0 && !activeItemId);
+
+    return screenActive ? (
+      <ReelItemActive
         item={item}
         index={index}
-        isViewable={viewableItems.includes(item.id)}
+        isViewable={isActive}
         isLiked={likedProperties.has(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
@@ -381,13 +469,15 @@ export default function ReelsScreen() {
         }}
         onNavigateToProperty={(id) => router.push(buildPropertyDetailsRoute({ propertyReference: id, id }))}
       />
+    ) : (
+      <ReelItemInactive item={item} />
     );
   };
 
   if (!isFetching && filteredProperties.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No offplan videos found</Text>
+        <Text style={styles.emptyTitle}>No videos found</Text>
         <Text style={styles.emptyText}>Please try again later.</Text>
       </View>
     );
@@ -403,21 +493,38 @@ export default function ReelsScreen() {
         data={filteredProperties}
         renderItem={renderProperty}
         keyExtractor={(item) => item.id}
-        pagingEnabled
+        pagingEnabled={Platform.OS === 'ios'}
         showsVerticalScrollIndicator={false}
-        snapToInterval={SCREEN_HEIGHT}
+        snapToInterval={Platform.OS === 'android' ? SCREEN_HEIGHT : undefined}
         snapToAlignment="start"
-        decelerationRate="fast"
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.98}
+        disableIntervalMomentum={Platform.OS === 'android'}
+        // Avoid native clipping with video to prevent teardown glitches.
+        removeClippedSubviews={false}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        updateCellsBatchingPeriod={16}
+        getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
+        onScrollEndDrag={(e) => {
+          const offsetY = e.nativeEvent.contentOffset.y;
+          const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
+          currentIndexRef.current = nextIndex;
+          const next = filteredProperties[nextIndex];
+          if (next?.id) setActiveItemId(next.id);
+        }}
+        onMomentumScrollEnd={(e) => {
+          const offsetY = e.nativeEvent.contentOffset.y;
+          const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
+          currentIndexRef.current = nextIndex;
+          const next = filteredProperties[nextIndex];
+          if (next?.id) setActiveItemId(next.id);
+        }}
       />
       <CommentsModal
         visible={commentsModalVisible}

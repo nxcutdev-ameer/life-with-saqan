@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import { MapPin, Bed, Bath, Ruler } from 'lucide-react-native';
 import { Property } from '@/types';
-import { formatPrice, formatLocation } from '@/utils/formatters';
+import { formatCompactNumber, formatPrice, formatLocation } from '@/utils/formatters';
 import { feedStyles as styles } from '@/constants/feedStyles';
 
 interface PropertyInfoProps {
@@ -34,7 +34,9 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
       </Text>
       
       <Text style={styles.footerPrice}>
-        {formatPrice(item.price, item.currency, item.listingType)}
+        {item.type === 'offplan' && item.priceTo && item.priceTo > item.price
+          ? `${item.currency} ${formatCompactNumber(item.price)}–${formatCompactNumber(item.priceTo)}`
+          : formatPrice(item.price, item.currency, item.listingType)}
         {item.defaultPricing ? `/${item.defaultPricing}` : ''}
       </Text>
       
@@ -57,7 +59,11 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
         <View style={styles.footerDetailItem}>
           <Ruler size={14} color="#FFFFFF" fill="#FFFFFF" />
           <Text style={styles.footerSmallText}>
-            {item.sizeSqft ? `${item.sizeSqft.toLocaleString()} sqft` : '—'}
+            {item.sizeSqft
+              ? item.type === 'offplan' && item.sizeSqftTo && item.sizeSqftTo > item.sizeSqft
+                ? `${item.sizeSqft.toLocaleString()}–${item.sizeSqftTo.toLocaleString()} sqft`
+                : `${item.sizeSqft.toLocaleString()} sqft`
+              : '—'}
           </Text>
         </View>
       </View>

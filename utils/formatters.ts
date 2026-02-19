@@ -49,3 +49,25 @@ export function formatPrice(price: number, currency: string, listingType: string
 export function formatLocation(area: string, city: string): string {
   return `${area}, ${city}`;
 }
+
+/**
+ * Formats numbers in a compact form (K/M/B) for UI labels.
+ *
+ * @example
+ * formatCompactNumber(825) => "825"
+ * formatCompactNumber(1200000) => "1.2M"
+ */
+export function formatCompactNumber(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0';
+
+  const abs = Math.abs(value);
+  const format = (n: number, suffix: string) => {
+    const fixed = n >= 10 ? n.toFixed(0) : n.toFixed(1);
+    return `${fixed.replace(/\.0$/, '')}${suffix}`;
+  };
+
+  if (abs >= 1_000_000_000) return format(value / 1_000_000_000, 'B');
+  if (abs >= 1_000_000) return format(value / 1_000_000, 'M');
+  if (abs >= 1_000) return format(value / 1_000, 'K');
+  return Math.round(value).toLocaleString();
+}
