@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useEngagementActions } from '@/contexts/EngagementActionsContext';
 import { Animated, Easing, Text, Pressable, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Property } from '@/types';
@@ -11,9 +12,9 @@ interface EngagementButtonsProps {
   isLiked: boolean;
   isSaved: boolean;
   likesCount?: number;
-  onToggleLike: (propertyId: string) => void;
-  onToggleSave: (propertyId: string) => void;
-  onOpenComments: (propertyId: string) => void;
+  onToggleLike?: (propertyId: string) => void;
+  onToggleSave?: (propertyId: string) => void;
+  onOpenComments?: (propertyId: string) => void;
   onShare?: (propertyId: string) => void;
 }
 
@@ -31,6 +32,11 @@ export default function EngagementButtons({
   onOpenComments,
   onShare,
 }: EngagementButtonsProps) {
+  const ctx = useEngagementActions();
+  const effectiveOnShare = onShare ?? ctx.onShare;
+  const effectiveOnToggleLike = onToggleLike ?? ctx.onToggleLike;
+  const effectiveOnToggleSave = onToggleSave ?? ctx.onToggleSave;
+  const effectiveOnOpenComments = onOpenComments ?? ctx.onOpenComments;
   const heartScale = useRef(new Animated.Value(1)).current;
   const heartBurstOpacity = useRef(new Animated.Value(0)).current;
 
@@ -115,7 +121,7 @@ export default function EngagementButtons({
             playLikeAnimation();
           }
 
-          onToggleLike(item.id);
+          effectiveOnToggleLike?.(item.id);
         }}
       >
         <Animated.View style={heartAnimatedStyle}>
@@ -152,14 +158,14 @@ export default function EngagementButtons({
         </Text>
       </Pressable>
 
-      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onOpenComments(item.id)}>
+      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => effectiveOnOpenComments?.(item.id)}>
         <MaterialCommunityIcons name="chat" size={28} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.commentsCount)}
         </Text>
       </Pressable>
 
-      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => onToggleSave(item.id)}>
+      <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => effectiveOnToggleSave?.(item.id)}>
         <MaterialCommunityIcons
           name={isSaved ? 'bookmark' : 'bookmark-outline'}
           size={28}
@@ -172,7 +178,7 @@ export default function EngagementButtons({
 
       <Pressable
         style={[styles.footerActionButton, styles.iconShadow]}
-        onPress={() => onShare && onShare(item.id)}
+        onPress={() => effectiveOnShare?.(item.id)}
       >
         <MaterialCommunityIcons name="share-variant" size={28} color="#FFFFFF" />
         <Text style={styles.footerActionText}>

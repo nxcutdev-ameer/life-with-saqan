@@ -7,7 +7,7 @@ const STORAGE_KEY = '@liked_videos_v1';
 type EngagementState = {
   likedVideoIds: Set<string>;
 
-  /** Latest known likes count for a given video id (from API responses). */
+  // Latest known likes count for a given video id (from API responses).
   likesCountByVideoId: Record<string, number>;
 
   hydrated: boolean;
@@ -15,10 +15,11 @@ type EngagementState = {
 
   isLiked: (videoId: string | number) => boolean;
 
-  /**
-   * Returns the best known likes count. If we don't have an override, returns `fallback`.
-   */
+   // Returns the best known likes count. If we don't have an override, returns `fallback`.
   getLikesCount: (videoId: string | number, fallback: number) => number;
+
+  /** Seed/override likes count from API responses (so UI updates immediately and optimistic updates work). */
+  setLikesCount: (videoId: string | number, likesCount: number) => void;
 
   toggleLike: (videoId: string | number) => Promise<{ likesCount?: number } | null>;
 };
@@ -52,6 +53,17 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     const id = String(videoId);
     const override = get().likesCountByVideoId[id];
     return typeof override === 'number' ? override : fallback;
+  },
+
+  setLikesCount: (videoId, likesCount) => {
+    const id = String(videoId);
+    if (!Number.isFinite(likesCount)) return;
+    set((state) => ({
+      likesCountByVideoId: {
+        ...state.likesCountByVideoId,
+        [id]: Math.max(0, Math.floor(likesCount)),
+      },
+    }));
   },
 
   toggleLike: async (videoId) => {

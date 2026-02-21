@@ -24,7 +24,8 @@ const defaultLanguages: Language[] = [
   { code: 'en', name: 'English', translation: '' },
   { code: 'ar', name: 'العربية', translation: '' },
   { code: 'fr', name: 'Français', translation: '' },
-  { code: 'es', name: 'Español', translation: '' },
+  { code: 'hi', name: 'हिन्दी', translation: '' },
+  { code: 'ur', name: 'اردو', translation: '' },
   { code: 'ru', name: 'Русский', translation: '' },
   { code: 'zh', name: '中文', translation: '' },
 ];
@@ -33,7 +34,8 @@ const nativeLanguageNameByCode: Record<string, string> = {
   en: 'English',
   ar: 'العربية',
   fr: 'Français',
-  es: 'Español',
+  hi: 'हिन्दी',
+  ur: 'اردو',
   ru: 'Русский',
   zh: '中文',
 };

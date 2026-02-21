@@ -37,6 +37,7 @@ import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
 import LocationsModal from '@/components/LocationsModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { EngagementActionsProvider } from '@/contexts/EngagementActionsContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import PropertyFooter from '@/components/PropertyFooter';
@@ -59,18 +60,14 @@ interface FeedItemProps {
   bottomTabBarHeight: number;
   overlayTop: number;
   overlayBottom: number;
-  onToggleLike: (id: string) => void;
-  onToggleSave: (id: string) => void;
-  onOpenComments: (id: string) => void;
   onNavigateToProperty: (propertyReference: string) => void;
-  onShare: (id: string) => void;
   globalSubtitleLanguageCode?: string;
   onGlobalSubtitleLanguageChange?: (languageCode: string) => void;
   onSpeedingChange?: (isSpeeding: boolean) => void;
   onScrubbingChange?: (isScrubbing: boolean) => void;
 }
 
-const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty, onShare, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onNavigateToProperty, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
   const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
   const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
   // Subscribe per-item so only the affected cell re-renders when likes change.
@@ -570,10 +567,6 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
          duration={duration}
          isLiked={isLiked}
          isSaved={isSaved}
-         onToggleLike={onToggleLike}
-         onToggleSave={onToggleSave}
-         onOpenComments={onOpenComments}
-         onShare={onShare}
          onSeek={handleSeek}
          scrubbing={isScrubbing}
          onScrubStart={() => {
@@ -1095,13 +1088,9 @@ export default function FeedScreen() {
         bottomTabBarHeight={bottomTabBarHeight}
         overlayTop={overlayTop}
         overlayBottom={overlayBottom}
-        onToggleLike={toggleLike}
-        onToggleSave={toggleSave}
-        onOpenComments={handleOpenComments}
         onSpeedingChange={handleSpeedingChange}
         onScrubbingChange={handleScrubbingChange}
         onNavigateToProperty={(propertyReference) => handleNavigateToProperty(propertyReference, item.id, item.type)}
-        onShare={handleShare}
         globalSubtitleLanguageCode={globalSubtitleLanguageCode}
         onGlobalSubtitleLanguageChange={(code) => setGlobalSubtitleLanguageCode(code)}
       />
@@ -1139,6 +1128,14 @@ export default function FeedScreen() {
   }
 
   return (
+    <EngagementActionsProvider
+      value={{
+        onShare: (id) => void handleShare(id),
+        onToggleLike: (id) => void toggleLike(id),
+        onToggleSave: (id) => toggleSave(id),
+        onOpenComments: (id) => handleOpenComments(id),
+      }}
+    >
     <View style={styles.container}>
       {!isHoldingSpeed && !isScrubbing ? (
         <AppHeader 
@@ -1252,6 +1249,7 @@ export default function FeedScreen() {
         onClose={() => setLocationsModalVisible(false)}
       />
     </View>
+    </EngagementActionsProvider>
   );
 }
 

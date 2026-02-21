@@ -85,7 +85,18 @@ export function mapPublicVideoToProperty(v: any): Property {
 
   const thumbUrl = v?.cloudflare?.thumbnail_url || v?.playback?.thumbnail_url;
   const rooms = mapRoomTimestampsToRooms(v?.property_video_metadata?.room_timestamps);
-  const subtitles = (v?.cloudflare?.subtitles ?? [])
+
+  // Subtitles shape can vary by endpoint/version.
+  // Newer payloads may expose subtitles at `v.subtitles`, older at `v.cloudflare.subtitles`.
+  const rawSubtitles = (v?.subtitles ?? v?.cloudflare?.subtitles ?? []) as any[];
+
+  const subtitles = rawSubtitles
+    .filter((s) => {
+      const status = String(s?.status ?? '').toUpperCase();
+      return !status || status === 'READY';
+    })
+    // Product requirement: remove Spanish from language list.
+    .filter((s) => String(s?.language_code || '') !== 'es')
     .map((s: any) => ({
       code: String(s?.language_code || ''),
       label: s?.label,
@@ -140,7 +151,7 @@ export function mapPublicVideoToProperty(v: any): Property {
     transactionType: meta?.type ?? backendProperty?.type ?? undefined,
     // Preserve backend property type (sale/rent/offplan) for routing.
     type: backendProperty?.type ?? undefined,
-    propertyReference: v?.property_reference,
+    propertyReference: v?.property_reference ?? backendProperty?.reference_id ?? backendProperty?.referenceId ?? null,
     title,
     description: backendProperty?.description || v.description || '',
     rooms,

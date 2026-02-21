@@ -49,6 +49,7 @@ import type { Property, TransactionType, PropertyType, LifestyleType } from '@/t
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
+import { usePropertyLikeStore } from '@/stores/propertyLikeStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 import { SavingSpinner } from '@/components/SavingSpinner';
 
@@ -256,13 +257,21 @@ export default function PropertyDetailScreen() {
     })();
   }, [propertyReference, videoIdParam, isOffplanMode]);
 
-  const { hydrated: likesHydrated, hydrate: hydrateLikes, toggleLike: toggleLikeGlobal } = useEngagementStore();
+  const { hydrated: videoLikesHydrated, hydrate: hydrateVideoLikes, toggleLike: toggleVideoLike } = useEngagementStore();
+  const {
+    hydrated: propertyLikesHydrated,
+    hydrate: hydratePropertyLikes,
+    toggleLike: togglePropertyLike,
+  } = usePropertyLikeStore();
 
-  // Likes are tracked against *public video ids* (see engagementStore + /videos/:id/like endpoint).
-  // - For sale/rent details, `mapApiPayloadToProperty()` sets `property.id` to `videoIdParam` when available.
-  // - For offplan details, we don't build a `Property` object, so we must rely on the route's `videoId`.
+  // Primary likes are tracked against *public video ids* (see engagementStore + /videos/:id/like endpoint).
+  // Fallback likes are tracked against `propertyReference` for entry points that don't have a video id.
   const likeVideoId = videoIdParam ? String(videoIdParam) : property?.id ? String(property.id) : null;
-  const isLiked = useEngagementStore((s) => (likeVideoId ? s.isLiked(likeVideoId) : false));
+  const likePropertyRef = (propertyReference ?? '').trim() || null;
+
+  const isVideoLiked = useEngagementStore((s) => (likeVideoId ? s.isLiked(likeVideoId) : false));
+  const isPropertyLiked = usePropertyLikeStore((s) => (likePropertyRef ? s.isLiked(likePropertyRef) : false));
+  const isLiked = likeVideoId ? isVideoLiked : isPropertyLiked;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
   const [unitsExpanded, setUnitsExpanded] = useState(false);
@@ -335,17 +344,33 @@ export default function PropertyDetailScreen() {
   );
 
   React.useEffect(() => {
-    if (!likesHydrated) hydrateLikes();
-  }, [hydrateLikes, likesHydrated]);
+    if (!videoLikesHydrated) hydrateVideoLikes();
+  }, [hydrateVideoLikes, videoLikesHydrated]);
+
+  React.useEffect(() => {
+    if (!propertyLikesHydrated) hydratePropertyLikes();
+  }, [hydratePropertyLikes, propertyLikesHydrated]);
 
   const toggleLike = async () => {
-    if (!likeVideoId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      const res = await toggleLikeGlobal(likeVideoId);
-      void res;
-    } catch {
-      // ignore
+
+    // Prefer video likes (persisted + synced). Fallback to local propertyReference likes.
+    if (likeVideoId) {
+      try {
+        const res = await toggleVideoLike(likeVideoId);
+        void res;
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    if (likePropertyRef) {
+      try {
+        await togglePropertyLike(likePropertyRef);
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -925,7 +950,7 @@ export default function PropertyDetailScreen() {
             >
               <Phone size={scaleWidth(20)} color={Colors.textLight} />
               <Text style={styles.scheduleButtonText} numberOfLines={1}>
-                Call Developer
+                Call Agent
               </Text>
             </Pressable>
 

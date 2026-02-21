@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  Text,
   View,
   Dimensions,
   Animated,
@@ -8,16 +7,19 @@ import {
   PanResponder,
   AppState,
   Platform,
+  Share,
+  Alert,
 } from 'react-native';
 import { scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useRouter } from 'expo-router';
+import { useEngagementStore } from '@/stores/engagementStore';
 import { useFocusEffect } from '@react-navigation/native';
 import { useVideoPlaybackRegistryStore } from '@/stores/videoPlaybackRegistryStore';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { fetchPublicVideos } from '@/utils/publicVideosApi';
+import { fetchPublicGenericVideos, sharePublicVideo } from '@/utils/publicVideosApi';
 import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 import { Property } from '@/types';
 import * as Haptics from 'expo-haptics';
@@ -25,6 +27,7 @@ import CommentsModal from '@/components/CommentsModal';
 import AppHeader from '@/components/AppHeader';
 import LocationsModal from '@/components/LocationsModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { EngagementActionsProvider } from '@/contexts/EngagementActionsContext';
 import { feedStyles as styles } from '@/constants/feedStyles';
 import PropertyFooter from '@/components/PropertyFooter';
 import SpeedBoostOverlay from '@/components/SpeedBoostOverlay';
@@ -39,9 +42,6 @@ interface ReelItemProps {
   isLiked: boolean;
   isSaved: boolean;
   scrollY: Animated.Value;
-  onToggleLike: (id: string) => void;
-  onToggleSave: (id: string) => void;
-  onOpenComments: (id: string) => void;
   onNavigateToProperty: (id: string) => void;
 }
 
@@ -51,7 +51,7 @@ function ReelItemInactive({ item }: { item: Property }) {
   return <View style={styles.propertyContainer} />;
 }
 
-function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, onToggleLike, onToggleSave, onOpenComments, onNavigateToProperty }: ReelItemProps) {
+function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, onNavigateToProperty }: ReelItemProps) {
   const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
   const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
   const [isPaused, setIsPaused] = useState(false);
@@ -216,7 +216,6 @@ function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, on
     } catch {}
   };
 
-  const swipeHandledRef = useRef(false);
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, gestureState) => {
@@ -242,7 +241,7 @@ function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, on
   ).current;
 
   return (
-      <View style={styles.propertyContainer} {...panResponder.panHandlers}>
+    <View style={styles.propertyContainer} {...panResponder.panHandlers}>
         <View style={styles.videoTouchArea}>
           <VideoView
             player={player}
@@ -345,17 +344,8 @@ function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, on
           duration={duration}
           isLiked={isLiked}
           isSaved={isSaved}
-          onToggleLike={onToggleLike}
-          onToggleSave={onToggleSave}
-          onOpenComments={onOpenComments}
           onSeek={handleSeek}
-          onNavigateToProperty={() => {
-            // try {
-            //   player.pause();
-            // } catch {}
-            // setIsPaused(true);
-            // //onNavigateToProperty(item.id);
-          }}
+         // onNavigateToProperty={() => onNavigateToProperty(item.id)}
         />
       </View>
   );
@@ -368,8 +358,19 @@ export default function ReelsScreen() {
   const pauseAllRegistry = useVideoPlaybackRegistryStore((s) => s.pauseAll);
   const [screenActive, setScreenActive] = useState(false);
 
+  const {
+    hydrated: likesHydrated,
+    hydrate: hydrateLikes,
+    isLiked: isVideoLiked,
+    setLikesCount,
+    toggleLike: toggleVideoLike,
+  } = useEngagementStore();
+
   const [items, setItems] = useState<Property[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const currentIndexRef = useRef(0);
@@ -382,12 +383,25 @@ export default function ReelsScreen() {
       (async () => {
         try {
           setIsFetching(true);
-          const res = await fetchPublicVideos({ page: 1, perPage: 30 });
+          const res = await fetchPublicGenericVideos({ page: 1, perPage: 30, sortBy: 'views_count' });
           const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
-          const offplanOnly = mapped.filter((p) => (p.type ?? '').toLowerCase() === 'offplan');
+
+          const meta = res?.meta;
+          const computedHasMore =
+            typeof meta?.has_more_pages === 'boolean'
+              ? meta.has_more_pages
+              : typeof meta?.current_page === 'number' && typeof meta?.last_page === 'number'
+                ? meta.current_page < meta.last_page
+                : mapped.length > 0;
+
+          // Seed likes counts so UI + optimistic updates have a baseline.
+          mapped.forEach((p) => setLikesCount(p.id, p.likesCount));
+
           if (!cancelled) {
-            setItems(offplanOnly);
-            const first = offplanOnly[0];
+            setItems(mapped);
+            setPage(1);
+            setHasMore(computedHasMore);
+            const first = mapped[0];
             currentIndexRef.current = 0;
             setActiveItemId(first?.id ?? null);
           }
@@ -403,7 +417,7 @@ export default function ReelsScreen() {
         setScreenActive(false);
         pauseAllRegistry('reels');
       };
-    }, [pauseAllRegistry]) 
+    }, [pauseAllRegistry, setLikesCount])
   );
 
   React.useEffect(() => {
@@ -416,17 +430,28 @@ export default function ReelsScreen() {
   }, [pauseAllRegistry]);
 
   const filteredProperties = items;
-
-  const [likedProperties, setLikedProperties] = useState<Set<string>>(new Set());
   const [savedProperties, setSavedProperties] = useState<Set<string>>(new Set());
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [locationsModalVisible, setLocationsModalVisible] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const toggleLike = (propertyId: string) => {
+  React.useEffect(() => {
+    if (!likesHydrated) hydrateLikes();
+  }, [hydrateLikes, likesHydrated]);
+
+  const toggleLike = async (videoId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLikedProperties(prev => {
+    try {
+      await toggleVideoLike(videoId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleSave = (propertyId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSavedProperties((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(propertyId)) {
         newSet.delete(propertyId);
@@ -437,18 +462,35 @@ export default function ReelsScreen() {
     });
   };
 
-  const toggleSave = (propertyId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSavedProperties(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(propertyId)) {
-        newSet.delete(propertyId);
-      } else {
-        newSet.add(propertyId);
+  const handleShare = useCallback(
+    async (id: string) => {
+      const item = items.find((p) => p.id === id);
+      const url = item?.videoUrl;
+      if (!url) {
+        Alert.alert('Error', 'No shareable video URL found.');
+        return;
       }
-      return newSet;
-    });
-  };
+
+      try {
+        const title = item?.title || 'Video';
+        const message = `${title}\n${url}`;
+        const result = await Share.share({ message, title });
+
+        // If the user dismissed the share sheet, don't record it.
+        if ((result as any)?.action === (Share as any).dismissedAction) return;
+
+        const res = await sharePublicVideo({ videoId: id });
+        const sharesCount = res?.data?.shares_count;
+        if (typeof sharesCount === 'number') {
+          setItems((prev) => prev.map((it) => (it.id === id ? { ...it, sharesCount } : it)));
+        }
+      } catch (err: any) {
+        const message = err?.message || 'Failed to share.';
+        Alert.alert('Error', message);
+      }
+    },
+    [items]
+  );
 
   const renderProperty = ({ item, index }: { item: Property; index: number }) => {
     const isActive = item.id === activeItemId || (index === 0 && !activeItemId);
@@ -458,33 +500,71 @@ export default function ReelsScreen() {
         item={item}
         index={index}
         isViewable={isActive}
-        isLiked={likedProperties.has(item.id)}
+        isLiked={isVideoLiked(item.id)}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
-        onToggleLike={toggleLike}
-        onToggleSave={toggleSave}
-        onOpenComments={(id) => {
-          setSelectedPropertyId(id);
-          setCommentsModalVisible(true);
-        }}
-        onNavigateToProperty={(id) => router.push(buildPropertyDetailsRoute({ propertyReference: id, id }))}
+        onNavigateToProperty={(id) =>
+          router.push(
+            buildPropertyDetailsRoute({
+              propertyReference: item.propertyReference ?? id,
+              id,
+              mode: item.type === 'offplan' ? 'offplan' : undefined,
+            })
+          )
+        }
       />
     ) : (
       <ReelItemInactive item={item} />
     );
   };
 
-  if (!isFetching && filteredProperties.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No videos found</Text>
-        <Text style={styles.emptyText}>Please try again later.</Text>
-      </View>
-    );
-  }
+  const loadMore = useCallback(async () => {
+    if (isFetching || isFetchingMore || !hasMore) return;
+
+    const nextPage = page + 1;
+    try {
+      setIsFetchingMore(true);
+      const res = await fetchPublicGenericVideos({ page: nextPage, perPage: 30, sortBy: 'views_count' });
+      const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
+
+      const meta = res?.meta;
+      const computedHasMore =
+        typeof meta?.has_more_pages === 'boolean'
+          ? meta.has_more_pages
+          : typeof meta?.current_page === 'number' && typeof meta?.last_page === 'number'
+            ? meta.current_page < meta.last_page
+            : mapped.length > 0;
+
+      // Seed likes counts for newly fetched items.
+      mapped.forEach((p) => setLikesCount(p.id, p.likesCount));
+
+      setItems((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const deduped = mapped.filter((p) => !seen.has(p.id));
+        return [...prev, ...deduped];
+      });
+      setPage(nextPage);
+      setHasMore(computedHasMore);
+    } catch {
+      // ignore
+    } finally {
+      setIsFetchingMore(false);
+    }
+  }, [hasMore, isFetching, isFetchingMore, page, setLikesCount]);
 
   return (
-    <View style={styles.container}>
+    <EngagementActionsProvider
+      value={{
+        onShare: (id) => void handleShare(id),
+        onToggleLike: (id) => void toggleLike(id),
+        onToggleSave: (id) => toggleSave(id),
+        onOpenComments: (id) => {
+          setSelectedPropertyId(id);
+          setCommentsModalVisible(true);
+        },
+      }}
+    >
+      <View style={styles.container}>
       <AppHeader 
         onSearchPress={() => router.push('/search')}
         onSelectionsPress={() => setLocationsModalVisible(true)}
@@ -525,6 +605,10 @@ export default function ReelsScreen() {
           const next = filteredProperties[nextIndex];
           if (next?.id) setActiveItemId(next.id);
         }}
+        onEndReachedThreshold={0.8}
+        onEndReached={() => {
+          void loadMore();
+        }}
       />
       <CommentsModal
         visible={commentsModalVisible}
@@ -540,7 +624,8 @@ export default function ReelsScreen() {
         visible={locationsModalVisible}
         onClose={() => setLocationsModalVisible(false)}
       />
-    </View>
+      </View>
+    </EngagementActionsProvider>
   );
 }
 

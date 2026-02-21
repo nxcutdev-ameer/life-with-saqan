@@ -109,6 +109,16 @@ export async function fetchPublicAgentVideos(params: { agentId: number | string;
   return fetchJson<PublicVideosResponse>(url, { method: 'GET' });
 }
 
+
+// Fetch generic public videos (for Reels).
+
+export async function fetchPublicGenericVideos(params: { page: number; perPage?: number; sortBy?: string }) {
+  const perPage = params.perPage ?? 20;
+  const sortBy = params.sortBy ?? 'views_count';
+  const url = `${BASE_URL}/videos/generic?per_page=${perPage}&page=${params.page}&sort_by=${encodeURIComponent(sortBy)}`;
+  return fetchJson<PublicVideosResponse>(url, { method: 'GET' });
+}
+
 export type PublicVideoLikeResponse = {
   message?: string;
   data?: {

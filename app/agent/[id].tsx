@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Alert, FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
@@ -35,45 +36,47 @@ export default function AgentProfileScreen() {
     return mockProperties.filter((p) => p.agent?.id === agentIdParam || String((p.agent as any)?.agentId) === agentIdParam);
   }, [agentIdParam]);
 
-  useEffect(() => {
-    if (activeTab !== 'properties') return;
+  useFocusEffect(
+    React.useCallback(() => {
+      if (activeTab !== 'properties') return;
 
-    // If agent id is not numeric, we can't call the public endpoint; fall back to mock.
-    if (!agentIdParam || !shouldUseApi) {
-      setAgentProperties(mockAgentProperties);
-      setAgent(mockAgentProperties[0]?.agent ?? null);
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setIsLoading(true);
-        const res = await fetchPublicAgentVideos({ agentId: agentIdParam, perPage: 20, page: 1 });
-        const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
-
-        if (cancelled) return;
-
-        setAgentProperties(mapped);
-        setAgent(mapped[0]?.agent ?? null);
-      } catch (e: any) {
-        if (cancelled) return;
-
-        // Graceful fallback: still show something for non-prod / mocked agents.
+      // If agent id is not numeric, we can't call the public endpoint; fall back to mock.
+      if (!agentIdParam || !shouldUseApi) {
         setAgentProperties(mockAgentProperties);
         setAgent(mockAgentProperties[0]?.agent ?? null);
-
-        Alert.alert('Error', e?.message ?? 'Failed to load agent profile');
-      } finally {
-        if (!cancelled) setIsLoading(false);
+        return;
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, agentIdParam, shouldUseApi, mockAgentProperties]);
+      let cancelled = false;
+
+      (async () => {
+        try {
+          setIsLoading(true);
+          const res = await fetchPublicAgentVideos({ agentId: agentIdParam, perPage: 20, page: 1 });
+          const mapped = (res?.data ?? []).map(mapPublicVideoToProperty);
+
+          if (cancelled) return;
+
+          setAgentProperties(mapped);
+          setAgent(mapped[0]?.agent ?? null);
+        } catch (e: any) {
+          if (cancelled) return;
+
+          // Graceful fallback: still show something for non-prod / mocked agents.
+          setAgentProperties(mockAgentProperties);
+          setAgent(mockAgentProperties[0]?.agent ?? null);
+
+          Alert.alert('Error', e?.message ?? 'Failed to load agent profile');
+        } finally {
+          if (!cancelled) setIsLoading(false);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [activeTab, agentIdParam, shouldUseApi, mockAgentProperties])
+  );
 
   const agentName = (agent?.name ?? (agentIdParam ? `Agent ${agentIdParam}` : 'Agent')).trim() || 'Agent';
   const agentInitial = agentName.charAt(0).toUpperCase();
@@ -81,7 +84,15 @@ export default function AgentProfileScreen() {
   const displayedProperties = activeTab === 'properties' ? agentProperties : mockProperties.slice(0, 6);
 
   const renderPropertyItem = ({ item }: { item: Property }) => (
-    <Pressable style={styles.gridItem} onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }) as any)}>
+    <Pressable style={styles.gridItem} onPress={() =>
+        router.push(
+          buildPropertyDetailsRoute({
+            propertyReference: item.propertyReference,
+            id: item.id,
+            mode: item.type === 'offplan' ? 'offplan' : undefined,
+          }) as any
+        )
+      }>
       <Image source={{ uri: item.thumbnailUrl }} style={styles.gridImage} contentFit="cover" />
       <View style={styles.gridOverlay}>
         <View style={styles.gridStats}>

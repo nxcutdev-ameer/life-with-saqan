@@ -154,7 +154,15 @@ export default function ProfileScreen() {
   const renderPropertyItem = ({ item }: { item: Property }) => (
     <Pressable
       style={styles.gridItem}
-      onPress={() => router.push(buildPropertyDetailsRoute({ propertyReference: item.propertyReference, id: item.id }) as any)}
+      onPress={() =>
+          router.push(
+            buildPropertyDetailsRoute({
+              propertyReference: item.propertyReference,
+              id: item.id,
+              mode: item.type === 'offplan' ? 'offplan' : undefined,
+            }) as any
+          )
+        }
     >
       <Image
         source={{ uri: item.thumbnailUrl }}

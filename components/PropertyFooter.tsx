@@ -20,9 +20,9 @@ interface PropertyFooterProps {
   duration: number;
   isLiked: boolean;
   isSaved: boolean;
-  onToggleLike: (id: string) => void;
-  onToggleSave: (id: string) => void;
-  onOpenComments: (id: string) => void;
+  onToggleLike?: (id: string) => void;
+  onToggleSave?: (id: string) => void;
+  onOpenComments?: (id: string) => void;
   onShare?: (id: string) => void;
   onSeek: (timestamp: number) => void;
   onSubtitleSelect?: (subtitleUrl: string, languageCode: string) => void;
@@ -127,7 +127,9 @@ export default function PropertyFooter({
   };
 
   const translations: LanguageTranslation[] = item.subtitles?.length
-    ? item.subtitles.map((s) => ({
+    ? item.subtitles
+        .filter((s) => s.code !== 'es')
+        .map((s) => ({
         code: s.code,
         // label is already expected to be native script (Arabic/Chinese/etc)
         name: s.label || s.code,
@@ -138,7 +140,8 @@ export default function PropertyFooter({
         { code: 'en', name: 'English', translation: item.description },
         { code: 'ar', name: 'العربية', translation: '' },
         { code: 'fr', name: 'Français', translation: '' },
-        { code: 'es', name: 'Español', translation: '' },
+        { code: 'hi', name: 'हिन्दी', translation: '' },
+        { code: 'ur', name: 'اردو', translation: '' },
         { code: 'ru', name: 'Русский', translation: '' },
         { code: 'zh', name: '中文', translation: '' },
       ];
