@@ -10,6 +10,7 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
@@ -51,6 +52,7 @@ import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
 import { usePropertyLikeStore } from '@/stores/propertyLikeStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
+import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { SavingSpinner } from '@/components/SavingSpinner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -274,6 +276,7 @@ export default function PropertyDetailScreen() {
   const isLiked = likeVideoId ? isVideoLiked : isPropertyLiked;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scheduleVisitOpen, setScheduleVisitOpen] = useState(false);
+  const { transactionType: userTransactionType } = useUserPreferences();
   const [unitsExpanded, setUnitsExpanded] = useState(false);
   const [unitsSectionY, setUnitsSectionY] = useState(0);
   const [activePaymentPlanId, setActivePaymentPlanId] = useState<number | null>(null);
@@ -985,17 +988,23 @@ export default function PropertyDetailScreen() {
               }}
             />
 
-            <Pressable
-              style={styles.scheduleButton}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setScheduleVisitOpen(true);
-              }}
-            >
-              <Calendar size={scaleWidth(20)} color={Colors.textLight} />
-              <Text style={styles.scheduleButtonText}>Schedule Visit</Text>
-            </Pressable>
-            <View style={styles.contactButtons}>
+            {/* Show Schedule Visit button only for STAY transaction type */}
+            {userTransactionType === 'STAY' && (
+              <Pressable
+                style={styles.scheduleButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setScheduleVisitOpen(true);
+                }}
+              >
+                <Calendar size={scaleWidth(20)} color={Colors.textLight} />
+                <Text style={styles.scheduleButtonText}>Schedule Visit</Text>
+              </Pressable>
+            )}
+            <View style={[
+              styles.contactButtons,
+              userTransactionType !== 'STAY' && styles.contactButtonsExpanded
+            ]}>
               <Pressable style={styles.contactIconButton} onPress={openPhone}>
                 <Phone size={scaleWidth(20)} color={Colors.bronze} />
               </Pressable>
@@ -1108,7 +1117,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   propertyTitle: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(8),
@@ -1120,7 +1129,7 @@ const styles = StyleSheet.create({
     gap: scaleWidth(6),
   },
   locationText: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
   },
   priceCard: {
@@ -1135,12 +1144,12 @@ const styles = StyleSheet.create({
     borderColor: Colors.bronze,
   },
   price: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '500',
     color: Colors.bronze,
   },
   priceSubLine: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '600',
     color: Colors.bronze,
   },
@@ -1154,7 +1163,7 @@ const styles = StyleSheet.create({
   },
   listingTypeText: {
     color: Colors.bronze,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '500',
   },
   offplanSummaryCard: {
@@ -1171,14 +1180,14 @@ const styles = StyleSheet.create({
     gap: scaleWidth(12),
   },
   offplanLabel: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     fontWeight: '500',
   },
   offplanValue: {
     flex: 1,
     textAlign: 'right' as const,
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.text,
     fontWeight: '600',
   },
@@ -1202,12 +1211,12 @@ const styles = StyleSheet.create({
   },
   unitTitle: {
     flex: 1,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
     color: Colors.text,
   },
   unitPrice: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
     color: Colors.bronze,
   },
@@ -1218,13 +1227,13 @@ const styles = StyleSheet.create({
     marginTop: scaleHeight(8),
   },
   unitMetaText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
     fontWeight: '500',
   },
   helperText: {
     marginTop: scaleHeight(8),
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
   },
   tabBar: {
@@ -1246,7 +1255,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(183, 138, 59, 0.12)',
   },
   tabText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
     fontWeight: '600',
   },
@@ -1267,13 +1276,13 @@ const styles = StyleSheet.create({
     padding: scaleWidth(12),
   },
   phaseValue: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '800',
     color: Colors.bronze,
   },
   phaseLabel: {
     marginTop: scaleHeight(6),
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.text,
     fontWeight: '600',
   },
@@ -1283,7 +1292,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   phaseArrowText: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     color: Colors.textSecondary,
     fontWeight: '900',
   },
@@ -1307,12 +1316,12 @@ const styles = StyleSheet.create({
     marginHorizontal: scaleWidth(12),
   },
   detailLabel: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
     fontWeight: '500',
   },
   detailValue: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.text,
     fontWeight: '700',
   },
@@ -1320,7 +1329,7 @@ const styles = StyleSheet.create({
     marginBottom: scaleHeight(28),
   },
   sectionTitle: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(12),
@@ -1351,7 +1360,7 @@ const styles = StyleSheet.create({
   },
   attachmentText: {
     flex: 1,
-    fontSize: scaleFont(13),
+    fontSize: Platform.OS === 'android' ? scaleFont(11): scaleFont(13),
     fontWeight: '600',
     color: Colors.text,
   },
@@ -1364,7 +1373,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(183, 138, 59, 0.10)',
   },
   attachmentButtonText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
     color: Colors.bronze,
   },
@@ -1377,7 +1386,7 @@ const styles = StyleSheet.create({
     gap: scaleHeight(12),
   },
   developerNameText: {
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
     color: Colors.text,
   },
@@ -1386,13 +1395,13 @@ const styles = StyleSheet.create({
     gap: scaleWidth(12),
   },
   developerMetaText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
     fontWeight: '600',
   },
 
   description: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     lineHeight: scaleFont(24),
   },
@@ -1410,7 +1419,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   amenityText: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.text,
     fontWeight: '500',
   },
@@ -1427,7 +1436,7 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(20),
   },
   lifestyleBadgeText: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.bronze,
     fontWeight: '500',
   },
@@ -1453,7 +1462,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   agentInitial: {
-    fontSize: scaleFont(24),
+    fontSize: Platform.OS === 'android' ? scaleFont(22): scaleFont(24),
     fontWeight: '700',
     color: Colors.textLight,
   },
@@ -1462,16 +1471,16 @@ const styles = StyleSheet.create({
     gap: scaleHeight(4),
   },
   agentName: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
   },
   agentRole: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
   },
   agentStats: {
-    fontSize: scaleFont(13),
+    fontSize: Platform.OS === 'android' ? scaleFont(11): scaleFont(13),
     color: Colors.textSecondary,
   },
   spacer: {
@@ -1492,6 +1501,11 @@ const styles = StyleSheet.create({
   contactButtons: {
     flexDirection: 'row',
     gap: scaleWidth(12),
+  },
+  contactButtonsExpanded: {
+    flex: 1,
+    justifyContent: 'space-evenly',
+    gap: scaleWidth(20),
   },
   contactIconButton: {
     width: scaleWidth(48),
@@ -1514,7 +1528,7 @@ const styles = StyleSheet.create({
     gap: scaleWidth(8),
   },
   scheduleButtonText: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(14),
     fontWeight: '600',
     color: Colors.textLight,
   },
@@ -1526,7 +1540,7 @@ const styles = StyleSheet.create({
     padding: scaleWidth(32),
   },
   errorText: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '600',
     color: Colors.text,
     marginBottom: scaleHeight(20),
@@ -1539,7 +1553,7 @@ const styles = StyleSheet.create({
     marginTop:scaleHeight(14),
   },
   backButtonText: {
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
     color: Colors.textLight,
   },

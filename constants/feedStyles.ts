@@ -1,4 +1,4 @@
-import { StyleSheet, Dimensions } from 'react-native';
+import { StyleSheet, Dimensions, Platform } from 'react-native';
 import { Colors } from '@/constants/colors';
 import { scaleWidth, scaleHeight, scaleFont } from '@/utils/responsive';
 
@@ -70,24 +70,24 @@ export const feedStyles = StyleSheet.create({
   },
   footerTitle: {
     color: '#FFFFFF',
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
     lineHeight: scaleFont(20),
   },
   footerPrice: {
     color: '#FFFFFF',
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
     lineHeight: scaleFont(18),
   },
   footerText: {
     color: '#FFFFFF',
-    fontSize: scaleFont(11),
+    fontSize: Platform.OS === 'android' ? scaleFont(9): scaleFont(11),
     fontWeight: '600',
   },
   footerSmallText: {
     color: '#FFFFFF',
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(8): scaleFont(12),
     fontWeight: '400',
     opacity: 0.9,
   },
@@ -125,7 +125,7 @@ export const feedStyles = StyleSheet.create({
   },
   footerActionText: {
     color: '#FFFFFF',
-    fontSize: scaleFont(10),
+    fontSize: Platform.OS === 'android' ? scaleFont(8): scaleFont(10),
     fontWeight: '600',
   },
   translationContainer: {
@@ -138,7 +138,9 @@ export const feedStyles = StyleSheet.create({
   },
   agentAvatarContainer: {
     position: 'absolute' as const, //relative
-    bottom: -(SCREEN_HEIGHT * 0.39),
+    bottom: Platform.OS === 'android' 
+      ? -scaleHeight(360) // Responsive: ~45% of 800dp baseline screen
+      : -scaleHeight(310), // Responsive: ~39% of 800dp baseline screen
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     alignItems: 'center',
@@ -172,7 +174,7 @@ export const feedStyles = StyleSheet.create({
   },
   agentInitial: {
     color: Colors.text,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
   },
   progressBarContainer: {
@@ -192,13 +194,13 @@ export const feedStyles = StyleSheet.create({
     padding: spacing(32),
   },
   emptyTitle: {
-    fontSize: scaleFont(24),
+    fontSize: Platform.OS === 'android' ? scaleFont(22): scaleFont(24),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(8),
   },
   emptyText: {
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     color: Colors.textSecondary,
     textAlign: 'center',
   },

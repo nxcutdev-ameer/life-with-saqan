@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, Pressable, Modal } from 'react-native';
+import { StyleSheet, Text, View, Pressable, Modal, Platform } from 'react-native';
 import { Captions } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { scaleWidth } from '@/utils/responsive';
+import { scaleFont, scaleWidth } from '@/utils/responsive';
 
 interface Language {
   code: string;
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: Colors.textLight,
-    fontSize: 24,
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(24),
     fontWeight: '700',
     marginBottom: 32,
   },
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   },
   languageName: {
     color: Colors.textLight,
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(14),
     fontWeight: '600',
     textAlign: 'center',
   },

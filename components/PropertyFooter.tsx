@@ -1,7 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Animated, Text, View, Pressable } from 'react-native';
+import { Animated, Text, View, Pressable, Platform } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scaleHeight } from '@/utils/responsive';
 import { Check, Plus } from 'lucide-react-native';
 import { Property } from '@/types';
@@ -78,7 +79,13 @@ export default function PropertyFooter({
   const likesCount = useEngagementStore((s) => s.getLikesCount(item.id, item.likesCount));
   const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
-  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+  const insets = useSafeAreaInsets();
+  const rawBottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+  
+  // Android positioning - use responsive calculation for consistent positioning
+  const bottomTabBarHeight = Platform.OS === 'android' 
+    ? scaleHeight(35) + insets.bottom // Responsive Android tab bar height + safe area
+    : rawBottomTabBarHeight; // iOS uses hook value (works correctly)
 
   const [followIconState, setFollowIconState] = useState<'plus' | 'check' | 'hidden'>('plus');
   const followIconScale = useRef(new Animated.Value(1)).current;

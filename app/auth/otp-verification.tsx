@@ -59,7 +59,9 @@ export default function OtpVerificationScreen() {
   const [isResending, setIsResending] = useState(false);
   const [resendSecondsLeft, setResendSecondsLeft] = useState(RESEND_SECONDS);
 
-  const inputsRef = useRef<(TextInput | null)[]>([]);
+  // Hidden input used for system OTP autofill and normal typing.
+  // We render the boxes ourselves so the OS can fill the *entire* code at once.
+  const otpInputRef = useRef<TextInput | null>(null);
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ignoreMissingPendingRedirectRef = useRef(false);
 
@@ -83,7 +85,7 @@ export default function OtpVerificationScreen() {
     }
 
     const t = setTimeout(() => {
-      inputsRef.current[0]?.focus();
+      otpInputRef.current?.focus();
     }, 200);
 
     // Start resend countdown.
@@ -96,55 +98,26 @@ export default function OtpVerificationScreen() {
     };
   }, [isAuthenticated, pendingPhoneNumber, router]);
 
-  const setDigitAt = (index: number, value: string) => {
-    setDigits((prev) => {
-      const next = [...prev];
-      next[index] = value;
-      return next;
-    });
-  };
+  const focusOtpInput = () => otpInputRef.current?.focus();
 
-  const onChangeAt = (index: number, text: string) => {
+  const handleOtpChange = (text: string) => {
     if (isVerifying) return;
 
-    const cleaned = text.replace(/[^0-9]/g, '');
+    // Some Android keyboards can insert spaces; iOS can provide the full OTP in one go.
+    const cleaned = text.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH);
 
-    // Handle paste of entire code.
-    if (cleaned.length > 1) {
-      const nextDigits = Array.from({ length: OTP_LENGTH }, (_, i) => cleaned[i] ?? '');
-      setDigits(nextDigits);
+    setDigits(Array.from({ length: OTP_LENGTH }, (_, i) => cleaned[i] ?? ''));
 
-      // If user pasted the full code, move focus to the last box and dismiss keyboard.
-      if (cleaned.length >= OTP_LENGTH) {
-        inputsRef.current[OTP_LENGTH - 1]?.blur();
-        Keyboard.dismiss();
-      } else {
-        // Focus the next empty input (index = cleaned.length)
-        const nextIndex = Math.min(cleaned.length, OTP_LENGTH - 1);
-        inputsRef.current[nextIndex]?.focus();
-      }
-      return;
+    // If we have all digits (autofill or paste), automatically verify
+    if (cleaned.length >= OTP_LENGTH) {
+      otpInputRef.current?.blur();
+      Keyboard.dismiss();
+      
+      // Small delay to ensure UI updates, then auto-verify
+      setTimeout(() => {
+        onVerify();
+      }, 100);
     }
-
-    setDigitAt(index, cleaned);
-
-    if (cleaned && index < OTP_LENGTH - 1) {
-      inputsRef.current[index + 1]?.focus();
-    }
-  };
-
-  const onKeyPressAt = (index: number, key: string) => {
-    if (isVerifying) return;
-    if (key !== 'Backspace') return;
-
-    // If current is empty, move back.
-    if (digits[index] === '' && index > 0) {
-      inputsRef.current[index - 1]?.focus();
-      setDigitAt(index - 1, '');
-      return;
-    }
-
-    setDigitAt(index, '');
   };
 
   const onVerify = async () => {
@@ -366,27 +339,47 @@ export default function OtpVerificationScreen() {
                 </View>
 
                 <View style={styles.card}>
-                  <View style={styles.otpRow}>
+                  <Pressable
+                    style={styles.otpRow}
+                    onPress={focusOtpInput}
+                    android_disableSound
+                    accessibilityRole="button"
+                    accessibilityLabel="OTP input"
+                  >
                     {Array.from({ length: OTP_LENGTH }, (_, index) => (
-                      <TextInput
+                      <View
                         key={index}
-                        ref={(r) => {
-                          inputsRef.current[index] = r;
-                        }}
-                        value={digits[index]}
-                        onChangeText={(t) => onChangeAt(index, t)}
-                        onKeyPress={({ nativeEvent }) => onKeyPressAt(index, nativeEvent.key)}
-                        style={styles.otpBox}
-                        keyboardType="number-pad"
-                        textContentType="oneTimeCode"
-                        maxLength={1}
-                        returnKeyType="done"
-                        placeholder="•"
-                        placeholderTextColor={Colors.textSecondary}
-                        selectionColor={Colors.bronze}
-                      />
+                        style={[styles.otpBox, digits[index] ? styles.otpBoxFilled : null]}
+                        pointerEvents="none"
+                      >
+                        <Text style={styles.otpDigitText}>
+                          {digits[index] ? digits[index] : '•'}
+                        </Text>
+                      </View>
                     ))}
-                  </View>
+
+                    {/*
+                      Hidden input used for system OTP autofill.
+                      - iOS: textContentType="oneTimeCode"
+                      - Android: autoComplete="sms-otp"
+
+                      Important: The hidden input must NOT have maxLength={1}. If it does,
+                      iOS autofill will only be able to insert the first character.
+                    */}
+                    <TextInput
+                      ref={otpInputRef}
+                      value={otp}
+                      onChangeText={handleOtpChange}
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      textContentType={Platform.OS === 'ios' ? 'oneTimeCode' : 'none'}
+                      autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'off'}
+                      importantForAutofill="yes"
+                      maxLength={OTP_LENGTH}
+                      style={styles.hiddenOtpInput}
+                      caretHidden
+                    />
+                  </Pressable>
 
                   <Pressable
                     style={[
@@ -520,11 +513,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: scaleWidth(12),
-    textAlign: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  otpBoxFilled: {
+    borderColor: Colors.bronze,
+  },
+  otpDigitText: {
     fontSize: scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
-    backgroundColor: 'transparent',
+  },
+  hiddenOtpInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: 1,
+    height: 1,
   },
   primaryButton: {
     marginTop: scaleHeight(18),

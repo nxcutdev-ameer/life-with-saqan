@@ -3,6 +3,7 @@ import { Alert, Animated, BackHandler, Easing, Pressable, StyleSheet, Text, View
 import { SavingSpinner } from '@/components/SavingSpinner';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Audio } from 'expo-av';
 import { ArrowLeft, RefreshCcw } from 'lucide-react-native';
 import { Colors, LifestyleColors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
@@ -25,6 +26,7 @@ export default function RecordVideoScreen() {
   );
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
+  const [audioPermission, setAudioPermission] = useState<boolean | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -94,13 +96,59 @@ export default function RecordVideoScreen() {
     }
   }, [permission, requestPermission]);
 
+  // Request audio permissions on component mount
+  useEffect(() => {
+    const requestAudioPermission = async () => {
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        setAudioPermission(status === 'granted');
+      } catch (error) {
+        console.warn('Audio permission request failed:', error);
+        setAudioPermission(false);
+      }
+    };
+
+    requestAudioPermission();
+  }, []);
+
   const startRecording = async () => {
     if (isRecording || isSaving) return;
 
+    // Check camera permission
     if (!permission?.granted) {
       const res = await requestPermission();
       if (!res.granted) {
         Alert.alert('Permission required', 'Camera permission is required to record video.');
+        return;
+      }
+    }
+
+    // Check audio permission for Android
+    if (audioPermission === null) {
+      Alert.alert('Permission loading', 'Audio permissions are being checked. Please try again.');
+      return;
+    }
+
+    if (!audioPermission) {
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Audio Permission Required', 
+            'Microphone access is required to record video with audio. Please enable it in device settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Settings', onPress: () => {
+                // On Android, user needs to manually enable in settings
+                Alert.alert('Enable Permissions', 'Go to Settings > Apps > [Your App] > Permissions > Microphone and enable it.');
+              }}
+            ]
+          );
+          return;
+        }
+        setAudioPermission(true);
+      } catch (error) {
+        Alert.alert('Permission Error', 'Failed to request audio permission. Please try again.');
         return;
       }
     }

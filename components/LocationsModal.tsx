@@ -22,12 +22,19 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
 
   const handleTransactionSelect = (type: TransactionType) => {
     setSelectedTransaction(type);
-    // Transaction + location are a single step now; do not advance.
+    // Transaction + location as a single step
   };
 
   const handleLocationSelect = (city: string) => {
     setSelectedLocation(city);
-    setTimeout(() => setStep('lifestyle'), 200);
+    // Only proceed to lifestyle step if STAY is selected
+    if (selectedTransaction === 'STAY') {
+      setTimeout(() => setStep('lifestyle'), 200);
+    } else {
+      // For BUY/RENT, apply preferences immediately and close modal
+      updatePreferences(selectedTransaction, city, []);
+      onClose();
+    }
   };
 
   const toggleLifestyle = (lifestyle: LifestyleType) => {
@@ -39,7 +46,9 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
   };
 
   const handleApply = () => {
-    updatePreferences(selectedTransaction, selectedLocation, selectedLifestyles);
+    // Only apply lifestyles for STAY transaction type
+    const finalLifestyles = selectedTransaction === 'STAY' ? selectedLifestyles : [];
+    updatePreferences(selectedTransaction, selectedLocation, finalLifestyles);
     onClose();
   };
 
