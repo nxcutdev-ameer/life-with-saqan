@@ -36,7 +36,8 @@ export const feedStyles = StyleSheet.create({
   },
   floatingActionsBar: {
     position: 'absolute' as const,
-    right: spacing(12),
+    // Slightly closer to the screen edge
+    right: spacing(6),
     bottom: scaleHeight(140),
     zIndex: 210,
     elevation: 210,
@@ -109,7 +110,8 @@ export const feedStyles = StyleSheet.create({
     flexDirection: 'column',
     gap: spacing(12),
     alignItems: 'center',
-    paddingRight: spacing(8),
+    // Don't inset the action buttons from the right; positioning is handled by floatingActionsBar.
+    paddingRight: 0,
   },
    iconShadow: {
     shadowColor: '#000',
@@ -132,6 +134,12 @@ export const feedStyles = StyleSheet.create({
     marginBottom: scaleHeight(4),
     gap: spacing(2),
   },
+  translationText: {
+    color: '#FFFFFF',
+    fontSize: Platform.OS === 'android' ? scaleFont(5) : scaleFont(12),
+    fontWeight: Platform.OS === 'android' ? '200' : '400',
+    opacity: 0.85,
+  },
   agentSection: {
     alignItems: 'center',
     gap: spacing(8),
@@ -139,8 +147,8 @@ export const feedStyles = StyleSheet.create({
   agentAvatarContainer: {
     position: 'absolute' as const, //relative
     bottom: Platform.OS === 'android' 
-      ? -scaleHeight(360) // Responsive: ~45% of 800dp baseline screen
-      : -scaleHeight(310), // Responsive: ~39% of 800dp baseline screen
+      ? -scaleHeight(370)
+      : -scaleHeight(350),
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     alignItems: 'center',

@@ -148,8 +148,8 @@ export default function EngagementButtons({
             }}
           />
           <MaterialCommunityIcons
-            name={isLiked ? 'heart' : 'heart-outline'}
-            size={28}
+            name={isLiked ? 'heart' : 'heart'}
+            size={32}
             color={isLiked ? '#FF3B30' : '#FFFFFF'}
           />
         </Animated.View>
@@ -159,7 +159,7 @@ export default function EngagementButtons({
       </Pressable>
 
       <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => effectiveOnOpenComments?.(item.id)}>
-        <MaterialCommunityIcons name="chat" size={28} color="#FFFFFF" />
+        <MaterialCommunityIcons name="chat" size={32} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.commentsCount)}
         </Text>
@@ -167,8 +167,8 @@ export default function EngagementButtons({
 
       <Pressable style={[styles.footerActionButton, styles.iconShadow]} onPress={() => effectiveOnToggleSave?.(item.id)}>
         <MaterialCommunityIcons
-          name={isSaved ? 'bookmark' : 'bookmark-outline'}
-          size={28}
+          name={isSaved ? 'bookmark' : 'bookmark'}
+          size={32}
           color={isSaved ?Colors.bronze: "#ffff"}
         />
         <Text style={styles.footerActionText}>
@@ -180,7 +180,7 @@ export default function EngagementButtons({
         style={[styles.footerActionButton, styles.iconShadow]}
         onPress={() => effectiveOnShare?.(item.id)}
       >
-        <MaterialCommunityIcons name="share-variant" size={28} color="#FFFFFF" />
+        <MaterialCommunityIcons name="share" size={32} color="#FFFFFF" />
         <Text style={styles.footerActionText}>
           {formatEngagementMetric(item.sharesCount)}
         </Text>

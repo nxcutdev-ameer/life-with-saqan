@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, Pressable, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { preloadFeedFromCacheBeforeNavigate } from '@/utils/preloadFeedFromCache';
 import { Colors } from '@/constants/colors';
@@ -12,13 +12,30 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 export default function LocationsScreen() {
   const router = useRouter();
   const { updatePreferences, lifestyles } = useUserPreferences();
+
+  // Background preference sync with retry logic
+  const syncPreferencesInBackground = async (type: TransactionType, location: string, lifestyles: any[]) => {
+    try {
+      await updatePreferences(type, location, lifestyles);
+    } catch (error) {
+      console.warn('Failed to sync preferences, retrying...', error);
+      // Retry once after 1 second
+      setTimeout(async () => {
+        try {
+          await updatePreferences(type, location, lifestyles);
+        } catch (retryError) {
+          console.error('Failed to sync preferences after retry:', retryError);
+        }
+      }, 1000);
+    }
+  };
   const [transactionType, setTransactionType] = useState<TransactionType>('RENT');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
 
   const handleCitySelect = (city: string) => {
     setSelectedCity(city);
-    updatePreferences(transactionType, city, lifestyles);
-
+    
+    // Navigate immediately
     if (transactionType === 'STAY') {
       router.push({
         pathname: '/lifestyle',
@@ -28,25 +45,26 @@ export default function LocationsScreen() {
         },
       });
     } else {
-        // Use LandingScreen-warmed cache to prepare the exact feed (strict type+city) before navigating.
-        // Commit filtered items synchronously (fast, from cache) so Feed mounts already filtered.
-        // Warm players in background so we don't block navigation on player init.
-        const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+      const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+      router.push({
+        pathname: '/(tabs)/feed',
+        params: {
+          transactionType: backendTransactionType,
+          location: city,
+        },
+      });
+    }
 
-        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
-          .catch(() => {
-            // Ignore preload failures; feed will load normally.
-          })
-          .finally(() => {
-            preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: true }).catch(() => {});
-          });
-
-        router.push({
-          pathname: '/(tabs)/feed',
-          params: {
-            transactionType: backendTransactionType,
-            location: city,
-          },
+    // Background tasks (non-blocking) - sync preferences and preload
+    syncPreferencesInBackground(transactionType, city, lifestyles);
+    
+    if (transactionType !== 'STAY') {
+      // Preload video cache in background
+      const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+      preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
+        .catch(() => {})
+        .finally(() => {
+          preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: true }).catch(() => {});
         });
     }
   };

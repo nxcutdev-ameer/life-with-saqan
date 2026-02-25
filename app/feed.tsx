@@ -76,10 +76,13 @@ export default function FeedScreen() {
     });
   };
 
-  const renderProperty = ({ item }: { item: Property }) => {
+  const renderProperty = ({ item, index }: { item: Property; index: number }) => {
     const isViewable = viewableItems.includes(item.id);
     const isLiked = isLikedGlobal(item.id);
     const isSaved = savedProperties.has(item.id);
+    
+    // First video autoplays immediately, others wait for viewability
+    const shouldPlay = index === 0 ? true : isViewable;
 
     return (
       <View style={styles.propertyContainer}>
@@ -91,7 +94,7 @@ export default function FeedScreen() {
             source={{ uri: item.videoUrl }}
             style={styles.video}
             resizeMode={ResizeMode.COVER}
-            shouldPlay={isViewable}
+            shouldPlay={shouldPlay}
             isLooping
             isMuted={false}
             volume={0.8}

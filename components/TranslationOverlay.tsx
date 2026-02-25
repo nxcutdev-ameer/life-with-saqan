@@ -68,7 +68,7 @@ export default function TranslationOverlay({
         }}
       >
         <View style={styles.iconShadow}>
-          <Captions size={28} color={Colors.textLight} strokeWidth={1.8} />
+          <Captions size={32} color={Colors.WHITE} strokeWidth={1.5} />
         </View>
       </Pressable>
 
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   triggerButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight:scaleWidth(8),
+   // marginRight:scaleWidth(8),
   },
  iconShadow: {
     shadowColor: '#000',

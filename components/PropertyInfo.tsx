@@ -22,8 +22,12 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
     <View style={styles.footerLeftContent}>
       {translationContent && (
         <View style={styles.translationContainer}>
-          <Text style={styles.footerText}>{translationContent.agentName}</Text>
-          <Text style={styles.footerSmallText} numberOfLines={1}>
+          <Text
+            style={styles.translationText}
+            numberOfLines={1}
+            // Prevent Android system font scaling from making this look larger than intended.
+            allowFontScaling={false}
+          >
             {translationContent.translation}
           </Text>
         </View>

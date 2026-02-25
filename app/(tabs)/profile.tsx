@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList } from 'react-native';
+import { Alert, StyleSheet, Text, View, ScrollView, Pressable, FlatList, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
@@ -246,17 +246,17 @@ export default function ProfileScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>24</Text>
+              <Text style={styles.statNumber}>{displayedProperties.length}</Text>
               <Text style={styles.statLabel}>Properties</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>1.2K</Text>
+              <Text style={styles.statNumber}>0</Text>
               <Text style={styles.statLabel}>Followers</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>342</Text>
+              <Text style={styles.statNumber}>0</Text>
               <Text style={styles.statLabel}>Following</Text>
             </View>
           </View>
@@ -472,13 +472,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.background,
   },
   userName: {
-    fontSize: scaleFont(24),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(24),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(4),
   },
   userBio: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: scaleHeight(20),
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     gap: scaleWidth(4),
   },
   statNumber: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editButtonText: {
-    fontSize: scaleFont(16),
+      fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
     color: Colors.text,
   },
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.bronze,
   },
   tabText: {
-    fontSize: scaleFont(15),
+    fontSize: Platform.OS === 'android' ? scaleFont(13): scaleFont(15),
     fontWeight: '600',
     color: Colors.textSecondary,
   },
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
     gap: scaleWidth(4),
   },
   gridStatText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
     color: Colors.textLight,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
@@ -605,12 +605,12 @@ const styles = StyleSheet.create({
     marginBottom: scaleHeight(8),
   },
   subscriptionTier: {
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
     color: Colors.text,
   },
   subscriptionUsage: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     marginBottom: scaleHeight(12),
   },
@@ -623,11 +623,11 @@ const styles = StyleSheet.create({
   },
   upgradeButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '600',
   },
   premiumBadgeText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.bronze,
     fontWeight: '600',
   },
