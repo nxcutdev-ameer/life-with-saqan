@@ -279,6 +279,8 @@ export default function PropertyDetailScreen() {
   const { transactionType: userTransactionType } = useUserPreferences();
   const [unitsExpanded, setUnitsExpanded] = useState(false);
   const [unitsSectionY, setUnitsSectionY] = useState(0);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [descriptionSectionY, setDescriptionSectionY] = useState(0);
   const [activePaymentPlanId, setActivePaymentPlanId] = useState<number | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const flatListRef = useRef<FlatList<string>>(null);
@@ -738,11 +740,47 @@ export default function PropertyDetailScreen() {
             </>
           )}
 
-          <View style={styles.section}>
+          <View
+            style={styles.section}
+            onLayout={(e) => setDescriptionSectionY(e.nativeEvent.layout.y)}
+          >
             <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.description}>
-              {isOffplanMode && offplanDetails ? offplanDetails.description : property?.description}
-            </Text>
+            {(() => {
+              const fullText =
+                (isOffplanMode && offplanDetails ? offplanDetails.description : property?.description) ?? '';
+              const words = fullText.trim().split(/\s+/).filter(Boolean);
+              const needsToggle = words.length > 100;
+              const preview = needsToggle ? `${words.slice(0, 100).join(' ')}…` : fullText;
+              const displayText = descriptionExpanded || !needsToggle ? fullText : preview;
+
+              return (
+                <>
+                  <Text style={styles.description}>{displayText}</Text>
+                  {needsToggle ? (
+                    <Pressable
+                      onPress={() => {
+                        if (descriptionExpanded) {
+                          setDescriptionExpanded(false);
+                          requestAnimationFrame(() => {
+                            scrollViewRef.current?.scrollTo({ y: descriptionSectionY, animated: true });
+                          });
+                        } else {
+                          setDescriptionExpanded(true);
+                          requestAnimationFrame(() => {
+                            scrollViewRef.current?.scrollTo({ y: descriptionSectionY, animated: true });
+                          });
+                        }
+                      }}
+                      style={{ alignSelf: 'flex-start', marginTop: scaleHeight(8) }}
+                    >
+                      <Text style={styles.readMoreText}>
+                        {descriptionExpanded ? 'Read less' : 'Read more'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </>
+              );
+            })()}
           </View>
 
           {isOffplanMode && offplanDetails ? (
@@ -966,11 +1004,11 @@ export default function PropertyDetailScreen() {
                 <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
               </Pressable>
 
-              {developerWebsite ? (
+              {/* {developerWebsite ? (
                 <Pressable style={styles.contactIconButton} onPress={() => openWebUrl(developerWebsite)}>
                   <ExternalLink size={scaleWidth(20)} color={Colors.bronze} />
                 </Pressable>
-              ) : null}
+              ) : null} */}
             </View>
           </>
         ) : (
@@ -1404,6 +1442,11 @@ const styles = StyleSheet.create({
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     lineHeight: scaleFont(24),
+  },
+  readMoreText: {
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
+    color: Colors.bronze,
+    fontWeight: '700',
   },
   amenitiesGrid: {
     flexDirection: 'row',
