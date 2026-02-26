@@ -9,6 +9,7 @@ export type OffplanUnitPayload = {
   floor?: string | number | null;
   bedrooms?: string | number | null;
   bathrooms?: string | number | null;
+  floor_plan?: string | null;
   property_reference_id?: string | null;
 };
 
@@ -64,10 +65,13 @@ export type OffplanPropertyDetailsPayload = {
 
 export type OffplanUnitDetails = {
   id: number;
-  label: string; // e.g. "2 BR Apartment"
-  priceLabel: string; // e.g. "4,135,194 AED"
-  sizeLabel: string; // e.g. "2,235 sqft"
+  label: string;
+  priceLabel: string;
+  sizeLabel: string;
   metaLabel: string; // e.g. "Off plan · Floor 2"
+  bedrooms?: number;
+  bathrooms?: number;
+  floorPlanUrl?: string;
 };
 
 export type OffplanPaymentPhaseDetails = {
@@ -157,6 +161,14 @@ export function normalizeOffplanDetails(value: unknown): OffplanDetails | null {
         priceLabel: asString(u?.priceLabel, ''),
         sizeLabel: asString(u?.sizeLabel, ''),
         metaLabel: asString(u?.metaLabel, ''),
+        bedrooms: typeof u?.bedrooms === 'number' ? u.bedrooms : u?.bedrooms == null ? undefined : Number(u?.bedrooms),
+        bathrooms: typeof u?.bathrooms === 'number' ? u.bathrooms : u?.bathrooms == null ? undefined : Number(u?.bathrooms),
+        floorPlanUrl:
+          typeof u?.floorPlanUrl === 'string'
+            ? u.floorPlanUrl
+            : typeof u?.floor_plan === 'string'
+              ? u.floor_plan
+              : undefined,
       }))
       .filter((u: any) => Number.isFinite(u.id) && u.id > 0 && u.label),
     paymentPlans: paymentPlans
@@ -271,12 +283,19 @@ export function mapOffplanPayloadToDetails(payload: OffplanPropertyDetailsPayloa
         .filter(Boolean)
         .map((s) => s.replace(/_/g, ' '));
 
+      const bedrooms = parseNumberLike(u?.bedrooms);
+      const bathrooms = parseNumberLike(u?.bathrooms);
+      const floorPlanUrl = (u?.floor_plan || '')?.trim();
+
       return {
         id: Number(u?.id ?? 0),
         label,
         priceLabel,
         sizeLabel,
         metaLabel: metaBits.join(' · '),
+        bedrooms: bedrooms ?? undefined,
+        bathrooms: bathrooms ?? undefined,
+        floorPlanUrl: floorPlanUrl || undefined,
       };
     })
     .filter((u) => Number.isFinite(u.id) && u.id > 0);

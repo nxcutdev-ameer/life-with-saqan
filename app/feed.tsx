@@ -7,6 +7,7 @@ import {
   FlatList, 
   Dimensions,
   ViewToken,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
@@ -81,8 +82,9 @@ export default function FeedScreen() {
     const isLiked = isLikedGlobal(item.id);
     const isSaved = savedProperties.has(item.id);
     
-    // First video autoplays immediately, others wait for viewability
-    const shouldPlay = index === 0 ? true : isViewable;
+    // Fix iOS flickering: Stable first video autoplay with proper fallback
+    // Note: can't use hooks (useMemo) inside renderProperty; keep it as a simple derived value.
+    const shouldPlay = index === 0 && viewableItems.length === 0 ? true : isViewable;
 
     return (
       <View style={styles.propertyContainer}>
@@ -98,6 +100,10 @@ export default function FeedScreen() {
             isLooping
             isMuted={false}
             volume={0.8}
+            // Platform-specific video optimizations
+            useNativeControls={false}
+            positionMillis={0}
+            progressUpdateIntervalMillis={Platform.OS === 'android' ? 1000 : 500}
           />
         </Pressable>
 
@@ -234,9 +240,15 @@ export default function FeedScreen() {
         decelerationRate="fast"
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        // Android optimization: Enhanced performance settings
+        removeClippedSubviews={Platform.OS === 'android'}
+        maxToRenderPerBatch={Platform.OS === 'android' ? 1 : 2}
+        windowSize={Platform.OS === 'android' ? 2 : 3}
+        initialNumToRender={1}
+        updateCellsBatchingPeriod={Platform.OS === 'android' ? 50 : 100}
+        disableIntervalMomentum={Platform.OS === 'android'}
+        // iOS optimization: Smoother scrolling
+        scrollEventThrottle={Platform.OS === 'ios' ? 16 : 32}
       />
     </View>
   );

@@ -55,17 +55,25 @@ export default function LocationsScreen() {
       });
     }
 
-    // Background tasks (non-blocking) - sync preferences and preload
-    syncPreferencesInBackground(transactionType, city, lifestyles);
-    
-    if (transactionType !== 'STAY') {
-      // Preload video cache in background
-      const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
-      preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
-        .catch(() => {})
-        .finally(() => {
-          preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: true }).catch(() => {});
-        });
+    // Android optimization: Defer all background tasks to next tick
+    if (Platform.OS === 'android') {
+      // Use setImmediate to push to next event loop (Android-specific optimization)
+      setImmediate(() => {
+        syncPreferencesInBackground(transactionType, city, lifestyles);
+        if (transactionType !== 'STAY') {
+          const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+          preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
+            .catch(() => {});
+        }
+      });
+    } else {
+      // iOS: Original background task handling
+      syncPreferencesInBackground(transactionType, city, lifestyles);
+      if (transactionType !== 'STAY') {
+        const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
+          .catch(() => {});
+      }
     }
   };
 

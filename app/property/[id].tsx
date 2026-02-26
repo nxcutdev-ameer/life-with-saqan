@@ -11,6 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Modal,
+  Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
@@ -32,6 +34,7 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
+  X,
 } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { mockProperties } from '@/mocks/properties';
@@ -50,6 +53,12 @@ import type { Property, TransactionType, PropertyType, LifestyleType } from '@/t
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useEngagementStore } from '@/stores/engagementStore';
+import {
+  PinchGestureHandler,
+  PanGestureHandler,
+  TapGestureHandler,
+  State,
+} from 'react-native-gesture-handler';
 import { usePropertyLikeStore } from '@/stores/propertyLikeStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
@@ -60,14 +69,16 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function PropertyDetailScreen() {
   const router = useRouter();
   // Route param is treated as the property reference.
-  const { id, videoId, mode } = useLocalSearchParams<{
+  const { id, videoId, mode, agentPhone } = useLocalSearchParams<{ 
     id?: string | string[];
     videoId?: string | string[];
     mode?: string | string[];
+    agentPhone?: string | string[];
   }>();
   const propertyReference = Array.isArray(id) ? id[0] : id;
   const videoIdParam = Array.isArray(videoId) ? videoId[0] : videoId;
   const modeParam = Array.isArray(mode) ? mode[0] : mode;
+  const agentPhoneParam = Array.isArray(agentPhone) ? agentPhone[0] : agentPhone;
   const isOffplanMode = (modeParam || '').toLowerCase() === 'offplan';
   // `videoId` is optional; when provided, we keep it as the local property id for engagement tracking.
 
@@ -279,11 +290,30 @@ export default function PropertyDetailScreen() {
   const { transactionType: userTransactionType } = useUserPreferences();
   const [unitsExpanded, setUnitsExpanded] = useState(false);
   const [unitsSectionY, setUnitsSectionY] = useState(0);
+
+  const [floorPlanUrl, setFloorPlanUrl] = useState<string | null>(null);
+  const [floorPlanOpen, setFloorPlanOpen] = useState(false);
+  const floorPlanBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const floorPlanContentScale = useRef(new Animated.Value(0.96)).current;
+  const floorPlanContentTranslateY = useRef(new Animated.Value(12)).current;
+
+  // Zoom/pan state for floor plan viewer.
+  const floorPlanBaseScale = useRef(new Animated.Value(1)).current;
+  const floorPlanPinchScale = useRef(new Animated.Value(1)).current;
+  const floorPlanScale = Animated.multiply(floorPlanBaseScale, floorPlanPinchScale);
+  const floorPlanTranslateX = useRef(new Animated.Value(0)).current;
+  const floorPlanTranslateY = useRef(new Animated.Value(0)).current;
+  const floorPlanLastTranslate = useRef({ x: 0, y: 0 }).current;
+  const floorPlanLastScale = useRef(1);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionSectionY, setDescriptionSectionY] = useState(0);
   const [activePaymentPlanId, setActivePaymentPlanId] = useState<number | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const flatListRef = useRef<FlatList<string>>(null);
+
+  const floorPlanPinchRef = useRef<any>(null);
+  const floorPlanPanRef = useRef<any>(null);
+  const floorPlanDoubleTapRef = useRef<any>(null);
 
   const isVideoUrl = useCallback((url: string) => {
     const u = (url ?? '').toLowerCase();
@@ -314,6 +344,173 @@ export default function PropertyDetailScreen() {
 
     Image.prefetch(candidates);
   }, [allMedia, currentImageIndex, hasMedia, isVideoUrl]);
+
+  const openFloorPlan = useCallback(
+    (url: string) => {
+      setFloorPlanUrl(url);
+      setFloorPlanOpen(true);
+      // Reset zoom state.
+      floorPlanBaseScale.setValue(1);
+      floorPlanPinchScale.setValue(1);
+      floorPlanTranslateX.setValue(0);
+      floorPlanTranslateY.setValue(0);
+      floorPlanLastTranslate.x = 0;
+      floorPlanLastTranslate.y = 0;
+      floorPlanLastScale.current = 1;
+
+      Animated.parallel([
+        Animated.timing(floorPlanBackdropOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(floorPlanContentScale, {
+          toValue: 1,
+          speed: 18,
+          bounciness: 6,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floorPlanContentTranslateY, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [
+      floorPlanBackdropOpacity,
+      floorPlanContentScale,
+      floorPlanContentTranslateY,
+      floorPlanBaseScale,
+      floorPlanPinchScale,
+      floorPlanTranslateX,
+      floorPlanTranslateY,
+      setFloorPlanUrl,
+      setFloorPlanOpen,
+    ]
+  );
+
+  const closeFloorPlan = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(floorPlanBackdropOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(floorPlanContentScale, {
+        toValue: 0.98,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(floorPlanContentTranslateY, {
+        toValue: 12,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setFloorPlanOpen(false);
+        setFloorPlanUrl(null);
+        floorPlanBaseScale.setValue(1);
+        floorPlanPinchScale.setValue(1);
+        floorPlanTranslateX.setValue(0);
+        floorPlanTranslateY.setValue(0);
+        floorPlanLastTranslate.x = 0;
+        floorPlanLastTranslate.y = 0;
+        floorPlanLastScale.current = 1;
+      }
+    });
+  }, [
+    floorPlanBackdropOpacity,
+    floorPlanContentScale,
+    floorPlanContentTranslateY,
+    floorPlanBaseScale,
+    floorPlanPinchScale,
+    floorPlanTranslateX,
+    floorPlanTranslateY,
+  ]);
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 4;
+
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+  const handlePinchEvent = Animated.event([{ nativeEvent: { scale: floorPlanPinchScale } }], {
+    useNativeDriver: true,
+  });
+
+  const handlePinchStateChange = (event: any) => {
+    if (event.nativeEvent.oldState === State.ACTIVE) {
+      const nextScale = clamp(floorPlanLastScale.current * (event.nativeEvent.scale ?? 1), MIN_ZOOM, MAX_ZOOM);
+      floorPlanLastScale.current = nextScale;
+      floorPlanBaseScale.setValue(nextScale);
+      floorPlanPinchScale.setValue(1);
+
+      // When zoom returns to 1x, reset translation.
+      if (nextScale === 1) {
+        floorPlanTranslateX.setValue(0);
+        floorPlanTranslateY.setValue(0);
+        floorPlanLastTranslate.x = 0;
+        floorPlanLastTranslate.y = 0;
+      }
+    }
+  };
+
+  const handlePanEvent = Animated.event(
+    [
+      {
+        nativeEvent: {
+          translationX: floorPlanTranslateX,
+          translationY: floorPlanTranslateY,
+        },
+      },
+    ],
+    { useNativeDriver: true }
+  );
+
+  const handlePanStateChange = (event: any) => {
+    if (event.nativeEvent.oldState === State.ACTIVE) {
+      // Only keep pan offsets when zoomed.
+      if (floorPlanLastScale.current <= 1) {
+        floorPlanTranslateX.setOffset(0);
+        floorPlanTranslateY.setOffset(0);
+        floorPlanTranslateX.setValue(0);
+        floorPlanTranslateY.setValue(0);
+        floorPlanLastTranslate.x = 0;
+        floorPlanLastTranslate.y = 0;
+        return;
+      }
+
+      const x = floorPlanLastTranslate.x + (event.nativeEvent.translationX ?? 0);
+      const y = floorPlanLastTranslate.y + (event.nativeEvent.translationY ?? 0);
+      floorPlanLastTranslate.x = x;
+      floorPlanLastTranslate.y = y;
+      floorPlanTranslateX.setOffset(x);
+      floorPlanTranslateX.setValue(0);
+      floorPlanTranslateY.setOffset(y);
+      floorPlanTranslateY.setValue(0);
+    }
+  };
+
+  const onDoubleTap = () => {
+    const isZoomed = floorPlanLastScale.current > 1;
+    const target = isZoomed ? 1 : 2;
+
+    floorPlanLastScale.current = target;
+    floorPlanTranslateX.setOffset(0);
+    floorPlanTranslateY.setOffset(0);
+    floorPlanTranslateX.setValue(0);
+    floorPlanTranslateY.setValue(0);
+    floorPlanLastTranslate.x = 0;
+    floorPlanLastTranslate.y = 0;
+
+    Animated.spring(floorPlanBaseScale, {
+      toValue: target,
+      speed: 18,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const renderMediaItem = useCallback(
     ({ item }: { item: string }) => {
@@ -394,7 +591,7 @@ export default function PropertyDetailScreen() {
     );
   }
 
-  const agentPhoneRaw = property?.agent?.phone ?? '+971501234567';
+  const readyAgentPhoneRaw = property?.agent?.phone ?? '+971501234567';
 
   const getInitials = (name: string) => {
     const cleaned = (name ?? '').trim();
@@ -413,7 +610,7 @@ export default function PropertyDetailScreen() {
   const agentEmail =
     property?.agent?.email ?? `${agentDisplayName.toLowerCase().replace(/\s+/g, '.')}@saqan.com`;
 
-  const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
+  const readyAgentPhoneDigits = readyAgentPhoneRaw.replace(/[^0-9]/g, '');
 
   const showMultiPeriodPricing = Boolean(
     property &&
@@ -422,9 +619,50 @@ export default function PropertyDetailScreen() {
       (property.periodPrices.week || property.periodPrices.month || property.periodPrices.year)
   );
 
+  const normalizeWhatsAppPhone = (digits: string) => {
+    let d = (digits || '').replace(/[^0-9]/g, '');
+
+    // WhatsApp requires an international-format number, without '+' or leading zeros.
+    // Handle common UAE local formats:
+    // - 050xxxxxxx (10 digits, leading 0)
+    // - 02xxxxxxx / 04xxxxxxx (9 digits, leading 0)
+    // - +9710xxxxxxxxx (country code + a redundant 0)
+    // - 5xxxxxxxx (9 digits mobile)
+    // - 9715xxxxxxxx (already E.164 digits)
+    if (d.startsWith('00')) d = d.slice(2);
+
+    // Fix numbers like 9710XXXXXXXXX -> 971XXXXXXXXX
+    if (d.startsWith('9710')) d = `971${d.slice(4)}`;
+
+    // UAE local numbers sometimes start with 0 (mobile 05xxxxxxxx, landline 0[2-9]xxxxxxx).
+    if (d.startsWith('0') && (d.length === 9 || d.length === 10)) return `971${d.slice(1)}`;
+    if (!d.startsWith('971') && d.length === 9 && d.startsWith('5')) return `971${d}`;
+
+    return d;
+  };
+
+  const isValidWhatsAppPhone = (phoneDigits: string) => {
+    const p = (phoneDigits || '').replace(/[^0-9]/g, '');
+    if (!p) return false;
+
+    // Generic E.164-ish length guard.
+    if (p.length < 8 || p.length > 15) return false;
+
+    // Extra validation for UAE numbers to avoid opening invalid wa.me links.
+    // UAE country code is 971.
+    // - Mobiles are typically 9715XXXXXXXX (12 digits total)
+    // - Landlines are typically 971[2-9]XXXXXXX (11 digits total)
+    if (p.startsWith('971')) {
+      if (p.startsWith('9715')) return p.length === 12;
+      return p.length === 11;
+    }
+
+    return true;
+  };
+
   const openPhone = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const telUrl = `tel:${agentPhoneRaw}`;
+    const telUrl = `tel:${readyAgentPhoneRaw}`;
     if (await Linking.canOpenURL(telUrl)) {
       await Linking.openURL(telUrl);
     }
@@ -437,10 +675,16 @@ export default function PropertyDetailScreen() {
     const encodedText = encodeURIComponent(text);
 
     // App deep link
-    const appUrl = `whatsapp://send?phone=${agentPhoneDigits}&text=${encodedText}`;
+    const phone = normalizeWhatsAppPhone(readyAgentPhoneDigits);
+    if (!isValidWhatsAppPhone(phone)) {
+      Alert.alert('Invalid phone number', 'This agent does not have a valid WhatsApp number.');
+      return;
+    }
+
+    const appUrl = `whatsapp://send?phone=${phone}&text=${encodedText}`;
 
     // Universal web fallback
-    const webUrl = `https://wa.me/${agentPhoneDigits}?text=${encodedText}`;
+    const webUrl = `https://wa.me/${phone}?text=${encodedText}`;
 
     if (await Linking.canOpenURL(appUrl)) {
       await Linking.openURL(appUrl);
@@ -466,16 +710,27 @@ export default function PropertyDetailScreen() {
 
   const developerPhoneRaw = (offplanDetails?.developerContact?.phone ?? '').trim();
   const developerPhoneDigits = developerPhoneRaw.replace(/[^0-9]/g, '');
+
+  const agentPhoneRaw = (agentPhoneParam || property?.agent?.phone || '').trim();
+  const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
+
+  const contactPhoneRaw = isOffplanMode
+    ? agentPhoneRaw || developerPhoneRaw
+    : developerPhoneRaw;
+  const contactPhoneDigits = isOffplanMode
+    ? agentPhoneDigits || developerPhoneDigits
+    : developerPhoneDigits;
   const developerWebsite = (offplanDetails?.developerContact?.website ?? offplanDetails?.developerWebsite ?? '').trim();
-  const showOffplanFooter = Boolean(isOffplanMode && developerPhoneDigits);
+  const showOffplanFooter = Boolean(isOffplanMode && contactPhoneDigits);
   const showFooter = isOffplanMode ? showOffplanFooter : true;
 
   const openDeveloperPhone = async () => {
-    if (!developerPhoneRaw) return;
+    // In offplan mode we prefer the agent phone (passed from feed), but fall back to developer phone.
+    if (!contactPhoneRaw) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const telUrl = `tel:${developerPhoneRaw}`;
+      const telUrl = `tel:${contactPhoneRaw}`;
       if (!(await Linking.canOpenURL(telUrl))) {
         Alert.alert('Unable to call', 'Calling is not supported on this device.');
         return;
@@ -487,14 +742,21 @@ export default function PropertyDetailScreen() {
   };
 
   const openDeveloperWhatsApp = async () => {
-    if (!developerPhoneDigits) return;
+    // In offplan mode we prefer the agent phone (passed from feed), but fall back to developer phone.
+    if (!contactPhoneDigits) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const text = `Hi, I'm interested in ${offplanDetails?.title ?? 'this project'}`;
     const encodedText = encodeURIComponent(text);
 
-    const appUrl = `whatsapp://send?phone=${developerPhoneDigits}&text=${encodedText}`;
-    const webUrl = `https://wa.me/${developerPhoneDigits}?text=${encodedText}`;
+    const phone = normalizeWhatsAppPhone(contactPhoneDigits);
+    if (!isValidWhatsAppPhone(phone)) {
+      Alert.alert('Invalid phone number', 'This contact does not have a valid WhatsApp number.');
+      return;
+    }
+
+    const appUrl = `whatsapp://send?phone=${phone}&text=${encodedText}`;
+    const webUrl = `https://wa.me/${phone}?text=${encodedText}`;
 
     try {
       if (await Linking.canOpenURL(appUrl)) {
@@ -503,7 +765,12 @@ export default function PropertyDetailScreen() {
       }
       await Linking.openURL(webUrl);
     } catch {
-      Alert.alert('WhatsApp not available', 'Please install WhatsApp to contact the developer.');
+      Alert.alert(
+        'WhatsApp not available',
+        isOffplanMode
+          ? 'Please install WhatsApp to contact the agent.'
+          : 'Please install WhatsApp to contact the developer.'
+      );
     }
   };
 
@@ -514,6 +781,88 @@ export default function PropertyDetailScreen() {
 
   return (
     <View style={styles.container}>
+      <Modal
+        visible={floorPlanOpen}
+        transparent
+        animationType="none"
+        onRequestClose={closeFloorPlan}
+      >
+        <Animated.View style={[styles.floorPlanBackdrop, { opacity: floorPlanBackdropOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeFloorPlan} />
+
+          <Animated.View
+            style={[
+              styles.floorPlanSheet,
+              {
+                transform: [
+                  { scale: floorPlanContentScale },
+                  { translateY: floorPlanContentTranslateY },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.floorPlanHeader}>
+              <Text style={styles.floorPlanTitle} numberOfLines={1}>
+                Floor plan
+              </Text>
+              <Pressable onPress={closeFloorPlan} style={styles.floorPlanCloseButton}>
+                <X size={scaleWidth(20)} color={Colors.text} />
+              </Pressable>
+            </View>
+
+            <View style={styles.floorPlanBody}>
+              {floorPlanUrl ? (
+                <TapGestureHandler
+                  ref={floorPlanDoubleTapRef}
+                  numberOfTaps={2}
+                  onActivated={onDoubleTap}
+                >
+                  <Animated.View style={styles.floorPlanImageWrap}>
+                    <PanGestureHandler
+                      ref={floorPlanPanRef}
+                      onGestureEvent={handlePanEvent}
+                      onHandlerStateChange={handlePanStateChange}
+                      simultaneousHandlers={floorPlanPinchRef}
+                      enabled
+                    >
+                      <Animated.View style={StyleSheet.absoluteFill}>
+                        <PinchGestureHandler
+                          ref={floorPlanPinchRef}
+                          onGestureEvent={handlePinchEvent}
+                          onHandlerStateChange={handlePinchStateChange}
+                          simultaneousHandlers={floorPlanPanRef}
+                        >
+                          <Animated.View style={StyleSheet.absoluteFill}>
+                            <Animated.View
+                              style={[
+                                styles.floorPlanImageTransform,
+                                {
+                                  transform: [
+                                    { translateX: floorPlanTranslateX },
+                                    { translateY: floorPlanTranslateY },
+                                    { scale: floorPlanScale },
+                                  ],
+                                },
+                              ]}
+                            >
+                              <Image
+                                source={{ uri: floorPlanUrl }}
+                                style={styles.floorPlanImage}
+                                contentFit="contain"
+                              />
+                            </Animated.View>
+                          </Animated.View>
+                        </PinchGestureHandler>
+                      </Animated.View>
+                    </PanGestureHandler>
+                  </Animated.View>
+                </TapGestureHandler>
+              ) : null}
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+
       <ScrollView ref={scrollViewRef} style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.mediaContainer}>
           {loading ? (
@@ -807,13 +1156,53 @@ export default function PropertyDetailScreen() {
                   <View style={{ gap: scaleHeight(12) }}>
                     {(unitsExpanded ? (offplanDetails.units ?? []) : (offplanDetails.units ?? []).slice(0, 12)).map((u) => (
                       <View key={u.id} style={styles.unitCard}>
-                        <View style={styles.unitHeaderRow}>
-                          <Text style={styles.unitTitle}>{u.label}</Text>
-                          <Text style={styles.unitPrice}>{u.priceLabel}</Text>
-                        </View>
-                        <View style={styles.unitMetaRow}>
-                          {u.sizeLabel ? <Text style={styles.unitMetaText}>{u.sizeLabel}</Text> : null}
-                          {u.metaLabel ? <Text style={styles.unitMetaText}>{u.metaLabel}</Text> : null}
+                        <View style={styles.unitRow}>
+                          {u.floorPlanUrl ? (
+                            <Pressable onPress={() => openFloorPlan(u.floorPlanUrl!)}>
+                              <Image
+                                source={{ uri: u.floorPlanUrl }}
+                                style={styles.unitFloorPlanImage}
+                                contentFit="cover"
+                              />
+                              <View pointerEvents="none" style={styles.unitFloorPlanHint}>
+                                <Maximize size={scaleWidth(14)} color={Colors.textLight} />
+                              </View>
+                            </Pressable>
+                          ) : (
+                            <View style={styles.unitFloorPlanPlaceholder}>
+                              <FileText size={scaleWidth(18)} color={Colors.textSecondary} />
+                            </View>
+                          )}
+
+                          <View style={styles.unitContent}>
+                            <View style={styles.unitHeaderRow}>
+                              <Text style={styles.unitTitle}>{u.label}</Text>
+                              <Text style={styles.unitPrice}>{u.priceLabel}</Text>
+                            </View>
+
+                            {(typeof u.bedrooms === 'number' || typeof u.bathrooms === 'number') ? (
+                              <View style={styles.unitRoomsRow}>
+                                {typeof u.bedrooms === 'number' ? (
+                                  <View style={styles.unitRoomPill}>
+                                    <Bed size={scaleWidth(14)} color={Colors.textSecondary} />
+                                    <Text style={styles.unitRoomText}>{u.bedrooms}</Text>
+                                  </View>
+                                ) : null}
+
+                                {typeof u.bathrooms === 'number' ? (
+                                  <View style={styles.unitRoomPill}>
+                                    <Bath size={scaleWidth(14)} color={Colors.textSecondary} />
+                                    <Text style={styles.unitRoomText}>{u.bathrooms}</Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            ) : null}
+
+                            <View style={styles.unitMetaRow}>
+                              {u.sizeLabel ? <Text style={styles.unitMetaText}>{u.sizeLabel}</Text> : null}
+                              {u.metaLabel ? <Text style={styles.unitMetaText}>{u.metaLabel}</Text> : null}
+                            </View>
+                          </View>
                         </View>
                       </View>
                     ))}
@@ -987,7 +1376,7 @@ export default function PropertyDetailScreen() {
             <Pressable
               style={[styles.scheduleButton, { flex: 1 }]}
               onPress={openDeveloperPhone}
-              disabled={!developerPhoneRaw}
+              disabled={!contactPhoneRaw}
             >
               <Phone size={scaleWidth(20)} color={Colors.textLight} />
               <Text style={styles.scheduleButtonText} numberOfLines={1}>
@@ -999,7 +1388,7 @@ export default function PropertyDetailScreen() {
               <Pressable
                 style={[styles.contactIconButton, !developerPhoneDigits && { opacity: 0.4 }]}
                 onPress={openDeveloperWhatsApp}
-                disabled={!developerPhoneDigits}
+                disabled={!contactPhoneDigits}
               >
                 <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
               </Pressable>
@@ -1234,12 +1623,130 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
     marginVertical: scaleHeight(12),
   },
+
+
   unitCard: {
     backgroundColor: Colors.textLight,
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: scaleWidth(12),
     padding: scaleWidth(14),
+  },
+  unitRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: scaleWidth(12),
+  },
+  unitFloorPlanImage: {
+    width: scaleWidth(92),
+    height: scaleHeight(130),
+    borderRadius: scaleWidth(10),
+    backgroundColor: Colors.background,
+  },
+  unitFloorPlanHint: {
+    position: 'absolute' as const,
+    right: scaleWidth(8),
+    bottom: scaleWidth(8),
+    width: scaleWidth(26),
+    height: scaleWidth(26),
+    borderRadius: scaleWidth(13),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.50)',
+  },
+
+  floorPlanBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: scaleWidth(16),
+  },
+  floorPlanSheet: {
+    width: '100%',
+    maxWidth: 640,
+    height: '80%',
+    backgroundColor: Colors.textLight,
+    borderRadius: scaleWidth(18),
+    overflow: 'hidden',
+  },
+  floorPlanHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: scaleWidth(16),
+    paddingVertical: scaleHeight(12),
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  floorPlanTitle: {
+    flex: 1,
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  floorPlanCloseButton: {
+    width: scaleWidth(36),
+    height: scaleWidth(36),
+    borderRadius: scaleWidth(18),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  floorPlanBody: {
+    flex: 1,
+    backgroundColor: Colors.WHITE,
+  },
+  floorPlanImageWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  floorPlanImageTransform: {
+    width: '100%',
+    height: '100%',
+  },
+  floorPlanImage: {
+    width: '100%',
+    height: '100%',
+  },
+  unitFloorPlanPlaceholder: {
+    width: scaleWidth(92),
+    height: scaleWidth(92),
+    borderRadius: scaleWidth(10),
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unitContent: {
+    flex: 1,
+    gap: scaleHeight(8),
+  },
+  unitRoomsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: scaleWidth(10),
+  },
+  unitRoomPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scaleWidth(6),
+    paddingVertical: scaleHeight(6),
+    paddingHorizontal: scaleWidth(10),
+    borderRadius: scaleWidth(999),
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  unitRoomText: {
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
+    color: Colors.textSecondary,
+    fontWeight: '700',
   },
   unitHeaderRow: {
     flexDirection: 'row',

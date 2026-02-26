@@ -90,6 +90,7 @@ export default function AgentProfileScreen() {
             propertyReference: item.propertyReference,
             id: item.id,
             mode: item.type === 'offplan' ? 'offplan' : undefined,
+            agentPhone: agent?.phone ?? undefined,
           }) as any
         )
       }>
@@ -100,6 +101,14 @@ export default function AgentProfileScreen() {
             <Heart size={scaleWidth(14)} color={Colors.textLight} fill={Colors.textLight} />
             <Text style={styles.gridStatText}>{item.likesCount}</Text>
           </View>
+
+          {item.location?.city ? (
+            <View style={styles.gridStat}>
+              <Text style={styles.gridEmirateText} numberOfLines={1}>
+                {item.location.city}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </Pressable>
@@ -174,7 +183,24 @@ export default function AgentProfileScreen() {
 
           <Text style={styles.userName}>{agentName}</Text>
           <Text style={styles.userBio}>Real Estate Agent</Text>
-
+            <View style={styles.statsRow}>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statNumber}>{displayedProperties.length}</Text>
+                        <Text style={styles.statLabel}>Properties</Text>
+                      </View>
+                      <View style={styles.statDivider} />
+                      <View style={styles.statItem}>
+                        <Text style={styles.statNumber}>0</Text>
+                        <Text style={styles.statLabel}>Followers</Text>
+                      </View>
+                      <View style={styles.statDivider} />
+                      <View style={styles.statItem}>
+                        <Text style={styles.statNumber}>0</Text>
+                        <Text style={styles.statLabel}>Following</Text>
+                      </View>
+                    </View>
+                        
+                  
           <View style={styles.statsRow}>
             {/* <View style={styles.statItem}>
               <Text style={styles.statNumber}>{agentProperties.length}</Text>
@@ -323,6 +349,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: scaleWidth(4),
   },
+   statDivider: {
+    width: scaleWidth(1),
+    height: scaleHeight(24),
+    backgroundColor: Colors.border,
+  },
   statNumber: {
     fontSize: scaleFont(20),
     fontWeight: '700',
@@ -384,7 +415,8 @@ const styles = StyleSheet.create({
   },
   gridStats: {
     flexDirection: 'row',
-    gap: scaleWidth(12),
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   gridStat: {
     flexDirection: 'row',
@@ -398,5 +430,14 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  gridEmirateText: {
+    fontSize: scaleFont(12),
+    fontWeight: '600',
+    color: Colors.textLight,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+    maxWidth: scaleWidth(70),
   },
 });

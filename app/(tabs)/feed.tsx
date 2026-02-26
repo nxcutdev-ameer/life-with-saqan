@@ -1068,9 +1068,9 @@ export default function FeedScreen() {
   }, []);
 
   const handleNavigateToProperty = useCallback(
-    (propertyReference: string, videoId: string, type?: string) => {
+    (propertyReference: string, videoId: string, type?: string, agentPhone?: string) => {
       const mode = type === 'offplan' ? 'offplan' : undefined;
-      router.push(buildPropertyDetailsRoute({ propertyReference, id: videoId, mode }));
+      router.push(buildPropertyDetailsRoute({ propertyReference, id: videoId, mode, agentPhone }));
     },
     [router]
   );
@@ -1090,7 +1090,9 @@ export default function FeedScreen() {
         overlayBottom={overlayBottom}
         onSpeedingChange={handleSpeedingChange}
         onScrubbingChange={handleScrubbingChange}
-        onNavigateToProperty={(propertyReference) => handleNavigateToProperty(propertyReference, item.id, item.type)}
+        onNavigateToProperty={(propertyReference) =>
+          handleNavigateToProperty(propertyReference, item.id, item.type, item.agent?.phone)
+        }
         globalSubtitleLanguageCode={globalSubtitleLanguageCode}
         onGlobalSubtitleLanguageChange={(code) => setGlobalSubtitleLanguageCode(code)}
       />
