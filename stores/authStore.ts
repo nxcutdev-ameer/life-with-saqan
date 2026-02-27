@@ -28,6 +28,10 @@ export interface AuthState {
   /** Backend session details (tokens/agent) */
   session: AuthSession | null;
 
+  /** One-time UI toast shown after a fresh login (not persisted). */
+  welcomeToastAgent: AuthAgent | null;
+  consumeWelcomeToast: () => void;
+
   pendingPhoneNumber: string | null;
   pendingFlow: AuthFlow | null;
   pendingMessage: string | null;
@@ -64,6 +68,8 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       phoneNumber: null,
       session: null,
+      welcomeToastAgent: null,
+      consumeWelcomeToast: () => set({ welcomeToastAgent: null }),
       pendingPhoneNumber: null,
       pendingFlow: null,
       pendingMessage: null,
@@ -112,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           phoneNumber: null,
           session: null,
+          welcomeToastAgent: null,
           pendingPhoneNumber: null,
           pendingFlow: null,
           pendingMessage: null,

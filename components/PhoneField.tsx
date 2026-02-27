@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 
 import { Colors } from '@/constants/colors';
@@ -141,7 +141,7 @@ export function PhoneField({
 
 const styles = StyleSheet.create({
   label: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(14),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -173,20 +173,20 @@ const styles = StyleSheet.create({
   },
   callingCodeText: {
     color: Colors.text,
-    fontSize: scaleFont(15),
-    fontWeight: '700',
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
+    fontWeight: '600',
   },
   phoneInput: {
     flex: 1,
     height: scaleHeight(52),
     paddingHorizontal: scaleWidth(14),
     color: Colors.text,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
   },
   errorText: {
     marginTop: scaleHeight(8),
     color: (Colors as any).error ?? '#C62828',
-    fontSize: scaleFont(13),
+     fontSize: Platform.OS === 'android' ? scaleFont(11) : scaleFont(13),
     fontWeight: '600',
   },
 });

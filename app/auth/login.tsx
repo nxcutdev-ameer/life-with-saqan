@@ -21,14 +21,8 @@ import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
 import { authByPhone } from '@/utils/authApi';
+import {normalizePhone} from '@/utils/formatters'
 
-function normalizePhone(input: string) {
-  // Keep leading + if user uses international format.
-  const trimmed = input.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/[^0-9]/g, '');
-  return hasPlus ? `+${digits}` : digits;
-}
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -124,13 +118,13 @@ export default function LoginScreen() {
                   </Pressable>
 
                 </View>
-                {/* <Pressable
+                <Pressable
                   style={[styles.secondaryButton, isSendingOtp && styles.primaryButtonDisabled]}
                   onPress={() => router.replace('/(tabs)/feed' as any)}
                   disabled={isSendingOtp}
                 >
                   <Text style={styles.secondaryButtonText}>Continue without login</Text>
-                </Pressable> */}
+                </Pressable>
               </View>
             </SafeAreaView>
           </KeyboardAvoidingView>
@@ -153,7 +147,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingHorizontal: scaleWidth(24),
-    marginHorizontal: scaleWidth(16),
+    marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) :scaleWidth(16),
   },
   content: {
     flex: 1,
@@ -167,14 +161,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: scaleFont(34),
+    fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
     fontWeight: '800',
     color: Colors.text,
     textAlign: 'center',
   },
   subtitle: {
     marginTop: scaleHeight(8),
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
   },
@@ -188,7 +182,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   label: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '600',
     color: Colors.text,
     marginBottom: scaleHeight(8),
@@ -211,7 +205,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
     fontWeight: '700',
   },
   secondaryButton: {
@@ -227,7 +221,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: Colors.text,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
     fontWeight: '600',
   },
   footerRow: {
@@ -238,11 +232,11 @@ const styles = StyleSheet.create({
   },
   footerText: {
     color: Colors.textSecondary,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
   },
   link: {
     color: Colors.brown,
-    fontSize: scaleFont(14),
+     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '700',
   },
 });

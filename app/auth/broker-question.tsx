@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   ImageBackground,
+  InteractionManager,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -107,11 +108,20 @@ export default function BrokerQuestionScreen() {
 
   const pickPhoto = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (perm.status !== 'granted') {
+      // In production, launching the picker immediately after the permission prompt
+      // can sometimes no-op. We fetch current permission, request if needed, and
+      // then defer picker launch to the next interaction frame.
+      const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+      const perm = current.granted
+        ? current
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!perm.granted) {
         Alert.alert('Permission required', 'Please allow photo library access to upload a photo.');
         return;
       }
+
+      await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'] as any,
@@ -319,7 +329,7 @@ export default function BrokerQuestionScreen() {
                     accessibilityLabel="Are you broker"
                     value={isBroker}
                     onValueChange={(v) => setIsBroker(v)}
-                    trackColor={{ false: Colors.border, true: Colors.bronze }}
+                    trackColor={{ false: Colors.textSecondary, true: Colors.bronze }}
                     thumbColor={Colors.background}
                   />
                 </View>
@@ -475,7 +485,7 @@ export default function BrokerQuestionScreen() {
 const styles = StyleSheet.create({
   sectionLabel: {
     color: Colors.text,
-    fontSize: scaleFont(13),
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(13),
     fontWeight: '700',
     marginBottom: scaleHeight(8),
     marginTop: scaleHeight(10),
@@ -493,12 +503,12 @@ const styles = StyleSheet.create({
   },
   dropdownButtonText: {
     color: Colors.text,
-    fontSize: scaleFont(15),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
     fontWeight: '600',
   },
   dropdownChevron: {
     color: Colors.text,
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
     fontWeight: '800',
   },
   uploadBox: {
@@ -515,7 +525,7 @@ const styles = StyleSheet.create({
   },
   uploadHint: {
     color: Colors.text,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '600',
     opacity: 0.85,
   },
@@ -540,7 +550,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleHeight(10),
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '800',
     color: Colors.text,
   },
@@ -557,7 +567,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.04)',
   },
   modalItemText: {
-    fontSize: scaleFont(15),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -565,7 +575,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   checkmark: {
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '900',
     color: Colors.text,
   },
@@ -614,14 +624,14 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(12),
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleHeight(12),
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     color: Colors.text,
     backgroundColor: 'rgba(255,255,255,0.22)',
     marginBottom: scaleHeight(10),
   },
   helperText: {
     color: Colors.overlayLight,
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
     marginBottom: scaleHeight(12),
     fontWeight: '600',
   },
@@ -629,7 +639,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   cardTitle: {
-    fontSize: scaleFont(28),
+    fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(28),
     fontWeight: '800',
     color: Colors.text,
     textAlign: 'center',
@@ -648,7 +658,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(6),
   },
   cardTitleInline: {
-    fontSize: scaleFont(22),
+    fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(22),
     fontWeight: '800',
     color: Colors.text,
   },
@@ -663,7 +673,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '700',
   },
   secondaryButton: {
@@ -672,7 +682,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: Colors.text,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '700',
   },
 });

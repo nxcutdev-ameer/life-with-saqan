@@ -59,7 +59,6 @@ export default function ProfileScreen() {
       const asset = result.assets?.[0];
       if (!asset?.uri) return;
 
-      // Show immediately
       setLocalAvatarUri(asset.uri);
 
       setIsUploadingAvatar(true);
@@ -82,7 +81,6 @@ export default function ProfileScreen() {
       });
 
       if (!uploadedUrl) {
-        // If backend doesn't return url, keep local preview.
         Alert.alert('Updated', 'Avatar uploaded successfully.');
       }
     } catch (e: any) {
@@ -102,7 +100,6 @@ export default function ProfileScreen() {
   }, [activeTab, agentVideos, likedProperties]);
 
   // Public videos endpoint expects numeric backend agent id.
-  // Our auth store's agent.id is numeric and matches that backend id.
   const agentId = agent?.id;
 
   const loadAgentVideos = useCallback(
@@ -194,7 +191,7 @@ export default function ProfileScreen() {
         <View style={[styles.contentContainer, { paddingBottom: bottomTabBarHeight + scaleHeight(16) }]}>
           <View style={styles.authGateCard}>
             <Text style={styles.authGateTitle}>Login required</Text>
-            <Text style={styles.authGateDescription}>Only logged in users can upload videos.</Text>
+            <Text style={styles.authGateDescription}>Only logged in users can view profile.</Text>
             <Pressable style={styles.authGateButton} onPress={() => router.replace('/auth/login' as any)}>
               <Text style={styles.authGateButtonText}>Log in</Text>
             </Pressable>
@@ -372,7 +369,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -397,13 +394,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   authGateTitle: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '800',
     color: Colors.text,
     marginBottom: scaleHeight(6),
   },
   authGateDescription: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: scaleFont(20),
@@ -419,12 +416,12 @@ const styles = StyleSheet.create({
   },
   authGateButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
   },
   authGateLink: {
     color: Colors.brown,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
   },
   profileSection: {
@@ -454,7 +451,7 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(50),
   },
   avatarText: {
-    fontSize: scaleFont(36),
+   fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(28),
     fontWeight: '700',
     color: Colors.textLight,
   },
@@ -499,7 +496,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   statLabel: {
-    fontSize: scaleFont(13),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(13),
     color: Colors.textSecondary,
   },
   statDivider: {
@@ -517,7 +514,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editButtonText: {
-      fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
     color: Colors.text,
   },

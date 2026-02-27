@@ -22,11 +22,6 @@ export function makeFeedFilterKey(params: FeedFilterKey) {
   return `${mapUiTransactionTypeToBackendType(params.transactionType)}::${normalize(params.city)}`;
 }
 
-/**
- * Strictly match backend fields:
- * - transactionType: v.property.meta.type (e.g. RENT/BUY/SALE/STAY)
- * - city: v.property.emirate.name (e.g. Dubai)
- */
 export function strictMatchPublicVideo(v: PublicVideo, filter: FeedFilterKey) {
   const metaType = normalize(v?.property?.meta?.type);
   const emirateName = normalize(v?.property?.emirate?.name);

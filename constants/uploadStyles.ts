@@ -51,6 +51,21 @@ export const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 9999,
   },
+  welcomeAvatarWrap: {
+    width: scaleWidth(60),
+    height: scaleWidth(60),
+    borderRadius: scaleWidth(30),
+    overflow: 'hidden',
+    backgroundColor: 'rgba(205, 127, 50, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(205, 127, 50, 0.25)',
+  },
+  welcomeAvatar: {
+    width: '100%',
+    height: '100%',
+  },
   publishToastBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.35)',

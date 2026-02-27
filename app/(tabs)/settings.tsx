@@ -115,6 +115,7 @@ export default function SettingsScreen() {
           setTimeout(() => {
             logout();
             setIsLoggingOut(false);
+            router.push('/(tabs)/feed');
           }, 800);
         },
       },

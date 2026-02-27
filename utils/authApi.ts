@@ -11,7 +11,6 @@ export type AuthByPhoneResponse = {
 };
 
 // Unified endpoint that decides whether this phone should login or register.
-// POST https://backoffice.vzite.com/api/v1/auth with { phone: "+971..." }
 export async function authByPhone(phone: string): Promise<AuthByPhoneResponse> {
   return fetchJson<AuthByPhoneResponse>(`${BASE_URL}`, {
     method: 'POST',

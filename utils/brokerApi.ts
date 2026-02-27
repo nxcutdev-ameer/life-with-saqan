@@ -14,7 +14,7 @@ export type BrokerUpdateResponse = {
 export async function requestBrokerIdUpdate(params: {
   backofficeToken: string;
   brokerNumber: string;
-  emirate: string; // lower case, e.g. dubai, ajman
+  emirate: string; // lower case
   file?: { uri: string; name: string; type: string } | null;
 }): Promise<BrokerUpdateResponse> {
   const form = new FormData();
@@ -30,7 +30,6 @@ export async function requestBrokerIdUpdate(params: {
     timeoutMs: 45000,
     headers: {
       Authorization: `Bearer ${params.backofficeToken}`,
-      // Do NOT set Content-Type for FormData; RN will add boundary.
     },
     body: form as any,
   });

@@ -167,6 +167,8 @@ export default function UploadScreen() {
 
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const sessionTokens = useAuthStore((s) => s.session?.tokens) ?? null;
+  const welcomeToastAgent = useAuthStore((s) => s.welcomeToastAgent);
+  const consumeWelcomeToast = useAuthStore((s) => s.consumeWelcomeToast);
   const { canPost, tier, postsUsed, postsLimit, refreshSubscription } = useSubscription();
   
   // lightweight toast UI (will be used for save/update feedback)
@@ -177,6 +179,20 @@ export default function UploadScreen() {
     setToast({ visible: true, message });
     setTimeout(() => setToast({ visible: false, message: '' }), 2000);
   };
+
+  const [showWelcomeToast, setShowWelcomeToast] = useState(false);
+
+  useEffect(() => {
+    if (!welcomeToastAgent) return;
+
+    setShowWelcomeToast(true);
+    const t = setTimeout(() => {
+      setShowWelcomeToast(false);
+      consumeWelcomeToast();
+    }, 2600);
+
+    return () => clearTimeout(t);
+  }, [welcomeToastAgent, consumeWelcomeToast]);
 
   const [, setIsSavingProperty] = useState(false);
   const [, setLastSavedAt] = useState<number | null>(null);
@@ -214,7 +230,47 @@ export default function UploadScreen() {
   const [showPublishToast, setShowPublishToast] = useState(false);
   const [publishErrorToast, setPublishErrorToast] = useState<null | { title: string; message: string }>(null);
 
-  const renderPublishToast = () => {
+  const renderWelcomeToast = () => {
+    if (!showWelcomeToast || !welcomeToastAgent) return null;
+
+    const firstName = (welcomeToastAgent.name || '').split(' ')[0] || welcomeToastAgent.name;
+
+    return (
+      <View style={styles.publishToastWrapper} pointerEvents="box-none">
+        <View pointerEvents="none" style={styles.publishToastBackdrop} />
+        <CustomToast
+          icon={
+            <View style={styles.welcomeAvatarWrap}>
+              {welcomeToastAgent.avatarUrl ? (
+                <Image
+                  source={{ uri: welcomeToastAgent.avatarUrl }}
+                  style={styles.welcomeAvatar}
+                />
+              ) : (
+                <FontAwesome name="user-circle" size={54} color={Colors.bronze} />
+              )}
+            </View>
+          }
+          title={`Welcome${firstName ? `, ${firstName}` : ''}`}
+          subTitle="You’re signed in. Ready to upload your property?"
+          buttonOneText="Let’s go"
+          onButtonOnePress={() => {
+            setShowWelcomeToast(false);
+            consumeWelcomeToast();
+          }}
+          animationType="slideUp"
+          autoDismiss
+          dismissDuration={2400}
+          onDismiss={() => {
+            setShowWelcomeToast(false);
+            consumeWelcomeToast();
+          }}
+        />
+      </View>
+    );
+  };
+
+  const renderPublishToast = () => { 
     if (!showPublishToast && !publishErrorToast) return null;
 
     // Error toast takes precedence.
@@ -242,7 +298,7 @@ export default function UploadScreen() {
           icon={<FontAwesome name="check-circle" size={50} color="#4CAF50" />}
           title="Property Published!"
           subTitle="Your property has been published successfully."
-          buttonOneText="Upload Another"
+          buttonOneText="Done"
           //buttonTwoText="View Property"
           onButtonOnePress={() => {
             setShowPublishToast(false);
@@ -1476,6 +1532,7 @@ export default function UploadScreen() {
   if (!isAuthenticated || !sessionTokens?.backofficeToken) {
     return (
       <View style={styles.container}>
+        {renderWelcomeToast()}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Upload Property</Text>
         </View>
@@ -1501,6 +1558,7 @@ export default function UploadScreen() {
   if (step === 'select') {
     return (
       <View style={styles.container}>
+        {renderWelcomeToast()}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Upload Property</Text>
         </View>
@@ -1652,6 +1710,7 @@ export default function UploadScreen() {
 
    return (
      <View style={styles.container}>
+        {renderWelcomeToast()}
         {toast.visible && (
           <View style={styles.toastContainer} pointerEvents="none">
             <View style={styles.toastInner}>
@@ -1960,6 +2019,7 @@ export default function UploadScreen() {
 
    return (
      <View style={styles.container}>
+       {renderWelcomeToast()}
        <View style={styles.header}>
          <Pressable onPress={() => setStep('select')}>
            <X size={scaleWidth(24)} color={Colors.text} />
@@ -2018,6 +2078,7 @@ export default function UploadScreen() {
  if (step === 'edit') {
     return (
       <View style={styles.container}>
+        {renderWelcomeToast()}
         <View  style={styles.header}>
           <Pressable onPress={() => { setStep('select'); setSelectedVideoUri(null); }}>
             <X size={scaleWidth(24)} color={Colors.text} />
@@ -2249,6 +2310,7 @@ export default function UploadScreen() {
   if (step === 'details') {
     return (
     <View style={styles.container}>
+      {renderWelcomeToast()}
       <View style={styles.header}>
         <Pressable
           onPress={() => setStep('select')}

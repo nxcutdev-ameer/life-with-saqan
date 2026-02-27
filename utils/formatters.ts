@@ -71,3 +71,18 @@ export function formatCompactNumber(value: number): string {
   if (abs >= 1_000) return format(value / 1_000, 'K');
   return Math.round(value).toLocaleString();
 }
+
+export function maskPhone(phone: string | null) {
+  if (!phone) return '';
+  if (phone.length <= 4) return phone;
+  const last4 = phone.slice(-4);
+  return `•••• ${last4}`;
+}
+
+export function normalizePhone(input: string) {
+  // Keep leading + if user uses international format.
+  const trimmed = input.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/[^0-9]/g, '');
+  return hasPlus ? `+${digits}` : digits;
+}

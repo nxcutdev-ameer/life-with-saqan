@@ -18,7 +18,6 @@ export function parseHlsSubtitleTracks(playlistText: string, baseUrl: string): H
     const attrs: Record<string, string> = {};
 
     // Parse comma-separated key=value pairs, where value may be quoted.
-    // This is intentionally simple and works for typical HLS attribute lists.
     const re = /([A-Z0-9-]+)=(("[^"]*")|[^,]*)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(attrsText))) {

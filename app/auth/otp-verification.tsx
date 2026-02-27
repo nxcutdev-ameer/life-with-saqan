@@ -26,16 +26,11 @@ import {
   verifyRegisterPhoneOtp,
 } from '@/utils/authApi';
 import { requestBrokerIdUpdate, validateBrokerOtp } from '@/utils/brokerApi';
+import {maskPhone} from '@/utils/formatters'
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
 
-function maskPhone(phone: string | null) {
-  if (!phone) return '';
-  if (phone.length <= 4) return phone;
-  const last4 = phone.slice(-4);
-  return `•••• ${last4}`;
-}
 
 export default function OtpVerificationScreen() {
   const router = useRouter();
@@ -48,25 +43,40 @@ export default function OtpVerificationScreen() {
   const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken) ?? null;
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const completeOtpVerification = useAuthStore((s) => s.completeOtpVerification);
+  const setSession = useAuthStore((s) => s.setSession);
   const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
-
-  useEffect(() => {
-    navigation.setOptions({ gestureEnabled: false } as any);
-  }, [navigation]);
-
   const [digits, setDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ''));
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [resendSecondsLeft, setResendSecondsLeft] = useState(RESEND_SECONDS);
-
   // Hidden input used for system OTP autofill and normal typing.
-  // We render the boxes ourselves so the OS can fill the *entire* code at once.
   const otpInputRef = useRef<TextInput | null>(null);
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ignoreMissingPendingRedirectRef = useRef(false);
-
+  const autoSubmitRef = useRef(false);
   const otp = useMemo(() => digits.join(''), [digits]);
   const isComplete = otp.length === OTP_LENGTH && !digits.some((d) => d === '');
+
+  // Auto-verify as soon as the user has entered all 6 digits.
+  // This covers manual entry, paste, and OS autofill reliably.
+  useEffect(() => {
+    // Reset guard when OTP becomes incomplete again.
+    if (!isComplete) {
+      autoSubmitRef.current = false;
+      return;
+    }
+
+    if (isVerifying) return;
+    if (autoSubmitRef.current) return;
+
+    autoSubmitRef.current = true;
+    // Mimic pressing the Verify button.
+    onVerify();
+  }, [isComplete, isVerifying]);
+
+   useEffect(() => {
+    navigation.setOptions({ gestureEnabled: false } as any);
+  }, [navigation]);
 
   useEffect(() => {
     // If user lands here directly (or auth data got cleared), send them back to login.
@@ -80,7 +90,7 @@ export default function OtpVerificationScreen() {
     }
 
     if (!pendingPhoneNumber && isAuthenticated) {
-      // User is authenticated; no need to initialize OTP UI.
+      // User is authenticated, no need to initialize OTP UI.
       return;
     }
 
@@ -103,21 +113,9 @@ export default function OtpVerificationScreen() {
   const handleOtpChange = (text: string) => {
     if (isVerifying) return;
 
-    // Some Android keyboards can insert spaces; iOS can provide the full OTP in one go.
+    // Some Android keyboards can insert spaces
     const cleaned = text.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH);
-
     setDigits(Array.from({ length: OTP_LENGTH }, (_, i) => cleaned[i] ?? ''));
-
-    // If we have all digits (autofill or paste), automatically verify
-    if (cleaned.length >= OTP_LENGTH) {
-      otpInputRef.current?.blur();
-      Keyboard.dismiss();
-      
-      // Small delay to ensure UI updates, then auto-verify
-      setTimeout(() => {
-        onVerify();
-      }, 100);
-    }
   };
 
   const onVerify = async () => {
@@ -156,7 +154,7 @@ export default function OtpVerificationScreen() {
           throw new Error(res?.message || 'Failed to verify OTP.');
         }
 
-        completeOtpVerification({
+        const nextSession = {
           tokens: {
             saqancomToken: payload?.saqancom_token ?? null,
             backofficeToken: payload?.backoffice_token ?? null,
@@ -169,7 +167,18 @@ export default function OtpVerificationScreen() {
                 avatarUrl: (payload.agent as any)?.avatar?.url ?? null,
               }
             : null,
-        });
+        };
+
+        completeOtpVerification(nextSession);
+        // Set one-time welcome toast payload (not persisted).
+        if (nextSession.agent) {
+          setSession((prev) => ({
+            ...(prev ?? nextSession),
+            agent: nextSession.agent,
+          }));
+          // put on separate field for UI
+          useAuthStore.setState({ welcomeToastAgent: nextSession.agent });
+        }
         router.replace('/(tabs)/upload' as any);
         return;
       }
@@ -184,7 +193,7 @@ export default function OtpVerificationScreen() {
       }
 
       // Store session details after successful OTP.
-      completeOtpVerification({
+      const nextSession = {
         tokens: {
           saqancomToken: res?.payload?.saqancom_token ?? null,
           backofficeToken: res?.payload?.backoffice_token ?? null,
@@ -197,7 +206,12 @@ export default function OtpVerificationScreen() {
               avatarUrl: (res.payload.agent as any)?.avatar?.url ?? null,
             }
           : null,
-      });
+      };
+
+      completeOtpVerification(nextSession);
+      if (nextSession.agent) {
+        useAuthStore.setState({ welcomeToastAgent: nextSession.agent });
+      }
 
       // If broker exists, go straight to upload. Otherwise show broker question.
       if (brokerExist === true) {
@@ -358,14 +372,8 @@ export default function OtpVerificationScreen() {
                       </View>
                     ))}
 
-                    {/*
-                      Hidden input used for system OTP autofill.
-                      - iOS: textContentType="oneTimeCode"
-                      - Android: autoComplete="sms-otp"
-
-                      Important: The hidden input must NOT have maxLength={1}. If it does,
-                      iOS autofill will only be able to insert the first character.
-                    */}
+                    {// Hidden input used for system OTP autofill.
+                    }
                     <TextInput
                       ref={otpInputRef}
                       value={otp}
@@ -451,8 +459,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     paddingHorizontal: scaleWidth(24),
-    marginHorizontal: scaleWidth(16),
-
+    marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) :scaleWidth(16),
   },
   content: {
     flex: 1,
@@ -466,14 +473,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: scaleFont(34),
+    fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
     fontWeight: '800',
     color: Colors.text,
     textAlign: 'center',
   },
   subtitle: {
     marginTop: scaleHeight(8),
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
   },
@@ -488,7 +495,7 @@ const styles = StyleSheet.create({
   },
   infoBannerText: {
     color: Colors.text,
-    fontSize: scaleFont(13),
+   fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(13),
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: scaleFont(18),
@@ -521,7 +528,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.bronze,
   },
   otpDigitText: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -549,7 +556,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '700',
   },
   secondaryButton: {
@@ -565,7 +572,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: Colors.text,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '700',
   },
   resendRow: {
@@ -574,12 +581,12 @@ const styles = StyleSheet.create({
     gap: scaleHeight(6),
   },
   disclaimer: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
     color: Colors.textSecondary,
     textAlign: 'center',
   },
   resendLink: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '700',
     color: Colors.brown,
   },

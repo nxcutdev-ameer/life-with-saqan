@@ -220,7 +220,7 @@ export default function RecordVideoScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.hint}>Hold to record, release to stop</Text>
+        <Text style={styles.hint}>Tap to record, tap again to stop</Text>
 
         <Animated.View
           style={[
@@ -231,9 +231,14 @@ export default function RecordVideoScreen() {
         >
           <Pressable
             style={[styles.recordButton, isRecording && styles.recordButtonActive]}
-            delayLongPress={120}
-            onLongPress={startRecording}
-            onPressOut={stopRecording}
+            onPress={() => {
+              if (isSaving) return;
+              if (isRecording) {
+                stopRecording();
+              } else {
+                startRecording();
+              }
+            }}
           >
             {isSaving ? (
               <SavingSpinner color="#fff" accessibilityLabel="Saving video" />
