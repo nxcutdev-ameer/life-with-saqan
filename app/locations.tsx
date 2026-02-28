@@ -8,6 +8,7 @@ import { cities } from '@/mocks/properties';
 import { Platform } from 'react-native';
 
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
+import { scaleFont } from '@/utils/responsive';
 
 export default function LocationsScreen() {
   const router = useRouter();
@@ -141,7 +142,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   title: {
-    fontSize: Platform.select({ ios: 42, android: 32 }),
+    fontSize: Platform.OS === 'android' ? scaleFont(22): scaleFont(42),
     fontWeight: '600',
     color: Colors.text,
     marginBottom: 32,
@@ -165,7 +166,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 8,
   },
   tabText: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '500',
     color: Colors.textSecondary,
   },
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.bronze,
   },
   cityText: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '500',
     color: Colors.text,
   },

@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     width: scaleWidth(80),
     height: scaleWidth(80),
     borderRadius: scaleWidth(40),
-    borderWidth: 6,
+    borderWidth: 3,
     borderColor: LifestyleColors.cityLiving,
     alignItems: 'center',
     justifyContent: 'center',

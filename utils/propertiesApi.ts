@@ -90,8 +90,23 @@ export async function fetchEmirates(): Promise<Emirate[]> {
   return res.payload.data;
 }
 
-export async function fetchDistricts(emirateId: number): Promise<District[]> {
-  const url = `${BASE_URL}/districts?limit=999&emirates_id=${encodeURIComponent(String(emirateId))}&size=mini`;
+export async function fetchDistricts(params: {
+  emirateId: number;
+  name?: string;
+  limit?: number;
+  size?: 'mini' | 'xs' | 'sm' | 'md' | 'lg';
+}): Promise<District[]> {
+  const limit = params.limit ?? 999;
+  const size = params.size ?? 'mini';
+  const name = params.name ?? '';
+
+  const url =
+    `${BASE_URL}/districts` +
+    `?limit=${encodeURIComponent(String(limit))}` +
+    `&name=${encodeURIComponent(name)}` +
+    `&emirate_id=${encodeURIComponent(String(params.emirateId))}` +
+    `&size=${encodeURIComponent(size)}`;
+
   const res = await fetchJson<ApiResponse<PaginatedPayload<District>>>(url);
   return res.payload.data;
 }
@@ -363,7 +378,10 @@ export async function uploadMedia(params: {
   propertiesToken: string;
   uri: string;
   featured?: '0' | '1';
+  timeoutMs?: number;
 }): Promise<ApiResponse<UploadMediaPayload>> {
+  const t0 = Date.now();
+
   const form = new FormData();
   const fileName = params.uri.split('/').pop() || 'image.jpg';
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -378,23 +396,59 @@ export async function uploadMedia(params: {
 
   const url = `${BASE_URL}/media`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${params.propertiesToken}`,
-    },
-    body: form,
-  });
-  const text = await res.text();
-  const body = text ? ((): any => { try { return JSON.parse(text); } catch { return null; } })() : null;
+  // NOTE: This endpoint uses multipart FormData, so we can't reuse fetchJson directly.
+  // Add an AbortController timeout to avoid indefinitely hanging uploads on flaky networks.
+  const controller = new AbortController();
+  const timeoutMs = params.timeoutMs ?? 60_000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    const message = body?.message || `Request failed (${res.status})`;
-    throw new Error(message);
+  try {
+    const t1 = Date.now();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${params.propertiesToken}`,
+      },
+      body: form,
+      signal: controller.signal,
+    });
+    const t2 = Date.now();
+
+    const text = await res.text();
+    const t3 = Date.now();
+
+    const body = text
+      ? (() => {
+          try {
+            return JSON.parse(text);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
+    console.log('[propertiesApi] uploadMedia timings', {
+      msFetch: t2 - t1,
+      msReadBody: t3 - t2,
+      msTotal: t3 - t0,
+      status: res.status,
+    });
+
+    if (!res.ok) {
+      const message = body?.message || `Request failed (${res.status})`;
+      throw new Error(message);
+    }
+
+    return body as ApiResponse<UploadMediaPayload>;
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Image upload timed out. Please check your connection and try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return body as ApiResponse<UploadMediaPayload>;
 }
 
 export type AttachPropertyMediaPayload = {
@@ -407,6 +461,7 @@ export async function attachPropertyMedia(params: {
   type: string;
   upload_id: string | number;
 }): Promise<{ success: boolean; data?: AttachPropertyMediaPayload; message?: string }> {
+  const t0 = Date.now();
   const url = `${BASE_URL}/properties/${encodeURIComponent(params.referenceId)}/media`;
   const res = await fetchJson<ApiResponse<AttachPropertyMediaPayload>>(url, {
     method: 'POST',
@@ -419,6 +474,12 @@ export async function attachPropertyMedia(params: {
       type: params.type,
       upload_id: params.upload_id,
     }),
+  });
+  const t1 = Date.now();
+
+  console.log('[propertiesApi] attachPropertyMedia timings', {
+    msTotal: t1 - t0,
+    success: res.success,
   });
 
   const obj: { success: boolean; data?: AttachPropertyMediaPayload; message?: string } = {

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { formatNumberWithCommas, parseNumberFromFormatted } from '../../utils/formatters';
 import {
   StyleSheet,
   Text,
@@ -11,10 +12,12 @@ import {
   Modal,
   FlatList,
   Keyboard,
+  TouchableWithoutFeedback,
   useWindowDimensions,
   Image,
   Animated,
   Easing,
+  Platform,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,7 +56,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   Amenity,
-  Area,
+  // Area,
   Building,
   District,
   Emirate,
@@ -61,7 +64,6 @@ import {
   attachPropertyMedia,
   createDraftProperty,
   fetchAmenities,
-  fetchAreas,
   fetchBuildings,
   fetchDistricts,
   fetchEmirates,
@@ -88,6 +90,7 @@ export default function UploadScreen() {
   const wasHighlightsPlayingRef = React.useRef(false);
   const isHighlightsScrubbingRef = React.useRef(false);
   const pendingSeekSecRef = React.useRef(0);
+  const lastHighlightsStatusUpdateMsRef = React.useRef(0);
   const [step, setStep] = useState<'select' | 'preview' | 'edit' | 'selectHighlights' | 'details'>('select');
 
   type DetailsFlow =
@@ -347,6 +350,7 @@ export default function UploadScreen() {
 
   const videoRef = React.useRef<Video>(null);
   const editVideoRef = React.useRef<Video>(null);
+  const [highlightsVideoKey, setHighlightsVideoKey] = useState(0);
   const [videoCurrentTimeSec, setVideoCurrentTimeSec] = useState(0);
   const [videoDurationSec, setVideoDurationSec] = useState(0);
   const [isHighlightsPlaying, setIsHighlightsPlaying] = useState(false);
@@ -355,7 +359,7 @@ export default function UploadScreen() {
 
   // Property Location dropdown state
   const [locationPicker, setLocationPicker] = useState<
-    null | 'emirate' | 'district' | 'building' | 'area'
+    null | 'emirate' | 'district' | 'building'
   >(null);
   const [emirateSearch, setEmirateSearch] = useState('');
   const [districtSearch, setDistrictSearch] = useState('');
@@ -533,7 +537,7 @@ export default function UploadScreen() {
   const [amenitiesModalVisible, setAmenitiesModalVisible] = useState(false);
   const [amenitiesSearch, setAmenitiesSearch] = useState('');
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<number[]>([]);
-
+  const amenitiesSearchInputRef = useRef<TextInput>(null);
   type SelectedImage = {
     uri: string;
     uploadId?: number | null; // returned from POST /media
@@ -614,9 +618,24 @@ export default function UploadScreen() {
     isError: isDistrictsError,
     refetch: refetchDistricts,
   } = useQuery({
-    queryKey: ['properties', 'districts', { emirateId: propertyDetails.emirateId, limit: 999, size: 'mini' }],
-    queryFn: () => fetchDistricts(propertyDetails.emirateId as number),
-    enabled: typeof propertyDetails.emirateId === 'number',
+    queryKey: [
+      'properties',
+      'districts',
+      {
+        emirateId: propertyDetails.emirateId,
+        limit: 999,
+        size: 'mini',
+        name: districtSearch.trim(),
+      },
+    ],
+    queryFn: () =>
+      fetchDistricts({
+        emirateId: propertyDetails.emirateId as number,
+        name: districtSearch.trim(),
+        limit: 999,
+        size: 'mini',
+      }),
+    enabled: locationPicker === 'district' && typeof propertyDetails.emirateId === 'number',
     staleTime: 1000 * 60 * 60, // 1h
     gcTime: 1000 * 60 * 60 * 24, // 24h
   });
@@ -652,13 +671,16 @@ export default function UploadScreen() {
     refetch: refetchBuildings,
   } = useInfiniteQuery({
     queryKey: ['properties', 'buildings', { emirateId: propertyDetails.emirateId, districtId: propertyDetails.districtId }],
-    enabled: locationPicker === 'building' && typeof propertiesToken === 'string',
+    enabled:
+      locationPicker === 'building' &&
+      typeof propertiesToken === 'string' &&
+      typeof propertyDetails.emirateId === 'number',
     queryFn: async ({ pageParam }) => {
-      const res = await fetchBuildings({ 
-        propertiesToken: propertiesToken as string, 
+      const res = await fetchBuildings({
+        propertiesToken: propertiesToken as string,
         page: pageParam,
         emirateId: propertyDetails.emirateId,
-        districtId: propertyDetails.districtId,
+        districtId: propertyDetails.districtId ?? undefined,
       });
       if (!res.success) throw new Error(res.message || 'Failed to load buildings');
       return res.payload;
@@ -676,23 +698,24 @@ export default function UploadScreen() {
 
   const buildingsOptions: Building[] = buildingsPages?.pages.flatMap((p) => p.data) ?? [];
 
-  const {
-    data: areasOptions,
-    isLoading: isAreasLoading,
-    isError: isAreasError,
-    refetch: refetchAreas,
-  } = useQuery({
-    queryKey: ['properties', 'areas'],
-    enabled: locationPicker === 'area' && typeof propertiesToken === 'string',
-    queryFn: () => fetchAreas({ propertiesToken: propertiesToken as string, limit: 9999 }),
-    staleTime: 1000 * 60 * 60,
-    gcTime: 1000 * 60 * 60 * 24,
-  });
+  // Area is currently hidden in READY flow (ready_step_3)
+  // const {
+  //   data: areasOptions,
+  //   isLoading: isAreasLoading,
+  //   isError: isAreasError,
+  //   refetch: refetchAreas,
+  // } = useQuery({
+  //   queryKey: ['properties', 'areas'],
+  //   enabled: locationPicker === 'area' && typeof propertiesToken === 'string',
+  //   queryFn: () => fetchAreas({ propertiesToken: propertiesToken as string, limit: 9999 }),
+  //   staleTime: 1000 * 60 * 60,
+  //   gcTime: 1000 * 60 * 60 * 24,
+  // });
 
   const selectedBuildingLabel =
     propertyDetails.building && buildingsOptions.find((b) => b.slug === propertyDetails.building)?.name;
-  const selectedAreaLabel =
-    propertyDetails.area && (areasOptions ?? []).find((a) => a.slug === propertyDetails.area)?.name;
+  // const selectedAreaLabel =
+  //   propertyDetails.area && (areasOptions ?? []).find((a) => a.slug === propertyDetails.area)?.name;
 
   const {
     data: offPlanPages,
@@ -739,10 +762,14 @@ export default function UploadScreen() {
   // Draft creation for READY is deferred until user advances from Property Status.
 
 
+  const hasUploadingImages = selectedImages.some((img) => img.uploading);
+
   // Debounced update to properties.vzite.com whenever READY fields change.
   useEffect(() => {
     if (step !== 'details') return;
     if (propertyDetails.developmentStatus !== 'READY') return;
+    // Avoid hammering the backend while images are uploading (each upload updates `selectedImages`).
+    if (hasUploadingImages) return;
 
     const propertiesToken = sessionTokens?.propertiesToken;
     if (!propertiesToken) return;
@@ -763,9 +790,7 @@ export default function UploadScreen() {
       //  STAY => default_pricing = selected value, prices from day/week/month/year fields, sale_price = null
       sale_price:
         propertyDetails.listingType === 'BUY'
-          ? propertyDetails.price
-            ? Number(propertyDetails.price)
-            : null
+          ? parseNumberFromFormatted(propertyDetails.price)
           : null,
       default_pricing:
         propertyDetails.listingType === 'STAY'
@@ -789,24 +814,22 @@ export default function UploadScreen() {
       built_year: propertyDetails.builtYear ? Number(propertyDetails.builtYear) : null,
       floor: propertyDetails.floor ? Number(propertyDetails.floor) : null,
       day_price:
-        propertyDetails.listingType === 'STAY' && propertyDetails.dayPrice
-          ? Number(propertyDetails.dayPrice)
+        propertyDetails.listingType === 'STAY'
+          ? parseNumberFromFormatted(propertyDetails.dayPrice)
           : null,
       week_price:
-        propertyDetails.listingType === 'STAY' && propertyDetails.weekPrice
-          ? Number(propertyDetails.weekPrice)
+        propertyDetails.listingType === 'STAY'
+          ? parseNumberFromFormatted(propertyDetails.weekPrice)
           : null,
       month_price:
-        propertyDetails.listingType === 'STAY' && propertyDetails.monthPrice
-          ? Number(propertyDetails.monthPrice)
+        propertyDetails.listingType === 'STAY'
+          ? parseNumberFromFormatted(propertyDetails.monthPrice)
           : null,
       year_price:
         propertyDetails.listingType === 'RENT'
-          ? propertyDetails.price
-            ? Number(propertyDetails.price)
-            : null
-          : propertyDetails.listingType === 'STAY' && propertyDetails.yearPrice
-            ? Number(propertyDetails.yearPrice)
+          ? parseNumberFromFormatted(propertyDetails.price)
+          : propertyDetails.listingType === 'STAY'
+            ? parseNumberFromFormatted(propertyDetails.yearPrice)
             : null,
     };
 
@@ -845,6 +868,7 @@ export default function UploadScreen() {
     propertyDetails,
     selectedAmenityIds,
     selectedImages,
+    hasUploadingImages,
     draftPropertyReferenceId,
     sessionTokens?.propertiesToken,
   ]);
@@ -1334,9 +1358,42 @@ export default function UploadScreen() {
     }
   };
 
-  const handleShareModalClose = () => {
+  const enterHighlightsStep = async (opts?: { reset?: boolean }) => {
+    // Close modal first so it doesn't fight with video surfaces on Android.
     setShowShareModal(false);
+
+    if (opts?.reset) {
+      // Reset highlights and start the highlight picker flow.
+      setHighlightsByRoom({});
+      setHighlightTimestamps([]);
+      setActiveHighlightStepIndex(0);
+      setIsHighlightsMuted(false);
+      setIsHighlightsVideoLoaded(false);
+      setIsHighlightsPlaying(false);
+    }
+
+    // Android can show a white screen when transitioning between multiple expo-av <Video/>
+    // instances (SurfaceView) if the previous one is still playing/loaded.
+    try {
+      setIsEditPreviewPlaying(false);
+      await editVideoRef.current?.pauseAsync?.();
+      if (Platform.OS === 'android') {
+        await editVideoRef.current?.unloadAsync?.();
+      }
+    } catch {
+      // ignore
+    }
+
+    // Force a new SurfaceView for the highlights player.
+    setHighlightsVideoKey((k) => k + 1);
+
+    // Let React commit modal dismissal before mounting the highlights video.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
     setStep('selectHighlights');
+  };
+
+  const handleShareModalClose = () => {
+    void enterHighlightsStep();
   };
 
   const uploadMediaAndAttachToProperty = async (params: {
@@ -1404,9 +1461,11 @@ export default function UploadScreen() {
     // React may defer running the state updater function, so mutating `newUris` inside it can
     // cause `newUris.length` to be 0 here even though we added items to state (stuck spinners).
     const existingNow = new Set(selectedImages.map((p) => p.uri));
-    const newUris = picked.filter((uri) => !existingNow.has(uri));
+    const newUrisOriginal = picked.filter((uri) => !existingNow.has(uri));
 
-    if (!newUris.length) return;
+    if (!newUrisOriginal.length) return;
+
+    const newUris = newUrisOriginal;
 
     setSelectedImages((prev) => {
       const existing = new Set(prev.map((p) => p.uri));
@@ -1435,40 +1494,51 @@ export default function UploadScreen() {
 
     showToast('Uploading images...');
 
-    for (const uri of newUris) {
-      try {
-        const ids = await uploadMediaAndAttachToProperty({
-          uri,
-          referenceId,
-          propertiesToken,
-        });
+    const CONCURRENCY = 3;
+    const queue = [...newUris];
+    let firstError: string | null = null;
 
-        setSelectedImages((prev) =>
-          prev.map((img) =>
-            img.uri === uri
-              ? { ...img, uploadId: ids.uploadId, attachId: ids.attachId, uploading: false }
-              : img
-          )
-        );
-      } catch (err: any) {
-        setSelectedImages((prev) =>
-          prev.map((img) => (img.uri === uri ? { ...img, uploading: false } : img))
-        );
-        Alert.alert('Image upload failed', err?.message || 'Failed to upload image.');
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length) {
+        const uri = queue.shift();
+        if (!uri) break;
+
+        try {
+          const ids = await uploadMediaAndAttachToProperty({
+            uri,
+            referenceId,
+            propertiesToken,
+          });
+
+          setSelectedImages((prev) =>
+            prev.map((img) =>
+              img.uri === uri
+                ? { ...img, uploadId: ids.uploadId, attachId: ids.attachId, uploading: false }
+                : img
+            )
+          );
+        } catch (err: any) {
+          const msg = err?.message || 'Failed to upload image.';
+          if (!firstError) firstError = msg;
+
+          setSelectedImages((prev) =>
+            prev.map((img) => (img.uri === uri ? { ...img, uploading: false } : img))
+          );
+          console.warn('[media] image upload failed', { uri, msg });
+        }
       }
+    });
+
+    await Promise.all(workers);
+
+    if (firstError) {
+      // Avoid spamming multiple alerts for batch uploads.
+      Alert.alert('Some images failed', firstError);
     }
   };
 
   const handleSkipToHighlights = () => {
-    setShowShareModal(false);
-    // Reset highlights and start the highlight picker flow.
-    setHighlightsByRoom({});
-    setHighlightTimestamps([]);
-    setActiveHighlightStepIndex(0);
-    setIsHighlightsMuted(false);
-    setIsHighlightsVideoLoaded(false);
-    setIsHighlightsPlaying(false);
-    setStep('selectHighlights');
+    void enterHighlightsStep({ reset: true });
   };
 
   useEffect(() => {
@@ -1502,6 +1572,15 @@ export default function UploadScreen() {
       cancelled = true;
       // stop when leaving
       setIsHighlightsPlaying(false);
+      // Best-effort cleanup: Android can crash (white screen -> process kill) if the SurfaceView/video
+      // decoder isn't released when switching between multiple videos.
+      try {
+        if (Platform.OS === 'android') {
+          void videoRef.current?.unloadAsync?.();
+        }
+      } catch {
+        // ignore
+      }
     };
   }, [step, selectedVideoUri]);
 
@@ -1615,6 +1694,26 @@ export default function UploadScreen() {
   }
 
  if (step === 'selectHighlights') {
+   if (!selectedVideoUri) {
+     // Defensive guard: on Android, video URI can be lost if the app is backgrounded/killed
+     // during the recording flow. Avoid a blank/white screen by returning to select.
+     return (
+       <View style={styles.container}>
+         {renderWelcomeToast()}
+         <View style={styles.header}>
+           <Text style={styles.headerTitle}>Upload Property</Text>
+         </View>
+         <View style={[styles.contentContainer, { paddingBottom: tabBarHeight + scaleHeight(16) }]}> 
+           <Text style={styles.sectionTitle}>Missing video</Text>
+           <Text style={styles.sectionDescription}>Please record or select a video again.</Text>
+           <Pressable style={styles.continueButton} onPress={() => setStep('select')}>
+             <Text style={styles.continueButtonText}>Go back</Text>
+           </Pressable>
+         </View>
+       </View>
+     );
+   }
+
    const addHighlightStep = (option: HighlightOption) => {
      setHighlightSteps((prev) => {
        const base = option;
@@ -1746,8 +1845,13 @@ export default function UploadScreen() {
            <View style={styles.highlightsVideoOuter}>
              <View style={styles.highlightsVideoContainer}>
                <Video
+                 key={`highlights-video-${highlightsVideoKey}`}
                  ref={videoRef}
                  source={{ uri: selectedVideoUri! }}
+                 progressUpdateIntervalMillis={250}
+                 // Android: use TextureView to avoid SurfaceView layering/white-screen issues.
+                 // expo-av supports this prop on Android, but the types may not include it in some versions.
+                 {...(Platform.OS === 'android' ? ({ useTextureView: true } as any) : null)}
                  style={styles.highlightsVideo}
                  resizeMode={'cover' as any}
                  shouldPlay={isHighlightsPlaying}
@@ -1762,10 +1866,23 @@ export default function UploadScreen() {
                  }}
                  onPlaybackStatusUpdate={(status: any) => {
                    if (!status?.isLoaded) return;
-                   // This can fire before playback starts; keep it as a continuous sync.
+
+                   // Throttle updates to avoid excessive re-renders on Android which can lead to
+                   // white-screen/native crashes (Expo Go process killed) on some devices.
+                   const now = Date.now();
+                   if (now - lastHighlightsStatusUpdateMsRef.current < 200) return;
+                   lastHighlightsStatusUpdateMsRef.current = now;
+
                    if (!isHighlightsVideoLoaded) setIsHighlightsVideoLoaded(true);
-                   setVideoCurrentTimeSec((status.positionMillis ?? 0) / 1000);
-                   setVideoDurationSec((status.durationMillis ?? 0) / 1000);
+
+                   const nextPos = (status.positionMillis ?? 0) / 1000;
+                   const nextDur = (status.durationMillis ?? 0) / 1000;
+
+                   setVideoCurrentTimeSec(nextPos);
+                   // Duration is stable; avoid setting it repeatedly.
+                   if (nextDur && Math.abs(nextDur - videoDurationSec) > 0.25) {
+                     setVideoDurationSec(nextDur);
+                   }
                  }}
                />
 
@@ -2591,7 +2708,10 @@ export default function UploadScreen() {
                     placeholderTextColor={Colors.textSecondary}
                     keyboardType="numeric"
                     value={propertyDetails.price}
-                    onChangeText={(text) => setPropertyDetails({ ...propertyDetails, price: text })}
+                    onChangeText={(text) => {
+                      const formatted = formatNumberWithCommas(text);
+                      setPropertyDetails({ ...propertyDetails, price: formatted });
+                    }}
                   />
                 </View>
               )}
@@ -2638,7 +2758,8 @@ export default function UploadScreen() {
                           keyboardType="numeric"
                           value={propertyDetails.dayPrice}
                           onChangeText={(text) => {
-                            setPropertyDetails({ ...propertyDetails, dayPrice: text });
+                            const formatted = formatNumberWithCommas(text);
+                            setPropertyDetails({ ...propertyDetails, dayPrice: formatted });
                             showToast('Day price updated');
                           }}
                         />
@@ -2652,7 +2773,8 @@ export default function UploadScreen() {
                           keyboardType="numeric"
                           value={propertyDetails.weekPrice}
                           onChangeText={(text) => {
-                            setPropertyDetails({ ...propertyDetails, weekPrice: text });
+                            const formatted = formatNumberWithCommas(text);
+                            setPropertyDetails({ ...propertyDetails, weekPrice: formatted });
                             showToast('Week price updated');
                           }}
                         />
@@ -2668,7 +2790,8 @@ export default function UploadScreen() {
                           keyboardType="numeric"
                           value={propertyDetails.monthPrice}
                           onChangeText={(text) => {
-                            setPropertyDetails({ ...propertyDetails, monthPrice: text });
+                            const formatted = formatNumberWithCommas(text);
+                            setPropertyDetails({ ...propertyDetails, monthPrice: formatted });
                             showToast('Month price updated');
                           }}
                         />
@@ -2682,7 +2805,8 @@ export default function UploadScreen() {
                           keyboardType="numeric"
                           value={propertyDetails.yearPrice}
                           onChangeText={(text) => {
-                            setPropertyDetails({ ...propertyDetails, yearPrice: text });
+                            const formatted = formatNumberWithCommas(text);
+                            setPropertyDetails({ ...propertyDetails, yearPrice: formatted });
                             showToast('Year price updated');
                           }}
                         />
@@ -2843,7 +2967,7 @@ export default function UploadScreen() {
                       districtId: null,
                       districtName: '',
                       building: '',
-                      area: '',
+                      // area: '',
                     });
                   }}
                 >
@@ -2880,7 +3004,7 @@ export default function UploadScreen() {
                       districtId: null,
                       districtName: '',
                       building: '',
-                      area: '',
+                      // area: '',
                     });
                   }}
                 >
@@ -2894,8 +3018,8 @@ export default function UploadScreen() {
 
           <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Building</Text>
           <Pressable
-            style={[styles.locationInput, !propertyDetails.districtId && styles.disabledInput]}
-            disabled={!propertyDetails.districtId}
+            style={[styles.locationInput, !propertyDetails.emirateId && styles.disabledInput]}
+            disabled={!propertyDetails.emirateId}
             onPress={() => requestAnimationFrame(() => setLocationPicker('building'))}
           >
             <Text
@@ -2915,7 +3039,7 @@ export default function UploadScreen() {
                     setPropertyDetails({
                       ...propertyDetails,
                       building: '',
-                      area: '',
+                      // area: '',
                     });
                   }}
                 >
@@ -2927,7 +3051,7 @@ export default function UploadScreen() {
             </View>
           </Pressable>
 
-          <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Area</Text>
+          {/* <Text style={[styles.formLabel, { marginTop: scaleHeight(12) }]}>Area</Text>
           <Pressable
             style={[styles.locationInput, !propertyDetails.building && styles.disabledInput]}
             disabled={!propertyDetails.building}
@@ -2959,7 +3083,7 @@ export default function UploadScreen() {
                 <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
               )}
             </View>
-          </Pressable>
+          </Pressable> */}
 
         </View>
       </>
@@ -3122,8 +3246,6 @@ export default function UploadScreen() {
             >
               <View
                 style={[styles.modal, { height: windowHeight * 0.55 }]}
-                onStartShouldSetResponder={() => true}
-                onResponderRelease={() => Keyboard.dismiss()}
               >
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderSpacer} />
@@ -3132,9 +3254,7 @@ export default function UploadScreen() {
                       ? 'Select Emirate'
                       : locationPicker === 'district'
                         ? 'Select District'
-                        : locationPicker === 'building'
-                          ? 'Select Building'
-                          : 'Select Area'}
+                        : 'Select Building'}
                   </Text>
                   <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
                     <X size={scaleWidth(18)} color={Colors.textSecondary} />
@@ -3154,15 +3274,13 @@ export default function UploadScreen() {
                 />
               )}
 
-              {(locationPicker === 'district' || locationPicker === 'building' || locationPicker === 'area') && (
+              {(locationPicker === 'district' || locationPicker === 'building') && (
                 <TextInput
                   style={[styles.input, styles.searchInput]}
                   placeholder={
                     locationPicker === 'district'
                       ? 'Search district...'
-                      : locationPicker === 'building'
-                        ? 'Search building...'
-                        : 'Search area...'
+                      : 'Search building...'
                   }
                   placeholderTextColor={Colors.textSecondary}
                   value={locationPicker === 'district' ? districtSearch : locationSearch}
@@ -3209,7 +3327,7 @@ export default function UploadScreen() {
                           districtId: null,
                           districtName: '',
                           building: '',
-                          area: '',
+                          // area: '',
                         });
                         setEmirateSearch('');
                         setDistrictSearch('');
@@ -3231,6 +3349,8 @@ export default function UploadScreen() {
                 />
               ) : locationPicker === 'district' ? (
                 <FlatList<District>
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="none"
                   data={districtOptions.filter((d) =>
                     d.name.toLowerCase().includes(districtSearch.trim().toLowerCase())
                   )}
@@ -3245,9 +3365,10 @@ export default function UploadScreen() {
                           districtId: item.id,
                           districtName: item.name,
                           building: '',
-                          area: '',
+                          // area: '',
                         });
                         setDistrictSearch('');
+                        Keyboard.dismiss();
                         setLocationPicker(null);
                       }}
                     >
@@ -3282,6 +3403,8 @@ export default function UploadScreen() {
                       </View>
                     ) : (
                       <FlatList<Building>
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="none"
                         data={buildingsOptions.filter((b) =>
                           b.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
                         )}
@@ -3305,8 +3428,9 @@ export default function UploadScreen() {
                               setPropertyDetails({
                                 ...propertyDetails,
                                 building: item.slug,
-                                area: '',
+                                // area: '',
                               });
+                              Keyboard.dismiss();
                               setLocationPicker(null);
                             }}
                           >
@@ -3323,53 +3447,7 @@ export default function UploadScreen() {
                       />
                     )}
                   </>
-                ) : (
-                  <>
-                    {isAreasError && (
-                      <Pressable
-                        style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
-                        onPress={() => refetchAreas()}
-                      >
-                        <Text style={styles.modalButtonText}>Retry loading areas</Text>
-                      </Pressable>
-                    )}
-
-                    {isAreasLoading ? (
-                      <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
-                        <SavingSpinner accessibilityLabel="Loading areas" />
-                      </View>
-                    ) : (
-                      <FlatList<Area>
-                        data={(areasOptions ?? []).filter((a) =>
-                          a.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
-                        )}
-                        keyExtractor={(item) => String(item.id)}
-                        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
-                        renderItem={({ item }) => (
-                          <Pressable
-                            style={styles.pickerItem}
-                            onPress={() => {
-                              setPropertyDetails({
-                                ...propertyDetails,
-                                area: item.slug,
-                              });
-                              setLocationPicker(null);
-                            }}
-                          >
-                            <Text style={styles.pickerItemText}>{item.name}</Text>
-                          </Pressable>
-                        )}
-                        ListEmptyComponent={
-                          <Text style={styles.emptyPickerText}>
-                            {locationSearch.trim().length
-                              ? 'No areas match your search'
-                              : 'No areas'}
-                          </Text>
-                        }
-                      />
-                    )}
-                  </>
-                )
+                ) : null
               )}
               </View>
             </Pressable>
@@ -3385,99 +3463,100 @@ export default function UploadScreen() {
           onRequestClose={() => setAmenitiesModalVisible(false)}
         >
           <View style={{ flex: 1 }}>
-            <Pressable
-              style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
-              onPress={() => {
-                Keyboard.dismiss();
-                setAmenitiesModalVisible(false);
-              }}
-            >
-              <Pressable style={[styles.modal, { height: windowHeight * 0.55 }]} onPress={() => Keyboard.dismiss()}>
-                <View style={styles.modalHeader}>
-                  <View style={styles.modalHeaderSpacer} />
-                  <Text style={styles.modalTitle}>Select Amenities</Text>
-                  <Pressable
-                    style={styles.modalHeaderCloseButton}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setAmenitiesModalVisible(false);
-                    }}
-                  >
-                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
-                  </Pressable>
-                </View>
-
-                <TextInput
-                  style={[styles.input, styles.searchInput]}
-                  placeholder="Search amenities..."
-                  placeholderTextColor={Colors.textSecondary}
-                  value={amenitiesSearch}
-                  onChangeText={setAmenitiesSearch}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  clearButtonMode="while-editing"
-                />
-
-                {isAmenitiesError && (
-                  <Pressable
-                    style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
-                    onPress={() => refetchAmenities()}
-                  >
-                    <Text style={styles.modalButtonText}>Retry loading amenities</Text>
-                  </Pressable>
-                )}
-
-                <View style={{ flex: 1 }}>
-                  {isAmenitiesLoading ? (
-                    <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
-                      <SavingSpinner accessibilityLabel="Loading amenities" />
-                    </View>
-                  ) : (
-                    <FlatList<Amenity>
-                      data={filteredAmenities}
-                      keyExtractor={(item) => String(item.id)}
-                      ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
-                      contentContainerStyle={{ paddingBottom: scaleHeight(70) }}
-                      renderItem={({ item }) => {
-                        const selected = selectedAmenityIds.includes(item.id);
-                        return (
-                          <Pressable
-                            style={styles.amenityItem}
-                            onPress={() => {
-                              toggleAmenity(item.id);
-                            }}
-                          >
-                            <View style={styles.amenityLeft}>
-                              <Text style={styles.pickerItemText}>{item.name}</Text>
-                            </View>
-                            <View style={[styles.amenityCheck, selected && styles.amenityCheckSelected]}>
-                              {selected ? <Check size={scaleWidth(14)} color="#fff" /> : null}
-                            </View>
-                          </Pressable>
-                        );
-                      }}
-                      ListEmptyComponent={
-                        <Text style={styles.emptyPickerText}>
-                          {amenitiesSearch.trim().length ? 'No results' : 'No amenities'}
-                        </Text>
-                      }
-                    />
-                  )}
-
-                  <View style={styles.modalFooter}>
+            <TouchableWithoutFeedback onPress={() => setAmenitiesModalVisible(false)}>
+              <View style={[styles.locationModal, { paddingBottom: keyboardHeight }]}>
+                {/* Card container: swallow touches so they don't hit the backdrop */}
+                <Pressable style={[styles.modal, { height: windowHeight * 0.55 }]} onPress={() => {}}>
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalHeaderSpacer} />
+                    <Text style={styles.modalTitle}>Select Amenities</Text>
                     <Pressable
-                      style={styles.modalDoneButton}
-                      onPress={() => {
-                        setAmenitiesModalVisible(false);
-                        showToast('Amenities updated');
-                      }}
+                      style={styles.modalHeaderCloseButton}
+                      onPress={() => setAmenitiesModalVisible(false)}
                     >
-                      <Text style={styles.modalDoneButtonText}>Done</Text>
+                      <X size={scaleWidth(18)} color={Colors.textSecondary} />
                     </Pressable>
                   </View>
-                </View>
-              </Pressable>
-            </Pressable>
+
+                  <TextInput
+                    ref={amenitiesSearchInputRef}
+                    style={[styles.input, styles.searchInput]}
+                    placeholder="Search amenities..."
+                    placeholderTextColor={Colors.textSecondary}
+                    value={amenitiesSearch}
+                    onChangeText={setAmenitiesSearch}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    clearButtonMode="while-editing"
+                    autoFocus
+                  />
+
+                  {isAmenitiesError && (
+                    <Pressable
+                      style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                      onPress={() => refetchAmenities()}
+                    >
+                      <Text style={styles.modalButtonText}>Retry loading amenities</Text>
+                    </Pressable>
+                  )}
+
+                  <View style={{ flex: 1 }}>
+                    {isAmenitiesLoading ? (
+                      <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
+                        <SavingSpinner accessibilityLabel="Loading amenities" />
+                      </View>
+                    ) : (
+                      <FlatList<Amenity>
+                        keyboardShouldPersistTaps="always"
+                        keyboardDismissMode="none"
+                        data={filteredAmenities}
+                        keyExtractor={(item) => String(item.id)}
+                        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                        contentContainerStyle={{ paddingBottom: scaleHeight(70) }}
+                        renderItem={({ item }) => {
+                          const selected = selectedAmenityIds.includes(item.id);
+                          return (
+                            <TouchableWithoutFeedback
+                              onPressIn={() => amenitiesSearchInputRef.current?.focus()}
+                              onPress={() => {
+                                toggleAmenity(item.id);
+                              }}
+                            >
+                              <View style={styles.amenityItem}>
+                                <View style={styles.amenityLeft}>
+                                  <Text style={styles.pickerItemText}>{item.name}</Text>
+                                </View>
+                                <View style={[styles.amenityCheck, selected && styles.amenityCheckSelected]}>
+                                  {selected ? <Check size={scaleWidth(14)} color="#fff" /> : null}
+                                </View>
+                              </View>
+                            </TouchableWithoutFeedback>
+                          );
+                        }}
+                        ListEmptyComponent={
+                          <Text style={styles.emptyPickerText}>
+                            {amenitiesSearch.trim().length ? 'No results' : 'No amenities'}
+                          </Text>
+                        }
+                      />
+                    )}
+
+                    <View style={styles.modalFooter}>
+                      <Pressable
+                        style={styles.modalDoneButton}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setAmenitiesModalVisible(false);
+                          showToast('Amenities updated');
+                        }}
+                      >
+                        <Text style={styles.modalDoneButtonText}>Done</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </Pressable>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
         </Modal>
 
@@ -3511,10 +3590,8 @@ export default function UploadScreen() {
                 setOffPlanPickerOpen(false);
               }}
             >
-              <Pressable
-                style={[styles.modal, { height: windowHeight * 0.55 }]}
-                onPress={() => Keyboard.dismiss()}
-              >
+              <View style={[styles.modal, { height: windowHeight * 0.55 }]}>
+
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderSpacer} />
                   <Text style={styles.modalTitle}>Select project</Text>
@@ -3544,6 +3621,8 @@ export default function UploadScreen() {
                 )}
 
                 <FlatList<OffPlanProjectListItem>
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="none"
                   data={offPlanOptions}
                   keyExtractor={(item) => String(item.id)}
                   ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
@@ -3575,6 +3654,7 @@ export default function UploadScreen() {
                           setDraftPropertyReferenceId(referenceId || null);
 
                           setOffPlanSearch('');
+                          Keyboard.dismiss();
                           setOffPlanPickerOpen(false);
                         }}
                       >
@@ -3616,7 +3696,7 @@ export default function UploadScreen() {
                     </View>
                   }
                 />
-              </Pressable>
+              </View>
             </Pressable>
           </View>
         </Modal>
@@ -3641,8 +3721,6 @@ export default function UploadScreen() {
           >
             <View
               style={[styles.modal, { height: windowHeight * 0.55 }]}
-              onStartShouldSetResponder={() => true}
-              onResponderRelease={() => Keyboard.dismiss()}
             >
               <View style={styles.modalHeader}>
                 <View style={styles.modalHeaderSpacer} />
@@ -3651,24 +3729,18 @@ export default function UploadScreen() {
                     ? 'Select Emirate'
                     : locationPicker === 'district'
                       ? 'Select District'
-                      : locationPicker === 'building'
-                        ? 'Select Building'
-                        : 'Select Area'}
+                      : 'Select Building'}
                 </Text>
                 <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
                   <X size={scaleWidth(18)} color={Colors.textSecondary} />
                 </Pressable>
               </View>
 
-              {(locationPicker === 'district' || locationPicker === 'building' || locationPicker === 'area') && (
+              {(locationPicker === 'district' || locationPicker === 'building') && (
                 <TextInput
                   style={[styles.input, styles.searchInput]}
                   placeholder={`Search ${
-                    locationPicker === 'district'
-                      ? 'districts'
-                      : locationPicker === 'building'
-                        ? 'buildings'
-                        : 'areas'
+                    locationPicker === 'district' ? 'districts' : 'buildings'
                   }...`}
                   placeholderTextColor={Colors.textSecondary}
                   value={locationPicker === 'district' ? districtSearch : locationSearch}
@@ -3696,7 +3768,7 @@ export default function UploadScreen() {
                           districtId: null,
                           districtName: '',
                           building: '',
-                          area: '',
+                          // area: '',
                         });
                         setDistrictSearch('');
                         setLocationSearch('');
@@ -3716,6 +3788,8 @@ export default function UploadScreen() {
                 />
               ) : locationPicker === 'district' ? (
                 <FlatList
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="none"
                   data={districtOptions.filter((d) =>
                     d.name.toLowerCase().includes(districtSearch.trim().toLowerCase())
                   )}
@@ -3729,9 +3803,10 @@ export default function UploadScreen() {
                           districtId: item.id,
                           districtName: item.name,
                           building: '',
-                          area: '',
+                          // area: '',
                         });
                         setLocationSearch('');
+                        Keyboard.dismiss();
                         setLocationPicker(null);
                       }}
                     >
@@ -3748,6 +3823,8 @@ export default function UploadScreen() {
                 />
               ) : locationPicker === 'building' ? (
                 <FlatList
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="none"
                   data={buildingsOptions.filter((b) =>
                     b.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
                   )}
@@ -3759,9 +3836,10 @@ export default function UploadScreen() {
                         setPropertyDetails({
                           ...propertyDetails,
                           building: item.slug,
-                          area: '',
+                          // area: '',
                         });
                         setLocationSearch('');
+                        Keyboard.dismiss();
                         setLocationPicker(null);
                       }}
                     >
@@ -3776,36 +3854,7 @@ export default function UploadScreen() {
                     )
                   }
                 />
-              ) : (
-                <FlatList
-                  data={(areasOptions ?? []).filter((a) =>
-                    a.name.toLowerCase().includes(locationSearch.trim().toLowerCase())
-                  )}
-                  keyExtractor={(item) => `${item.id}-${item.slug}`}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      style={styles.pickerItem}
-                      onPress={() => {
-                        setPropertyDetails({
-                          ...propertyDetails,
-                          area: item.slug,
-                        });
-                        setLocationSearch('');
-                        setLocationPicker(null);
-                      }}
-                    >
-                      <Text style={styles.pickerItemText}>{item.name}</Text>
-                    </Pressable>
-                  )}
-                  ListEmptyComponent={
-                    isAreasLoading ? (
-                      <Text style={styles.emptyPickerText}>Loading areas...</Text>
-                    ) : (
-                      <Text style={styles.emptyPickerText}>No areas found.</Text>
-                    )
-                  }
-                />
-              )}
+              ) : null}
             </View>
           </Pressable>
         </View>

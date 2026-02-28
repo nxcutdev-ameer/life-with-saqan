@@ -86,3 +86,31 @@ export function normalizePhone(input: string) {
   const digits = trimmed.replace(/[^0-9]/g, '');
   return hasPlus ? `+${digits}` : digits;
 }
+
+/**
+ * Formats a numeric string (potentially containing non-digit characters) with thousand separators.
+ *
+ * @example
+ * formatNumberWithCommas("10000") => "10,000"
+ * formatNumberWithCommas("10,000") => "10,000"
+ */
+export function formatNumberWithCommas(input: string): string {
+  const digits = input.replace(/[^0-9]/g, '');
+  if (!digits) return '';
+
+  // Prevent leading zeros like "00012" => "12".
+  const normalized = digits.replace(/^0+(?=\d)/, '');
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/**
+ * Parses a formatted numeric string (e.g. "10,000") into a number.
+ * Returns null for empty/invalid input.
+ */
+export function parseNumberFromFormatted(input: string | null | undefined): number | null {
+  if (!input) return null;
+  const digits = String(input).replace(/[^0-9]/g, '');
+  if (!digits) return null;
+  const n = Number(digits);
+  return Number.isFinite(n) ? n : null;
+}

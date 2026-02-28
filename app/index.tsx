@@ -6,6 +6,7 @@ import { Menu } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Platform } from 'react-native';
+import { scaleFont } from '@/utils/responsive';
 
 export default function LandingScreen() {
   const router = useRouter();
@@ -80,7 +81,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logo: {
-    fontSize: 24,
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(24),
     fontWeight: '400',
     color: Colors.text,
     letterSpacing: 2,
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   heroTitle: {
-    fontSize: Platform.select({ ios: 48, android: 36 }),
+    fontSize: Platform.OS === 'android' ? scaleFont(28): scaleFont(48),
     fontWeight: '700',
     color: Colors.text,
     textAlign: 'center',
@@ -100,7 +101,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   tagline: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
@@ -121,7 +122,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: Colors.textLight,
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '600',
   },
   secondaryButton: {
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: Colors.text,
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '400',
   },
 });

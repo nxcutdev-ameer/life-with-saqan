@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(50),
   },
   avatarText: {
-   fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(28),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(28),
     fontWeight: '700',
     color: Colors.textLight,
   },

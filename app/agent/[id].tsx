@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Alert, FlatList, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     paddingBottom: scaleHeight(16),
   },
   headerTitle: {
-    fontSize: scaleFont(22),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(22),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -323,18 +323,18 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarText: {
-    fontSize: scaleFont(36),
+    fontSize: Platform.OS === 'android' ? scaleFont(24): scaleFont(36),
     fontWeight: '700',
     color: Colors.textLight,
   },
   userName: {
-    fontSize: scaleFont(24),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(24),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(4),
   },
   userBio: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: scaleHeight(20),
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
   },
   statNumber: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.bronze,
   },
   tabText: {
-    fontSize: scaleFont(15),
+    fontSize: Platform.OS === 'android' ? scaleFont(13): scaleFont(15),
     fontWeight: '600',
     color: Colors.textSecondary,
   },
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     gap: scaleWidth(4),
   },
   gridStatText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
     color: Colors.textLight,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   gridEmirateText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
     color: Colors.textLight,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',

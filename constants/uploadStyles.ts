@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { Colors } from './colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 
@@ -18,7 +18,7 @@ export const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
   },
@@ -122,13 +122,13 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
   },
   authGateTitle: {
-    fontSize: scaleFont(20),
+    fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '800',
     color: Colors.text,
     marginBottom: scaleHeight(6),
   },
   authGateDescription: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: scaleFont(20),
@@ -144,22 +144,22 @@ export const styles = StyleSheet.create({
   },
   authGateButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(16),
+    fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
   },
   authGateLink: {
     color: Colors.brown,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
   },
   sectionTitle: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(8),
   },
   sectionDescription: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     marginBottom: scaleHeight(32),
     lineHeight: scaleFont(22),
@@ -185,13 +185,13 @@ export const styles = StyleSheet.create({
     marginBottom: scaleHeight(16),
   },
   uploadOptionTitle: {
-    fontSize: scaleFont(18),
+    fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
     color: Colors.text,
     marginBottom: scaleHeight(4),
   },
   uploadOptionDescription: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     color: Colors.textSecondary,
     textAlign: 'center',
   },
@@ -216,13 +216,13 @@ export const styles = StyleSheet.create({
     backgroundColor: Colors.textLight,
   },
   imageDropzoneText: {
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '800',
     color: Colors.text,
   },
   imageDropzoneHint: {
     marginTop: scaleHeight(6),
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
   },
   imageThumbRow: {
@@ -284,7 +284,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   helperText: {
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     color: Colors.textSecondary,
     marginTop: scaleHeight(4),
   },
@@ -308,7 +308,7 @@ export const styles = StyleSheet.create({
   },
   amenitiesChipText: {
     color: Colors.text,
-    fontSize: scaleFont(12),
+    fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '700',
     maxWidth: scaleWidth(220),
   },
@@ -331,7 +331,7 @@ export const styles = StyleSheet.create({
   },
   modalDoneButtonText: {
     color: Colors.textLight,
-    fontSize: scaleFont(14),
+    fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '800',
   },
   formLabel: {
@@ -828,6 +828,8 @@ export const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 0,
+    // Android: ensure it stays behind the sheet
+    elevation: 0,
   },
   highlightsSheet: {
     position: 'absolute',
@@ -838,6 +840,8 @@ export const styles = StyleSheet.create({
     borderTopLeftRadius: scaleWidth(20),
     borderTopRightRadius: scaleWidth(20),
     overflow: 'hidden',
+    zIndex: 1,
+    elevation: 1,
   },
   highlightsHeader: {
     paddingHorizontal: scaleWidth(16),
@@ -887,6 +891,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: scaleWidth(10),
     zIndex: 8,
+    elevation: 8,
   },
   highlightsVideoControlButton: {
     width: scaleWidth(40),
@@ -991,6 +996,7 @@ export const styles = StyleSheet.create({
     paddingTop: scaleHeight(10),
     backgroundColor: 'rgba(0,0,0,0.35)',
     zIndex: 4,
+    elevation: 4,
   },
   highlightsNudgeZoneLeft: {
     position: 'absolute',
