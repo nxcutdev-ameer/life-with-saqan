@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { Colors } from '@/constants/colors';
@@ -40,14 +41,14 @@ export default function LoginScreen() {
     navigation.setOptions({ gestureEnabled: false } as any);
   }, [navigation]);
 
-  const onContinue = async () => {
+  const onLogin = async (method: 'whatsapp' | 'sms') => {
     if (!isValidPhone || isSendingOtp) return;
 
     Keyboard.dismiss();
     setIsSendingOtp(true);
 
     try {
-      const res = await authByPhone(normalized);
+      const res = await authByPhone(normalized, method);
       if (!res?.success) {
         throw new Error(res?.message || 'Failed to send OTP');
       }
@@ -55,7 +56,7 @@ export default function LoginScreen() {
       const action = (res?.payload?.action || 'login').toString();
       const flow = action === 'register' ? 'register' : 'login';
 
-      setPendingAuth({ phoneNumber: normalized, flow });
+      setPendingAuth({ phoneNumber: normalized, flow, method });
       router.replace('/auth/otp-verification' as any);
     } catch (e: any) {
       Alert.alert('Login failed', e?.message ?? 'Something went wrong. Please try again.');
@@ -104,26 +105,33 @@ export default function LoginScreen() {
                       styles.primaryButton,
                       (!isValidPhone || isSendingOtp) && styles.primaryButtonDisabled,
                     ]}
-                    onPress={onContinue}
+                    onPress={() => onLogin('whatsapp')}
                     disabled={!isValidPhone || isSendingOtp}
                   >
                     <View style={styles.primaryButtonContent}>
                       {isSendingOtp ? (
                         <ActivityIndicator size="small" color={Colors.textLight} />
-                      ) : null}
+                      ) : (
+                        <FontAwesome name="whatsapp" size={scaleFont(18)} color={Colors.textLight} />
+                      )}
                       <Text style={styles.primaryButtonText}>
-                        {isSendingOtp ? 'Sending OTP…' : 'Continue'}
+                        {isSendingOtp ? 'Sending OTP…' : 'Login with WhatsApp'}
                       </Text>
                     </View>
                   </Pressable>
 
                 </View>
+
+                <Text style={styles.orText}>or</Text>
                 <Pressable
-                  style={[styles.secondaryButton, isSendingOtp && styles.primaryButtonDisabled]}
-                  onPress={() => router.replace('/(tabs)/feed' as any)}
-                  disabled={isSendingOtp}
+                  style={[
+                    styles.secondaryButton,
+                    (!isValidPhone || isSendingOtp) && styles.primaryButtonDisabled,
+                  ]}
+                  onPress={() => onLogin('sms')}
+                  disabled={!isValidPhone || isSendingOtp}
                 >
-                  <Text style={styles.secondaryButtonText}>Continue without login</Text>
+                  <Text style={styles.secondaryButtonText}>Login with SMS</Text>
                 </Pressable>
               </View>
             </SafeAreaView>
@@ -211,7 +219,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     width: '100%',
     maxWidth: 420,
-    marginTop: scaleHeight(20),
+    marginTop: 0,
     backgroundColor: 'transparent',
     paddingVertical: scaleHeight(14),
     borderRadius: scaleWidth(12),
@@ -223,6 +231,14 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
     fontWeight: '600',
+  },
+  orText: {
+    marginTop: scaleHeight(16),
+    marginBottom: scaleHeight(12),
+    color: Colors.textSecondary,
+    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
+    fontWeight: '700',
+    textAlign: 'center',
   },
   footerRow: {
     marginTop: scaleHeight(14),

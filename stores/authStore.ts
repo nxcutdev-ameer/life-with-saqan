@@ -34,6 +34,8 @@ export interface AuthState {
 
   pendingPhoneNumber: string | null;
   pendingFlow: AuthFlow | null;
+  /** Method used to request OTP (e.g. whatsapp vs sms). */
+  pendingAuthMethod: 'whatsapp' | 'sms' | null;
   pendingMessage: string | null;
   pendingBrokerUpdate: {
     brokerNumber: string;
@@ -43,6 +45,7 @@ export interface AuthState {
   setPendingAuth: (params: {
     phoneNumber: string;
     flow: AuthFlow;
+    method?: 'whatsapp' | 'sms';
     message?: string | null;
     brokerUpdate?: { brokerNumber: string; emirate: string } | null;
   }) => void;
@@ -72,14 +75,16 @@ export const useAuthStore = create<AuthState>()(
       consumeWelcomeToast: () => set({ welcomeToastAgent: null }),
       pendingPhoneNumber: null,
       pendingFlow: null,
+      pendingAuthMethod: null,
       pendingMessage: null,
       pendingBrokerUpdate: null,
 
-      setPendingAuth: ({ phoneNumber, flow, message, brokerUpdate }) => {
+      setPendingAuth: ({ phoneNumber, flow, method, message, brokerUpdate }) => {
         const normalized = phoneNumber.replace(/\s+/g, '');
         set({
           pendingPhoneNumber: normalized,
           pendingFlow: flow,
+          pendingAuthMethod: method ?? 'whatsapp',
           pendingMessage: message ?? null,
           pendingBrokerUpdate: brokerUpdate ?? null,
         });
@@ -89,6 +94,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           pendingPhoneNumber: null,
           pendingFlow: null,
+          pendingAuthMethod: null,
           pendingMessage: null,
           pendingBrokerUpdate: null,
         }),
@@ -108,6 +114,7 @@ export const useAuthStore = create<AuthState>()(
           session: session ?? get().session,
           pendingPhoneNumber: null,
           pendingFlow: null,
+          pendingAuthMethod: null,
           pendingMessage: null,
           pendingBrokerUpdate: null,
         });
@@ -121,6 +128,7 @@ export const useAuthStore = create<AuthState>()(
           welcomeToastAgent: null,
           pendingPhoneNumber: null,
           pendingFlow: null,
+          pendingAuthMethod: null,
           pendingMessage: null,
           pendingBrokerUpdate: null,
         }),

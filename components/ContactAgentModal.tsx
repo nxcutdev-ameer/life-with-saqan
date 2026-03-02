@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,8 @@ import {
   Linking,
 } from 'react-native';
 import { Phone, MessageCircle, Mail, Send, X } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { Property } from '@/types';
 
 interface ContactAgentModalProps {
@@ -22,6 +23,9 @@ export default function ContactAgentModal({
   onClose,
   property,
 }: ContactAgentModalProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
+
   const handleCall = () => {
     const phoneNumber = property.agent.phone;
     Linking.openURL(`tel:${phoneNumber}`);
@@ -71,7 +75,7 @@ export default function ContactAgentModal({
       onPress={onPress}
     >
       <View style={[styles.iconContainer, { backgroundColor: color }]}>
-        <Icon size={24} color={Colors.textLight} />
+        <Icon size={24} color={colors.white} />
       </View>
       <View style={styles.contactInfo}>
         <Text style={styles.contactTitle}>{title}</Text>
@@ -93,7 +97,7 @@ export default function ContactAgentModal({
           <View style={styles.header}>
             <Text style={styles.modalTitle}>Contact Agent</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={Colors.text} />
+              <X size={24} color={isDarkMode ? colors.white : colors.text} />
             </Pressable>
           </View>
 
@@ -136,7 +140,7 @@ export default function ContactAgentModal({
               title="In-App Message"
               description="Chat within Saqan"
               onPress={handleInAppMessage}
-              color={Colors.bronze}
+              color={colors.primary}
             />
           </View>
         </View>
@@ -145,7 +149,7 @@ export default function ContactAgentModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -155,7 +159,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,
@@ -171,7 +175,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   closeButton: {
     padding: 4,
@@ -182,32 +186,32 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 24,
     padding: 16,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   agentAvatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   agentInitial: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
   },
   agentName: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   agentAgency: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   contactOptions: {
     gap: 12,
@@ -217,10 +221,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     padding: 16,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   contactOptionPressed: {
     opacity: 0.7,
@@ -239,11 +243,11 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     marginBottom: 2,
   },
   contactDescription: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
 });

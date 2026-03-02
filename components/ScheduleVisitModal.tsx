@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,8 +10,9 @@ import {
   UIManager,
 } from 'react-native';
 import { X, Calendar, Clock } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 
 interface ScheduleVisitModalProps {
   visible: boolean;
@@ -26,6 +27,9 @@ export default function ScheduleVisitModal({
   onSchedule,
   propertyTitle,
 }: ScheduleVisitModalProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
+
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedTime, setSelectedTime] = useState<Date>(new Date());
   const [pickerMode, setPickerMode] = useState<'date' | 'time' | null>(null);
@@ -71,7 +75,7 @@ export default function ScheduleVisitModal({
           <View style={styles.header}>
             <Text style={styles.modalTitle}>Schedule Visit</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={Colors.text} />
+              <X size={24} color={isDarkMode ? colors.white : colors.text} />
             </Pressable>
           </View>
 
@@ -94,7 +98,7 @@ export default function ScheduleVisitModal({
             >
               <View style={styles.selectorLeft}>
                 <View style={styles.selectorIcon}>
-                  <Calendar size={20} color={Colors.bronze} />
+                  <Calendar size={20} color={colors.primary} />
                 </View>
                 <View>
                   <Text style={styles.selectorLabel}>Date</Text>
@@ -114,7 +118,7 @@ export default function ScheduleVisitModal({
             >
               <View style={styles.selectorLeft}>
                 <View style={styles.selectorIcon}>
-                  <Clock size={20} color={Colors.bronze} />
+                  <Clock size={20} color={colors.primary} />
                 </View>
                 <View>
                   <Text style={styles.selectorLabel}>Time</Text>
@@ -131,7 +135,7 @@ export default function ScheduleVisitModal({
               value={pickerMode === 'date' ? selectedDate : selectedTime}
               mode={pickerMode}
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              textColor={Platform.OS === 'ios' ? '#000000' : undefined}
+              textColor={Platform.OS === 'ios' ? (isDarkMode ? '#FFFFFF' : '#000000') : undefined}
               onChange={(event, value) => {
                 // On Android, picker is a dialog; close after selection/cancel.
                 if (Platform.OS !== 'ios') {
@@ -156,7 +160,7 @@ export default function ScheduleVisitModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -166,7 +170,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,
@@ -182,30 +186,30 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   closeButton: {
     padding: 4,
   },
   propertyInfo: {
     padding: 16,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: 24,
   },
   propertyLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     textTransform: 'uppercase' as const,
     marginBottom: 4,
   },
   propertyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   selectionContainer: {
     marginBottom: 24,
@@ -213,7 +217,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     marginBottom: 12,
   },
   selector: {
@@ -223,8 +227,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.background,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     marginBottom: 12,
   },
   selectorLeft: {
@@ -236,22 +240,24 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: `${Colors.bronze}15`,
+    backgroundColor: isDarkMode ? 'rgba(183, 120, 24, 0.18)' : 'rgba(183, 120, 24, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   selectorLabel: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     marginBottom: 2,
   },
   selectorValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   confirmButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: isDarkMode ? colors.black : colors.primary,
+    borderWidth: isDarkMode ? 1 : 0,
+    borderColor: isDarkMode ? colors.primary : 'transparent',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -259,6 +265,6 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.textLight,
+    color: isDarkMode ? colors.white : colors.textOnPrimary,
   },
 });

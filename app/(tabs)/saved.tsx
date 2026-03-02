@@ -4,8 +4,9 @@ import { useRouter } from 'expo-router';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Grid, List, Folder, Plus } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useTheme } from '@/utils/useTheme';
 import { mockProperties } from '@/mocks/properties';
 import { Property } from '@/types';
 import { Image } from 'expo-image';
@@ -21,6 +22,8 @@ interface Collection {
 
 export default function SavedScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const bottomTabBarHeight = useBottomTabBarHeight();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
@@ -29,7 +32,7 @@ export default function SavedScreen() {
   const savedProperties = mockProperties.filter(p => savedPropertyIds.includes(p.id));
 
   const collections: Collection[] = [
-    { id: 'all', name: 'All Saved', propertyIds: savedPropertyIds, color: Colors.bronze },
+    { id: 'all', name: 'All Saved', propertyIds: savedPropertyIds, color: colors.primary },
     { id: '1', name: 'Dubai Marina', propertyIds: ['1', '2'], color: '#03A9F4' },
     { id: '2', name: 'Beach Properties', propertyIds: ['3', '5'], color: '#8BC34A' },
     { id: '3', name: 'Investment Options', propertyIds: ['8'], color: '#FF5722' },
@@ -96,21 +99,21 @@ export default function SavedScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Saved</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Saved</Text>
         <View style={styles.headerActions}>
           <Pressable
             style={[styles.viewModeButton, viewMode === 'grid' && styles.viewModeButtonActive]}
             onPress={() => setViewMode('grid')}
           >
-            <Grid size={scaleWidth(20)} color={viewMode === 'grid' ? Colors.textLight : Colors.text} />
+            <Grid size={scaleWidth(20)} color={viewMode === 'grid' ? colors.textOnPrimary : colors.text} />
           </Pressable>
           <Pressable
             style={[styles.viewModeButton, viewMode === 'list' && styles.viewModeButtonActive]}
             onPress={() => setViewMode('list')}
           >
-            <List size={scaleWidth(20)} color={viewMode === 'list' ? Colors.textLight : Colors.text} />
+            <List size={scaleWidth(20)} color={viewMode === 'list' ? colors.textOnPrimary : colors.text} />
           </Pressable>
         </View>
       </View>
@@ -131,7 +134,7 @@ export default function SavedScreen() {
               ]}
               onPress={() => setSelectedCollection(item.id === selectedCollection ? null : item.id)}
             >
-              <Folder size={scaleWidth(16)} color={selectedCollection === item.id ? Colors.textLight : item.color} />
+              <Folder size={scaleWidth(16)} color={selectedCollection === item.id ? colors.textOnPrimary : item.color} />
               <Text
                 style={[
                   styles.collectionChipText,
@@ -152,14 +155,14 @@ export default function SavedScreen() {
           )}
         />
         <Pressable style={styles.addCollectionButton}>
-          <Plus size={scaleWidth(20)} color={Colors.bronze} />
+          <Plus size={scaleWidth(20)} color={colors.primary} />
         </Pressable>
       </View>
 
       {displayedProperties.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>No saved properties</Text>
-          <Text style={styles.emptyText}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No saved properties</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             Properties you save will appear here
           </Text>
         </View>
@@ -181,10 +184,9 @@ export default function SavedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -197,7 +199,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: scaleFont(32),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   headerActions: {
     flexDirection: 'row',
@@ -207,15 +209,15 @@ const styles = StyleSheet.create({
     width: scaleWidth(40),
     height: scaleHeight(40),
     borderRadius: scaleWidth(12),
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   viewModeButtonActive: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   collectionsContainer: {
     flexDirection: 'row',
@@ -235,25 +237,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(16),
     borderRadius: scaleWidth(20),
     borderWidth: 1,
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
   },
   collectionChipActive: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   collectionChipText: {
     fontSize: scaleFont(14),
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   collectionChipTextActive: {
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
   },
   collectionCount: {
     minWidth: scaleWidth(20),
     height: scaleHeight(20),
     borderRadius: scaleWidth(10),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scaleWidth(6),
@@ -261,18 +263,18 @@ const styles = StyleSheet.create({
   collectionCountText: {
     fontSize: scaleFont(11),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   collectionCountTextActive: {
-    color: Colors.bronze,
+    color: colors.primary,
   },
   addCollectionButton: {
     width: scaleWidth(40),
     height: scaleHeight(40),
     borderRadius: scaleWidth(20),
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -286,7 +288,7 @@ const styles = StyleSheet.create({
     margin: scaleWidth(4),
     borderRadius: scaleWidth(12),
     overflow: 'hidden',
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
   },
   gridImage: {
     width: '100%',
@@ -298,20 +300,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: scaleWidth(12),
-    backgroundColor: Colors.overlayLight,
+    backgroundColor: colors.overlayLight,
   },
   gridPrice: {
     fontSize: scaleFont(16),
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.white,
   },
   listItem: {
     flexDirection: 'row',
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderRadius: scaleWidth(16),
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: scaleHeight(16),
   },
   listImage: {
@@ -326,13 +328,13 @@ const styles = StyleSheet.create({
   listTitle: {
     fontSize: scaleFont(16),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     lineHeight: scaleFont(20),
   },
   listPrice: {
     fontSize: scaleFont(18),
     fontWeight: '700',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   listDetails: {
     flexDirection: 'row',
@@ -341,16 +343,16 @@ const styles = StyleSheet.create({
   },
   listDetail: {
     fontSize: scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   listDivider: {
     fontSize: scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   listLocation: {
     fontSize: scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   emptyContainer: {
     flex: 1,
@@ -361,12 +363,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: scaleFont(24),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: scaleHeight(8),
   },
   emptyText: {
     fontSize: scaleFont(16),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
 });

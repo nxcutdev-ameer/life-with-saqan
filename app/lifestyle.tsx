@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView, ImageBackground } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { TransactionType, LifestyleType } from '@/types';
 import { lifestyleOptions } from '@/mocks/properties';
 import { preloadFeedFromCacheBeforeNavigate } from '@/utils/preloadFeedFromCache';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 
 export default function LifestyleScreen() {
+  const { colors: themeColors } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const router = useRouter();
   const params = useLocalSearchParams<{ transactionType: string; location: string }>();
   const { updatePreferences } = useUserPreferences();
@@ -89,7 +92,7 @@ export default function LifestyleScreen() {
                   >
                     {isSelected && (
                       <View style={styles.checkmark}>
-                        <Check size={24} color={Colors.textLight} />
+                        <Check size={24} color={themeColors.white} />
                       </View>
                     )}
                     
@@ -128,10 +131,10 @@ export default function LifestyleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (themeColors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: themeColors.background,
   },
   scrollView: {
     flex: 1,
@@ -144,12 +147,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: '600',
-    color: Colors.text,
+    color: themeColors.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
     marginBottom: 32,
   },
   lifestyleGrid: {
@@ -163,7 +166,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   lifestyleCardSelected: {
-    borderColor: Colors.bronze,
+    borderColor: themeColors.primary,
   },
   lifestyleImage: {
     flex: 1,
@@ -178,7 +181,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.bronze,
+    backgroundColor: themeColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -188,17 +191,17 @@ const styles = StyleSheet.create({
   lifestyleName: {
     fontSize: 28,
     fontWeight: '700',
-    color: Colors.textLight,
+    color: themeColors.white,
     letterSpacing: 1,
   },
   lifestyleTagline: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.textLight,
+    color: themeColors.white,
   },
   lifestyleDescription: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: themeColors.white,
     lineHeight: 20,
     opacity: 0.9,
   },
@@ -208,21 +211,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 24,
-    backgroundColor: Colors.background,
+    backgroundColor: themeColors.background,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: themeColors.border,
   },
   continueButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: themeColors.primary,
     paddingVertical: 18,
     borderRadius: 30,
     alignItems: 'center',
   },
   continueButtonDisabled: {
-    backgroundColor: Colors.textSecondary,
+    backgroundColor: themeColors.textSecondary,
   },
   continueButtonText: {
-    color: Colors.textLight,
+    color: themeColors.white,
     fontSize: 16,
     fontWeight: '600',
   },

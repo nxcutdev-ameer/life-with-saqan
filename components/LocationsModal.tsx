@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View, Pressable, ScrollView, Modal, ImageBackground } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, X } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { TransactionType, LifestyleType } from '@/types';
+import { useTheme } from '@/utils/useTheme';
 import { cities, lifestyleOptions } from '@/mocks/properties';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 
@@ -13,6 +14,9 @@ interface LocationsModalProps {
 }
 
 export default function LocationsModal({ visible, onClose }: LocationsModalProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
+
   const { transactionType, location, lifestyles, updatePreferences } = useUserPreferences();
   
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionType>(transactionType);
@@ -63,7 +67,7 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
         <View style={styles.header}>
           {step === 'lifestyle' ? (
             <Pressable onPress={() => setStep('selection')} style={styles.backButton}>
-              <ArrowLeft size={24} color={Colors.text} />
+              <ArrowLeft size={24} color={colors.text} />
             </Pressable>
           ) : (
             <View style={{ width: 24 }} />
@@ -73,7 +77,7 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
 
           <View style={{ width: 24 }} />
           <Pressable onPress={onClose} style={styles.closeButton}>
-            <X size={24} color={Colors.text} />
+            <X size={24} color={colors.text} />
           </Pressable>
         </View>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -137,7 +141,7 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
                         >
                           {isSelected && (
                             <View style={styles.checkmark}>
-                              <Check size={20} color={Colors.textLight} />
+                              <Check size={20} color={colors.white} />
                             </View>
                           )}
                           
@@ -176,10 +180,10 @@ export default function LocationsModal({ visible, onClose }: LocationsModalProps
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
@@ -189,7 +193,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   closeButton: {
     padding: 4,
@@ -200,7 +204,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   content: {
     flex: 1,
@@ -212,7 +216,7 @@ const styles = StyleSheet.create({
     gap: 32,
     marginBottom: 40,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   tab: {
     paddingBottom: 12,
@@ -220,7 +224,7 @@ const styles = StyleSheet.create({
     position: 'relative' as const,
   },
   tabActive: {
-    backgroundColor: Colors.text,
+    backgroundColor: isDarkMode ? colors.black : colors.text,
     paddingHorizontal: 16,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
@@ -228,10 +232,10 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 16,
     fontWeight: '500',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: Colors.textLight,
+    color: isDarkMode ? colors.white : colors.textOnPrimary,
   },
   tabUnderline: {
     position: 'absolute' as const,
@@ -239,7 +243,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
   },
   citiesContainer: {
     flexDirection: 'row',
@@ -252,24 +256,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.background,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   cityChipSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: isDarkMode ? colors.black : colors.primary,
+    borderColor: isDarkMode ? colors.black : colors.primary,
   },
   cityText: {
     fontSize: 16,
     fontWeight: '500',
-    color: Colors.text,
+    color: colors.text,
   },
   cityTextSelected: {
-    color: Colors.textLight,
+    color: isDarkMode ? colors.white : colors.textOnPrimary,
   },
   lifestyleTitle: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: 20,
   },
   lifestyleGrid: {
@@ -284,7 +288,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   lifestyleCardSelected: {
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
   },
   lifestyleImage: {
     flex: 1,
@@ -299,7 +303,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -309,27 +313,27 @@ const styles = StyleSheet.create({
   lifestyleName: {
     fontSize: 22,
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.white,
     letterSpacing: 0.5,
   },
   lifestyleTagline: {
     fontSize: 13,
-    color: Colors.textLight,
+    color: colors.white,
     lineHeight: 18,
     opacity: 0.9,
   },
   applyButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     paddingVertical: 18,
     borderRadius: 30,
     alignItems: 'center',
     marginBottom: 40,
   },
   applyButtonDisabled: {
-    backgroundColor: Colors.textSecondary,
+    backgroundColor: colors.textSecondary,
   },
   applyButtonText: {
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },

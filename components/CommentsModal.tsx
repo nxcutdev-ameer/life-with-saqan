@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,7 +11,8 @@ import {
   Platform,
 } from 'react-native';
 import { X, Heart, Send } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { Image } from 'expo-image';
 
 interface Comment {
@@ -33,6 +34,8 @@ interface CommentsModalProps {
 }
 
 export default function CommentsModal({ visible, onClose, propertyId, commentsCount }: CommentsModalProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<Comment[]>([
     {
@@ -128,8 +131,8 @@ export default function CommentsModal({ visible, onClose, propertyId, commentsCo
           >
             <Heart
               size={14}
-              color={item.isLiked ? Colors.bronze : Colors.textSecondary}
-              fill={item.isLiked ? Colors.bronze : 'none'}
+              color={item.isLiked ? colors.primary : (isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary)}
+              fill={item.isLiked ? colors.primary : 'none'}
             />
             {item.likesCount > 0 && (
               <Text style={[styles.commentLikeCount, item.isLiked && styles.commentLikeCountActive]}>
@@ -164,7 +167,7 @@ export default function CommentsModal({ visible, onClose, propertyId, commentsCo
               Comments {commentsCount > 0 && `(${commentsCount})`}
             </Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={Colors.text} />
+              <X size={24} color={isDarkMode ? colors.white : colors.text} />
             </Pressable>
           </View>
 
@@ -185,7 +188,7 @@ export default function CommentsModal({ visible, onClose, propertyId, commentsCo
             <TextInput
               style={styles.input}
               placeholder="Add a comment..."
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary}
               value={commentText}
               onChangeText={setCommentText}
               multiline
@@ -198,7 +201,7 @@ export default function CommentsModal({ visible, onClose, propertyId, commentsCo
             >
               <Send
                 size={20}
-                color={commentText.trim() ? Colors.bronze : Colors.textSecondary}
+                color={commentText.trim() ? colors.primary : (isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary)}
               />
             </Pressable>
           </View>
@@ -208,7 +211,7 @@ export default function CommentsModal({ visible, onClose, propertyId, commentsCo
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   modalContainer: {
     flex: 1,
   },
@@ -218,7 +221,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     height: '80%',
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
@@ -228,12 +231,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   closeButton: {
     width: 40,
@@ -253,7 +256,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
   },
   commentContent: {
     flex: 1,
@@ -267,15 +270,15 @@ const styles = StyleSheet.create({
   commentUserName: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   commentTimestamp: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   commentText: {
     fontSize: 14,
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     lineHeight: 20,
   },
   commentActions: {
@@ -292,15 +295,15 @@ const styles = StyleSheet.create({
   commentLikeCount: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   commentLikeCountActive: {
-    color: Colors.bronze,
+    color: colors.primary,
   },
   commentReplyButton: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -308,23 +311,23 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.background,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
   inputAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
   },
   input: {
     flex: 1,
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 14,
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     maxHeight: 100,
   },
   sendButton: {

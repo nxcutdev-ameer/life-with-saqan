@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView, Alert } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { preloadFeedFromCacheBeforeNavigate } from '@/utils/preloadFeedFromCache';
-import { Colors } from '@/constants/colors';
 import { TransactionType } from '@/types';
 import { cities } from '@/mocks/properties';
 import { Platform } from 'react-native';
@@ -11,6 +12,8 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { scaleFont } from '@/utils/responsive';
 
 export default function LocationsScreen() {
+  const { colors: themeColors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
   const router = useRouter();
   const { updatePreferences, lifestyles } = useUserPreferences();
 
@@ -134,17 +137,17 @@ export default function LocationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (themeColors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: themeColors.background,
     paddingTop: 60,
     paddingHorizontal: 24,
   },
   title: {
     fontSize: Platform.OS === 'android' ? scaleFont(22): scaleFont(42),
     fontWeight: '600',
-    color: Colors.text,
+    color: themeColors.text,
     marginBottom: 32,
   },
   transactionTabs: {
@@ -152,7 +155,7 @@ const styles = StyleSheet.create({
     gap: 32,
     marginBottom: 40,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: themeColors.border,
   },
   tab: {
     paddingBottom: 12,
@@ -160,7 +163,7 @@ const styles = StyleSheet.create({
     position: 'relative' as const,
   },
   tabActive: {
-    backgroundColor: Colors.text,
+    backgroundColor: isDarkMode ? themeColors.black : themeColors.text,
     paddingHorizontal: 16,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
@@ -168,10 +171,10 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '500',
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
   },
   tabTextActive: {
-    color: Colors.textLight,
+    color: themeColors.white,
   },
   tabUnderline: {
     position: 'absolute' as const,
@@ -179,7 +182,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: Colors.bronze,
+    backgroundColor: themeColors.primary,
   },
   scrollView: {
     flex: 1,
@@ -195,19 +198,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.background,
+    borderColor: themeColors.border,
+    backgroundColor: themeColors.background,
   },
   cityChipSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: isDarkMode ? themeColors.black : themeColors.primary,
+    borderColor: isDarkMode ? themeColors.black : themeColors.primary,
   },
   cityText: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '500',
-    color: Colors.text,
+    color: themeColors.text,
   },
   cityTextSelected: {
-    color: Colors.textLight,
+    color: themeColors.white,
   },
 });

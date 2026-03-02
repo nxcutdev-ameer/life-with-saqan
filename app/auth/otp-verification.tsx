@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +37,7 @@ export default function OtpVerificationScreen() {
   const navigation = useNavigation();
   const pendingPhoneNumber = useAuthStore((s) => s.pendingPhoneNumber);
   const pendingFlow = useAuthStore((s) => s.pendingFlow);
+  const pendingAuthMethod = useAuthStore((s) => s.pendingAuthMethod) ?? 'whatsapp';
   const pendingMessage = useAuthStore((s) => s.pendingMessage);
   const pendingBrokerUpdate = useAuthStore((s) => s.pendingBrokerUpdate);
   const setPendingMessage = useAuthStore((s) => s.setPendingMessage);
@@ -56,23 +57,6 @@ export default function OtpVerificationScreen() {
   const autoSubmitRef = useRef(false);
   const otp = useMemo(() => digits.join(''), [digits]);
   const isComplete = otp.length === OTP_LENGTH && !digits.some((d) => d === '');
-
-  // Auto-verify as soon as the user has entered all 6 digits.
-  // This covers manual entry, paste, and OS autofill reliably.
-  useEffect(() => {
-    // Reset guard when OTP becomes incomplete again.
-    if (!isComplete) {
-      autoSubmitRef.current = false;
-      return;
-    }
-
-    if (isVerifying) return;
-    if (autoSubmitRef.current) return;
-
-    autoSubmitRef.current = true;
-    // Mimic pressing the Verify button.
-    onVerify();
-  }, [isComplete, isVerifying]);
 
    useEffect(() => {
     navigation.setOptions({ gestureEnabled: false } as any);
@@ -118,7 +102,7 @@ export default function OtpVerificationScreen() {
     setDigits(Array.from({ length: OTP_LENGTH }, (_, i) => cleaned[i] ?? ''));
   };
 
-  const onVerify = async () => {
+  const onVerify = useCallback(async () => {
     if (!isComplete || isVerifying) return;
     if (!pendingPhoneNumber) {
       router.replace('/auth/login' as any);
@@ -246,7 +230,35 @@ export default function OtpVerificationScreen() {
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [
+    backofficeToken,
+    clearPendingAuth,
+    completeOtpVerification,
+    isComplete,
+    isVerifying,
+    otp,
+    pendingFlow,
+    pendingPhoneNumber,
+    router,
+    setSession,
+  ]);
+
+  // Auto-verify as soon as the user has entered all 6 digits.
+  // This covers manual entry, paste, and OS autofill reliably.
+  useEffect(() => {
+    // Reset guard when OTP becomes incomplete again.
+    if (!isComplete) {
+      autoSubmitRef.current = false;
+      return;
+    }
+
+    if (isVerifying) return;
+    if (autoSubmitRef.current) return;
+
+    autoSubmitRef.current = true;
+    // Mimic pressing the Verify button.
+    onVerify();
+  }, [isComplete, isVerifying, onVerify]);
 
   const onChangeNumber = () => {
     if (isVerifying) return;
@@ -304,7 +316,7 @@ export default function OtpVerificationScreen() {
       }
 
       // Unified auth endpoint will decide action server-side.
-      const res = await authByPhone(pendingPhoneNumber);
+      const res = await authByPhone(pendingPhoneNumber, pendingAuthMethod);
 
       if (!res?.success) {
         throw new Error(res?.message || 'Failed to resend OTP.');

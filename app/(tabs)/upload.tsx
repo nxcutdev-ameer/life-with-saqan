@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { formatNumberWithCommas, parseNumberFromFormatted } from '../../utils/formatters';
 import {
   StyleSheet,
@@ -46,8 +46,8 @@ import {
   Check,
 } from 'lucide-react-native';
 import { uploadGenericVideo, uploadVideoWithProperty } from '@/utils/videosApi';
-import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useTheme } from '@/utils/useTheme';
 import { PropertyType, TransactionType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -72,7 +72,7 @@ import {
   updateProperty,
   uploadMedia,
 } from '@/utils/propertiesApi';
-import { styles } from '@/constants/uploadStyles';
+import { createUploadStyles } from '@/constants/uploadStyles';
 import CustomToast from '@/components/customToast';
 import { FontAwesome } from '@expo/vector-icons';
 import { SavingSpinner } from '@/components/SavingSpinner';
@@ -81,6 +81,8 @@ type HighlightStep = string;
 const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
 
 export default function UploadScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createUploadStyles(colors), [colors]);
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const { openTextOverlay } = useLocalSearchParams<{ openTextOverlay?: string }>();
@@ -250,7 +252,7 @@ export default function UploadScreen() {
                   style={styles.welcomeAvatar}
                 />
               ) : (
-                <FontAwesome name="user-circle" size={54} color={Colors.bronze} />
+                <FontAwesome name="user-circle" size={54} color={colors.primary} />
               )}
             </View>
           }
@@ -1658,7 +1660,7 @@ export default function UploadScreen() {
           <View style={styles.optionsContainer}>
             <Pressable style={styles.uploadOption} onPress={recordVideo}>
               <View style={styles.uploadOptionIcon}>
-                <Camera size={scaleWidth(32)} color={Colors.bronze} />
+                <Camera size={scaleWidth(32)} color={colors.primary} />
               </View>
               <Text style={styles.uploadOptionTitle}>Record Video</Text>
               <Text style={styles.uploadOptionDescription}>
@@ -1668,7 +1670,7 @@ export default function UploadScreen() {
 
             <Pressable style={styles.uploadOption} onPress={pickVideo}>
               <View style={styles.uploadOptionIcon}>
-                <VideoIcon size={scaleWidth(32)} color={Colors.bronze} />
+                <VideoIcon size={scaleWidth(32)} color={colors.primary} />
               </View>
               <Text style={styles.uploadOptionTitle}>Choose from Gallery</Text>
               <Text style={styles.uploadOptionDescription}>
@@ -1678,7 +1680,7 @@ export default function UploadScreen() {
 
             <Pressable style={styles.uploadOption} disabled>
               <View style={styles.uploadOptionIcon}>
-                <ImageIcon size={scaleWidth(32)} color={Colors.textSecondary} />
+                <ImageIcon size={scaleWidth(32)} color={colors.textSecondary} />
               </View>
               <Text style={[styles.uploadOptionTitle, styles.disabledText]}>
                 Photo Slideshow
@@ -1909,9 +1911,9 @@ export default function UploadScreen() {
                    }}
                  >
                    {isHighlightsPlaying ? (
-                     <Pause size={scaleWidth(18)} color={Colors.textLight} />
+                     <Pause size={scaleWidth(18)} color={colors.white} />
                    ) : (
-                     <Play size={scaleWidth(18)} color={Colors.textLight} />
+                     <Play size={scaleWidth(18)} color={colors.white} />
                    )}
                  </Pressable>
 
@@ -1920,9 +1922,9 @@ export default function UploadScreen() {
                    onPress={() => setIsHighlightsMuted((m) => !m)}
                  >
                    {isHighlightsMuted ? (
-                     <VolumeX size={scaleWidth(18)} color={Colors.textLight} />
+                     <VolumeX size={scaleWidth(18)} color={colors.white} />
                    ) : (
-                     <Volume2 size={scaleWidth(18)} color={Colors.textLight} />
+                     <Volume2 size={scaleWidth(18)} color={colors.white} />
                    )}
                  </Pressable>
                </View>
@@ -1954,10 +1956,10 @@ export default function UploadScreen() {
                       }
                     }}
                    trackColor={'rgba(255,255,255,0.35)'}
-                   fillColor={Colors.textLight}
+                   fillColor={colors.white}
                    height={3.5}
                    thumbSize={14}
-                   thumbColor={Colors.textLight}
+                   thumbColor={colors.white}
                  />
                </View>
 
@@ -1988,11 +1990,7 @@ export default function UploadScreen() {
                  </View>
                )}
              </View>
-             {/* <Text style={styles.highlightsStepTitle}>Skip to highlights</Text>
-             <Text style={styles.highlightsStepSubtitle}>
-               Drag the bar to find the moment, then tap the button bellow.
-             </Text> */}
-
+          
            </View>
 
            {/* Padded content below the video */}
@@ -2053,7 +2051,7 @@ export default function UploadScreen() {
                      >
                        <Icon
                          size={scaleWidth(20)}
-                         color={isActive ? Colors.bronze : Colors.text}
+                         color={isActive ? colors.primary : colors.text}
                        />
                      </View>
                      <Text
@@ -2105,7 +2103,7 @@ export default function UploadScreen() {
                          onPress={() => addHighlightStep(option)}
                        >
                          <View style={styles.highlightsAddCircle}>
-                           <Icon size={scaleWidth(22)} color={Colors.text} />
+                           <Icon size={scaleWidth(22)} color={colors.text} />
                          </View>
                          <Text style={styles.highlightsAddCircleLabel}>{option}</Text>
                        </Pressable>
@@ -2139,7 +2137,7 @@ export default function UploadScreen() {
        {renderWelcomeToast()}
        <View style={styles.header}>
          <Pressable onPress={() => setStep('select')}>
-           <X size={scaleWidth(24)} color={Colors.text} />
+           <X size={scaleWidth(24)} color={colors.text} />
          </Pressable>
          <Text style={styles.headerTitle}>Preview</Text>
          <View style={{ width: scaleWidth(24) }} />
@@ -2198,7 +2196,7 @@ export default function UploadScreen() {
         {renderWelcomeToast()}
         <View  style={styles.header}>
           <Pressable onPress={() => { setStep('select'); setSelectedVideoUri(null); }}>
-            <X size={scaleWidth(24)} color={Colors.text} />
+            <X size={scaleWidth(24)} color={colors.text} />
           </Pressable>
           <Text style={styles.headerTitle}>Edit Video</Text>
           <Pressable onPress={handleDeleteVideo}>
@@ -2280,7 +2278,7 @@ export default function UploadScreen() {
             <TextInput
               style={styles.textInput}
               placeholder="Add text to video..."
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={colors.textSecondary}
               value={overlayText}
               onChangeText={setOverlayText}
               maxLength={50}
@@ -2434,7 +2432,7 @@ export default function UploadScreen() {
           disabled={isPublishing}
           style={isPublishing ? { opacity: 0.4 } : undefined}
         >
-          <X size={scaleWidth(24)} color={Colors.text} />
+          <X size={scaleWidth(24)} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Property Details</Text>
         {/* Publish is controlled by the segmented wizard footer (Back/Next/Publish) */}
@@ -2451,7 +2449,7 @@ export default function UploadScreen() {
 
       {isPublishing && (
         <View style={styles.publishingOverlay}>
-           <SavingSpinner size={42} color={Colors.bronze} />
+           <SavingSpinner size={42} color={colors.primary} />
           {uploadProgress > 0 ? (
             <View style={{ width: '60%', alignItems: 'center', marginTop: scaleHeight(12) }}>
               <View
@@ -2468,7 +2466,7 @@ export default function UploadScreen() {
                   style={{
                     width: `${uploadProgress * 100}%`,
                     height: '100%',
-                    backgroundColor: Colors.bronze,
+                    backgroundColor: colors.primary,
                   }}
                 />
               </View>
@@ -2478,7 +2476,7 @@ export default function UploadScreen() {
             </View>
           ) : (
             <>
-              <SavingSpinner size={42} color={Colors.bronze} />
+              <SavingSpinner size={42} color={colors.primary} />
               <Text style={styles.publishingOverlayText}>Preparing...</Text>
             </>
           )}
@@ -2635,7 +2633,7 @@ export default function UploadScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Luxury 2BR Marina View Apartment"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.textSecondary}
                 value={propertyDetails.title}
                 onChangeText={(text) => setPropertyDetails({ ...propertyDetails, title: text })}
               />
@@ -2705,7 +2703,7 @@ export default function UploadScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., 2300000"
-                    placeholderTextColor={Colors.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                     keyboardType="numeric"
                     value={propertyDetails.price}
                     onChangeText={(text) => {
@@ -2754,7 +2752,7 @@ export default function UploadScreen() {
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          placeholderTextColor={Colors.textSecondary}
+                          placeholderTextColor={colors.textSecondary}
                           keyboardType="numeric"
                           value={propertyDetails.dayPrice}
                           onChangeText={(text) => {
@@ -2769,7 +2767,7 @@ export default function UploadScreen() {
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          placeholderTextColor={Colors.textSecondary}
+                          placeholderTextColor={colors.textSecondary}
                           keyboardType="numeric"
                           value={propertyDetails.weekPrice}
                           onChangeText={(text) => {
@@ -2786,7 +2784,7 @@ export default function UploadScreen() {
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          placeholderTextColor={Colors.textSecondary}
+                          placeholderTextColor={colors.textSecondary}
                           keyboardType="numeric"
                           value={propertyDetails.monthPrice}
                           onChangeText={(text) => {
@@ -2801,7 +2799,7 @@ export default function UploadScreen() {
                         <TextInput
                           style={styles.input}
                           placeholder="0"
-                          placeholderTextColor={Colors.textSecondary}
+                          placeholderTextColor={colors.textSecondary}
                           keyboardType="numeric"
                           value={propertyDetails.yearPrice}
                           onChangeText={(text) => {
@@ -2834,7 +2832,7 @@ export default function UploadScreen() {
               >
                 {propertyDetails.offPlanProjectTitle || 'Select project'}
               </Text>
-              <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+              <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
             </Pressable>
           </View>
         )}
@@ -2868,7 +2866,7 @@ export default function UploadScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="2"
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   keyboardType="numeric"
                   value={propertyDetails.bedrooms}
                   onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bedrooms: text })}
@@ -2879,7 +2877,7 @@ export default function UploadScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="2"
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   keyboardType="numeric"
                   value={propertyDetails.bathrooms}
                   onChangeText={(text) => setPropertyDetails({ ...propertyDetails, bathrooms: text })}
@@ -2892,7 +2890,7 @@ export default function UploadScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="1200"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={propertyDetails.sizeSqft}
                 onChangeText={(text) => setPropertyDetails({ ...propertyDetails, sizeSqft: text })}
@@ -2971,10 +2969,10 @@ export default function UploadScreen() {
                     });
                   }}
                 >
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               ) : (
-                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+                <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
               )}
             </View>
           </Pressable>
@@ -3008,10 +3006,10 @@ export default function UploadScreen() {
                     });
                   }}
                 >
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               ) : (
-                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+                <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
               )}
             </View>
           </Pressable>
@@ -3043,10 +3041,10 @@ export default function UploadScreen() {
                     });
                   }}
                 >
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               ) : (
-                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+                <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
               )}
             </View>
           </Pressable>
@@ -3077,10 +3075,10 @@ export default function UploadScreen() {
                     });
                   }}
                 >
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               ) : (
-                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+                <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
               )}
             </View>
           </Pressable> */}
@@ -3114,10 +3112,10 @@ export default function UploadScreen() {
                     showToast('Amenities cleared');
                   }}
                 >
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               ) : (
-                <ChevronRight size={scaleWidth(20)} color={Colors.textSecondary} />
+                <ChevronRight size={scaleWidth(20)} color={colors.textSecondary} />
               )}
             </View>
           </Pressable>
@@ -3136,7 +3134,7 @@ export default function UploadScreen() {
                     <Text style={styles.amenitiesChipText} numberOfLines={1}>
                       {(amenity as Amenity).name}
                     </Text>
-                    <X size={scaleWidth(14)} color={Colors.textSecondary} />
+                    <X size={scaleWidth(14)} color={colors.textSecondary} />
                   </Pressable>
                 ))}
             </View>
@@ -3159,7 +3157,7 @@ export default function UploadScreen() {
                   <Image source={{ uri: img.uri }} style={styles.imageThumb} />
                   {img.uploading ? (
                     <View style={styles.imageUploadingOverlay} pointerEvents="none">
-                      <SavingSpinner size={28} color={Colors.bronze} accessibilityLabel="Uploading image" />
+                      <SavingSpinner size={28} color={colors.primary} accessibilityLabel="Uploading image" />
                     </View>
                   ) : null}
                   <Pressable
@@ -3205,7 +3203,7 @@ export default function UploadScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g., 2024"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={colors.textSecondary}
               keyboardType="numeric"
               value={propertyDetails.builtYear}
               onChangeText={(text) => {
@@ -3219,7 +3217,7 @@ export default function UploadScreen() {
             <TextInput
               style={styles.input}
               placeholder="e.g., 10"
-              placeholderTextColor={Colors.textSecondary}
+              placeholderTextColor={colors.textSecondary}
               keyboardType="numeric"
               value={propertyDetails.floor}
               onChangeText={(text) => {
@@ -3257,7 +3255,7 @@ export default function UploadScreen() {
                         : 'Select Building'}
                   </Text>
                   <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
-                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                    <X size={scaleWidth(18)} color={colors.textSecondary} />
                   </Pressable>
                 </View>
 
@@ -3265,7 +3263,7 @@ export default function UploadScreen() {
                 <TextInput
                   style={[styles.input, styles.searchInput]}
                   placeholder="Search emirate..."
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   value={emirateSearch}
                   onChangeText={setEmirateSearch}
                   autoCorrect={false}
@@ -3282,7 +3280,7 @@ export default function UploadScreen() {
                       ? 'Search district...'
                       : 'Search building...'
                   }
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   value={locationPicker === 'district' ? districtSearch : locationSearch}
                   onChangeText={locationPicker === 'district' ? setDistrictSearch : setLocationSearch}
                   autoCorrect={false}
@@ -3474,7 +3472,7 @@ export default function UploadScreen() {
                       style={styles.modalHeaderCloseButton}
                       onPress={() => setAmenitiesModalVisible(false)}
                     >
-                      <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                      <X size={scaleWidth(18)} color={colors.textSecondary} />
                     </Pressable>
                   </View>
 
@@ -3482,7 +3480,7 @@ export default function UploadScreen() {
                     ref={amenitiesSearchInputRef}
                     style={[styles.input, styles.searchInput]}
                     placeholder="Search amenities..."
-                    placeholderTextColor={Colors.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                     value={amenitiesSearch}
                     onChangeText={setAmenitiesSearch}
                     autoCorrect={false}
@@ -3565,7 +3563,7 @@ export default function UploadScreen() {
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Describe your property..."
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
             multiline
             numberOfLines={4}
             textAlignVertical="top"
@@ -3596,14 +3594,14 @@ export default function UploadScreen() {
                   <View style={styles.modalHeaderSpacer} />
                   <Text style={styles.modalTitle}>Select project</Text>
                   <Pressable style={styles.modalHeaderCloseButton} onPress={() => setOffPlanPickerOpen(false)}>
-                    <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                    <X size={scaleWidth(18)} color={colors.textSecondary} />
                   </Pressable>
                 </View>
 
                 <TextInput
                   style={[styles.input, styles.searchInput]}
                   placeholder="Search project..."
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   value={offPlanSearch}
                   onChangeText={setOffPlanSearch}
                   autoCorrect={false}
@@ -3732,7 +3730,7 @@ export default function UploadScreen() {
                       : 'Select Building'}
                 </Text>
                 <Pressable style={styles.modalHeaderCloseButton} onPress={() => setLocationPicker(null)}>
-                  <X size={scaleWidth(18)} color={Colors.textSecondary} />
+                  <X size={scaleWidth(18)} color={colors.textSecondary} />
                 </Pressable>
               </View>
 
@@ -3742,7 +3740,7 @@ export default function UploadScreen() {
                   placeholder={`Search ${
                     locationPicker === 'district' ? 'districts' : 'buildings'
                   }...`}
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   value={locationPicker === 'district' ? districtSearch : locationSearch}
                   onChangeText={locationPicker === 'district' ? setDistrictSearch : setLocationSearch}
                   autoCorrect={false}

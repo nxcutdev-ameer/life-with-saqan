@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,12 +16,15 @@ import {
   X,
   TrendingUp,
 } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
 import { mockProperties, cities } from '@/mocks/properties';
 import { Property, PropertyType, TransactionType } from '@/types';
 import { Image } from 'expo-image';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 
 export default function SearchScreen() {
+  const { colors: themeColors } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -130,17 +133,17 @@ export default function SearchScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.searchBar}>
-          <SearchIcon size={20} color={Colors.textSecondary} />
+          <SearchIcon size={20} color={themeColors.textSecondary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search location, price, beds..."
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={themeColors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery !== '' && (
             <Pressable onPress={() => setSearchQuery('')}>
-              <X size={20} color={Colors.textSecondary} />
+              <X size={20} color={themeColors.textSecondary} />
             </Pressable>
           )}
         </View>
@@ -148,7 +151,7 @@ export default function SearchScreen() {
           style={[styles.filterButton, hasActiveFilters() && styles.filterButtonActive]}
           onPress={() => setShowFilters(!showFilters)}
         >
-          <SlidersHorizontal size={20} color={hasActiveFilters() ? Colors.textLight : Colors.text} />
+          <SlidersHorizontal size={20} color={hasActiveFilters() ? themeColors.white : themeColors.text} />
         </Pressable>
       </View>
 
@@ -251,7 +254,7 @@ export default function SearchScreen() {
               <TextInput
                 style={styles.priceInput}
                 placeholder="Min"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={themeColors.textSecondary}
                 keyboardType="numeric"
                 value={filters.minPrice}
                 onChangeText={(text) => setFilters(prev => ({ ...prev, minPrice: text }))}
@@ -260,7 +263,7 @@ export default function SearchScreen() {
               <TextInput
                 style={styles.priceInput}
                 placeholder="Max"
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={themeColors.textSecondary}
                 keyboardType="numeric"
                 value={filters.maxPrice}
                 onChangeText={(text) => setFilters(prev => ({ ...prev, maxPrice: text }))}
@@ -321,7 +324,7 @@ export default function SearchScreen() {
           <>
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <TrendingUp size={20} color={Colors.bronze} />
+                <TrendingUp size={20} color={themeColors.primary} />
                 <Text style={styles.sectionTitle}>Trending Searches</Text>
               </View>
               <View style={styles.chipRow}>
@@ -345,7 +348,7 @@ export default function SearchScreen() {
                   style={styles.recentItem}
                   onPress={() => setSearchQuery(search)}
                 >
-                  <SearchIcon size={18} color={Colors.textSecondary} />
+                  <SearchIcon size={18} color={themeColors.textSecondary} />
                   <Text style={styles.recentItemText}>{search}</Text>
                 </Pressable>
               ))}
@@ -372,10 +375,10 @@ export default function SearchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (themeColors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: themeColors.background,
   },
   header: {
     flexDirection: 'row',
@@ -389,36 +392,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: Colors.textLight,
+    backgroundColor: themeColors.surface,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: themeColors.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: Colors.text,
+    color: themeColors.text,
   },
   filterButton: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: Colors.textLight,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: themeColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   filterButtonActive: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: themeColors.primary,
+    borderColor: themeColors.primary,
   },
   filtersPanel: {
     maxHeight: 400,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: themeColors.border,
   },
   filterSection: {
     padding: 20,
@@ -433,17 +436,17 @@ const styles = StyleSheet.create({
   filterTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
+    color: themeColors.text,
   },
   clearText: {
     fontSize: 14,
-    color: Colors.bronze,
+    color: themeColors.primary,
     fontWeight: '600',
   },
   filterLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: Colors.text,
+    color: themeColors.text,
     marginBottom: 8,
   },
   chipRow: {
@@ -456,20 +459,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
+    borderColor: themeColors.border,
+    backgroundColor: themeColors.surface,
   },
   chipSelected: {
-    backgroundColor: Colors.bronze,
-    borderColor: Colors.bronze,
+    backgroundColor: themeColors.primary,
+    borderColor: themeColors.primary,
   },
   chipText: {
     fontSize: 14,
     fontWeight: '500',
-    color: Colors.text,
+    color: themeColors.text,
   },
   chipTextSelected: {
-    color: Colors.textLight,
+    color: themeColors.white,
   },
   priceInputRow: {
     flexDirection: 'row',
@@ -478,18 +481,18 @@ const styles = StyleSheet.create({
   },
   priceInput: {
     flex: 1,
-    backgroundColor: Colors.textLight,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: themeColors.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: Colors.text,
+    color: themeColors.text,
   },
   priceSeparator: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
   },
   content: {
     flex: 1,
@@ -506,20 +509,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.text,
+    color: themeColors.text,
   },
   trendingChip: {
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 24,
-    backgroundColor: Colors.textLight,
+    backgroundColor: themeColors.surface,
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: themeColors.primary,
   },
   trendingChipText: {
     fontSize: 14,
     fontWeight: '500',
-    color: Colors.text,
+    color: themeColors.text,
   },
   recentItem: {
     flexDirection: 'row',
@@ -529,7 +532,7 @@ const styles = StyleSheet.create({
   },
   recentItemText: {
     fontSize: 15,
-    color: Colors.text,
+    color: themeColors.text,
   },
   resultsSection: {
     padding: 20,
@@ -537,18 +540,18 @@ const styles = StyleSheet.create({
   resultsCount: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text,
+    color: themeColors.text,
     marginBottom: 16,
   },
   propertiesList: {
     gap: 16,
   },
   propertyCard: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: themeColors.surface,
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: themeColors.border,
   },
   propertyImage: {
     width: '100%',
@@ -561,13 +564,13 @@ const styles = StyleSheet.create({
   propertyCardTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: Colors.text,
+    color: themeColors.text,
     lineHeight: 22,
   },
   propertyCardPrice: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.bronze,
+    color: themeColors.primary,
   },
   propertyCardDetails: {
     flexDirection: 'row',
@@ -576,15 +579,15 @@ const styles = StyleSheet.create({
   },
   propertyCardDetail: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
     fontWeight: '500',
   },
   propertyCardDivider: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
   },
   propertyCardLocation: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: themeColors.textSecondary,
   },
 });

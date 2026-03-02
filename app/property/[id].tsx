@@ -36,7 +36,7 @@ import {
   FileText,
   X,
 } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { mockProperties } from '@/mocks/properties';
 import {
   fetchOffPlanPropertyByReference,
@@ -63,10 +63,13 @@ import { usePropertyLikeStore } from '@/stores/propertyLikeStore';
 import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { SavingSpinner } from '@/components/SavingSpinner';
+import { useTheme } from '@/utils/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function PropertyDetailScreen() {
+  const { colors: themeColors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
   const router = useRouter();
   // Route param is treated as the property reference.
   const { id, videoId, mode, agentPhone } = useLocalSearchParams<{ 
@@ -91,7 +94,6 @@ export default function PropertyDetailScreen() {
     );
   });
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [agentAvatarError, setAgentAvatarError] = useState(false);
   const [offplanDetails, setOffplanDetails] = useState<OffplanDetails | null>(null);
 
@@ -216,8 +218,6 @@ export default function PropertyDetailScreen() {
         if (!propertyReference) return;
 
     (async () => {
-      setLoadError(null);
-
       // 1) Hydrate quickly from cache (if any)
       try {
         const cacheKey = isOffplanMode
@@ -262,8 +262,7 @@ export default function PropertyDetailScreen() {
           const cacheKey = `@property_cache_ready_${propertyReference}`;
           await AsyncStorage.setItem(cacheKey, JSON.stringify(mapped));
         }
-      } catch (e: any) {
-        setLoadError(e?.message ?? 'Failed to load property');
+      } catch { 
       } finally {
         setLoading(false);
       }
@@ -385,6 +384,7 @@ export default function PropertyDetailScreen() {
       floorPlanPinchScale,
       floorPlanTranslateX,
       floorPlanTranslateY,
+      floorPlanLastTranslate,
       setFloorPlanUrl,
       setFloorPlanOpen,
     ]
@@ -428,6 +428,7 @@ export default function PropertyDetailScreen() {
     floorPlanPinchScale,
     floorPlanTranslateX,
     floorPlanTranslateY,
+    floorPlanLastTranslate,
   ]);
 
   const MIN_ZOOM = 1;
@@ -542,7 +543,7 @@ export default function PropertyDetailScreen() {
         </View>
       );
     },
-    [isVideoUrl]
+    [isVideoUrl, styles]
   );
 
   React.useEffect(() => {
@@ -580,7 +581,7 @@ export default function PropertyDetailScreen() {
     return (
       <View style={styles.errorContainer}>
         {loading ? (
-             <SavingSpinner size={40} color={Colors.bronze} accessibilityLabel="Loading..." />
+             <SavingSpinner size={40} color={themeColors.primary} accessibilityLabel="Loading..." />
         ) : (
           <Text style={styles.errorText}>Property not found</Text>
         )}
@@ -624,17 +625,11 @@ export default function PropertyDetailScreen() {
 
     // WhatsApp requires an international-format number, without '+' or leading zeros.
     // Handle common UAE local formats:
-    // - 050xxxxxxx (10 digits, leading 0)
-    // - 02xxxxxxx / 04xxxxxxx (9 digits, leading 0)
-    // - +9710xxxxxxxxx (country code + a redundant 0)
-    // - 5xxxxxxxx (9 digits mobile)
-    // - 9715xxxxxxxx (already E.164 digits)
     if (d.startsWith('00')) d = d.slice(2);
 
     // Fix numbers like 9710XXXXXXXXX -> 971XXXXXXXXX
     if (d.startsWith('9710')) d = `971${d.slice(4)}`;
 
-    // UAE local numbers sometimes start with 0 (mobile 05xxxxxxxx, landline 0[2-9]xxxxxxx).
     if (d.startsWith('0') && (d.length === 9 || d.length === 10)) return `971${d.slice(1)}`;
     if (!d.startsWith('971') && d.length === 9 && d.startsWith('5')) return `971${d}`;
 
@@ -649,9 +644,6 @@ export default function PropertyDetailScreen() {
     if (p.length < 8 || p.length > 15) return false;
 
     // Extra validation for UAE numbers to avoid opening invalid wa.me links.
-    // UAE country code is 971.
-    // - Mobiles are typically 9715XXXXXXXX (12 digits total)
-    // - Landlines are typically 971[2-9]XXXXXXX (11 digits total)
     if (p.startsWith('971')) {
       if (p.startsWith('9715')) return p.length === 12;
       return p.length === 11;
@@ -720,7 +712,6 @@ export default function PropertyDetailScreen() {
   const contactPhoneDigits = isOffplanMode
     ? agentPhoneDigits || developerPhoneDigits
     : developerPhoneDigits;
-  const developerWebsite = (offplanDetails?.developerContact?.website ?? offplanDetails?.developerWebsite ?? '').trim();
   const showOffplanFooter = Boolean(isOffplanMode && contactPhoneDigits);
   const showFooter = isOffplanMode ? showOffplanFooter : true;
 
@@ -780,7 +771,7 @@ export default function PropertyDetailScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <Modal
         visible={floorPlanOpen}
         transparent
@@ -806,7 +797,7 @@ export default function PropertyDetailScreen() {
                 Floor plan
               </Text>
               <Pressable onPress={closeFloorPlan} style={styles.floorPlanCloseButton}>
-                <X size={scaleWidth(20)} color={Colors.text} />
+                <X size={scaleWidth(20)} color={themeColors.text} />
               </Pressable>
             </View>
 
@@ -867,7 +858,7 @@ export default function PropertyDetailScreen() {
         <View style={styles.mediaContainer}>
           {loading ? (
             <View style={[styles.mediaItem, { alignItems: 'center', justifyContent: 'center' }]}>
-              <ActivityIndicator color={Colors.textLight} />
+              <ActivityIndicator color={themeColors.white} />
             </View>
           ) : !hasMedia ? (
             <View
@@ -876,11 +867,11 @@ export default function PropertyDetailScreen() {
                 {
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: Colors.overlayLight,
+                  backgroundColor: themeColors.overlayLight,
                 },
               ]}
             >
-              <Text style={{ color: Colors.textLight }}>No media available</Text>
+              <Text style={{ color: themeColors.white }}>No media available</Text>
             </View>
           ) : (
             <FlatList
@@ -914,7 +905,7 @@ export default function PropertyDetailScreen() {
                 style={[styles.mediaArrow, styles.mediaArrowLeft]}
                 onPress={() => scrollToImage(currentImageIndex - 1)}
               >
-                <ChevronLeft size={scaleWidth(24)} color={Colors.textLight} />
+                <ChevronLeft size={scaleWidth(24)} color={themeColors.white} />
               </Pressable>
             )}
             {hasMedia && currentImageIndex < allMedia.length - 1 && (
@@ -922,7 +913,7 @@ export default function PropertyDetailScreen() {
                 style={[styles.mediaArrow, styles.mediaArrowRight]}
                 onPress={() => scrollToImage(currentImageIndex + 1)}
               >
-                <ChevronRight size={scaleWidth(24)} color={Colors.textLight} />
+                <ChevronRight size={scaleWidth(24)} color={themeColors.white} />
               </Pressable>
             )}
           </View>
@@ -942,7 +933,7 @@ export default function PropertyDetailScreen() {
 
           <Pressable style={styles.headerBackButton} onPress={() => router.back()}>
             <View style={styles.headerButtonCircle}>
-              <ArrowLeft size={scaleWidth(24)} color={Colors.text} />
+              <ArrowLeft size={scaleWidth(24)} color={isDarkMode ? themeColors.white : themeColors.text} />
             </View>
           </Pressable>
 
@@ -950,8 +941,8 @@ export default function PropertyDetailScreen() {
             <View style={styles.headerButtonCircle}>
               <Heart
                 size={scaleWidth(24)}
-                color={isLiked ? Colors.bronze : Colors.text}
-                fill={isLiked ? Colors.bronze : 'transparent'}
+                color={isLiked ? themeColors.primary : (isDarkMode ? themeColors.white : themeColors.text)}
+                fill={isLiked ? themeColors.primary : 'transparent'}
               />
             </View>
           </Pressable>
@@ -964,7 +955,7 @@ export default function PropertyDetailScreen() {
                 <View style={styles.headerLeft}>
                   <Text style={styles.propertyTitle}>{offplanDetails.title}</Text>
                   <View style={styles.locationRow}>
-                    <MapPin size={scaleWidth(14)} color={Colors.textSecondary} />
+                    <MapPin size={scaleWidth(14)} color={themeColors.textSecondary} />
                     <Text style={styles.locationText}>{offplanDetails.locationLabel}</Text>
                   </View>
                 </View>
@@ -990,7 +981,7 @@ export default function PropertyDetailScreen() {
                       <Text style={styles.offplanLabel}>Developer website</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: scaleWidth(6) }}>
                         <Text style={styles.offplanValue}>Open</Text>
-                        <ExternalLink size={scaleWidth(14)} color={Colors.textSecondary} />
+                        <ExternalLink size={scaleWidth(14)} color={isDarkMode ? themeColors.white : themeColors.textSecondary} />
                       </View>
                     </Pressable>
                   </>
@@ -1019,7 +1010,7 @@ export default function PropertyDetailScreen() {
                 <View style={styles.headerLeft}>
                   <Text style={styles.propertyTitle}>{property?.title}</Text>
                   <View style={styles.locationRow}>
-                    <MapPin size={scaleWidth(14)} color={Colors.textSecondary} />
+                    <MapPin size={scaleWidth(14)} color={themeColors.textSecondary} />
                     <Text style={styles.locationText}>
                       {property?.location.area}, {property?.location.city}
                     </Text>
@@ -1069,19 +1060,19 @@ export default function PropertyDetailScreen() {
 
               <View style={styles.keyDetailsCard}>
                 <View style={styles.detailItem}>
-                  <Bed size={scaleWidth(28)} color={Colors.bronze} />
+                  <Bed size={scaleWidth(28)} color={themeColors.primary} />
                   <Text style={styles.detailLabel}>Bedrooms</Text>
                   <Text style={styles.detailValue}>{property?.bedrooms}</Text>
                 </View>
                 <View style={styles.detailDivider} />
                 <View style={styles.detailItem}>
-                  <Bath size={scaleWidth(28)} color={Colors.bronze} />
+                  <Bath size={scaleWidth(28)} color={themeColors.primary} />
                   <Text style={styles.detailLabel}>Bathrooms</Text>
                   <Text style={styles.detailValue}>{property?.bathrooms}</Text>
                 </View>
                 <View style={styles.detailDivider} />
                 <View style={styles.detailItem}>
-                  <Maximize size={scaleWidth(28)} color={Colors.bronze} />
+                  <Maximize size={scaleWidth(28)} color={themeColors.primary} />
                   <Text style={styles.detailLabel}>Size</Text>
                   <Text style={styles.detailValue}>{property?.sizeSqft.toLocaleString()} sqft</Text>
                 </View>
@@ -1165,12 +1156,12 @@ export default function PropertyDetailScreen() {
                                 contentFit="cover"
                               />
                               <View pointerEvents="none" style={styles.unitFloorPlanHint}>
-                                <Maximize size={scaleWidth(14)} color={Colors.textLight} />
+                                <Maximize size={scaleWidth(14)} color={themeColors.white} />
                               </View>
                             </Pressable>
                           ) : (
                             <View style={styles.unitFloorPlanPlaceholder}>
-                              <FileText size={scaleWidth(18)} color={Colors.textSecondary} />
+                              <FileText size={scaleWidth(18)} color={isDarkMode ? themeColors.white : themeColors.textSecondary} />
                             </View>
                           )}
 
@@ -1184,14 +1175,14 @@ export default function PropertyDetailScreen() {
                               <View style={styles.unitRoomsRow}>
                                 {typeof u.bedrooms === 'number' ? (
                                   <View style={styles.unitRoomPill}>
-                                    <Bed size={scaleWidth(14)} color={Colors.textSecondary} />
+                                    <Bed size={scaleWidth(14)} color={isDarkMode ? themeColors.white : themeColors.textSecondary} />
                                     <Text style={styles.unitRoomText}>{u.bedrooms}</Text>
                                   </View>
                                 ) : null}
 
                                 {typeof u.bathrooms === 'number' ? (
                                   <View style={styles.unitRoomPill}>
-                                    <Bath size={scaleWidth(14)} color={Colors.textSecondary} />
+                                    <Bath size={scaleWidth(14)} color={isDarkMode ? themeColors.white : themeColors.textSecondary} />
                                     <Text style={styles.unitRoomText}>{u.bathrooms}</Text>
                                   </View>
                                 ) : null}
@@ -1221,7 +1212,7 @@ export default function PropertyDetailScreen() {
                         }}
                         style={{ alignSelf: 'flex-start' }}
                       >
-                        <Text style={[styles.helperText, { color: Colors.bronze, fontWeight: '700' }]}>
+                        <Text style={[styles.helperText, { color: themeColors.primary, fontWeight: '700' }]}>
                           {unitsExpanded ? 'Show less' : `Show all (${offplanDetails.units?.length ?? 0})`}
                         </Text>
                         {!unitsExpanded ? (
@@ -1292,7 +1283,7 @@ export default function PropertyDetailScreen() {
                     {offplanDetails.attachments.map((att) => (
                       <View key={att.id} style={styles.attachmentRow}>
                         <View style={styles.attachmentLeft}>
-                          <FileText size={16} color={Colors.bronze} />
+                          <FileText size={16} color={themeColors.primary} />
                           <Text style={styles.attachmentText} numberOfLines={1}>
                             {att.name}
                           </Text>
@@ -1308,7 +1299,7 @@ export default function PropertyDetailScreen() {
                           style={styles.attachmentButton}
                         >
                           <Text style={styles.attachmentButtonText}>View{" "}
-                          <ExternalLink size={scaleWidth(12)} color={Colors.bronze} />
+                          <ExternalLink size={scaleWidth(12)} color={themeColors.primary} />
                           </Text>
                         </Pressable>
                       </View>
@@ -1378,7 +1369,7 @@ export default function PropertyDetailScreen() {
               onPress={openDeveloperPhone}
               disabled={!contactPhoneRaw}
             >
-              <Phone size={scaleWidth(20)} color={Colors.textLight} />
+              <Phone size={scaleWidth(20)} color={themeColors.white} />
               <Text style={styles.scheduleButtonText} numberOfLines={1}>
                 Call Agent
               </Text>
@@ -1390,12 +1381,12 @@ export default function PropertyDetailScreen() {
                 onPress={openDeveloperWhatsApp}
                 disabled={!contactPhoneDigits}
               >
-                <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+                <MessageCircle size={scaleWidth(20)} color={themeColors.primary} />
               </Pressable>
 
               {/* {developerWebsite ? (
                 <Pressable style={styles.contactIconButton} onPress={() => openWebUrl(developerWebsite)}>
-                  <ExternalLink size={scaleWidth(20)} color={Colors.bronze} />
+                  <ExternalLink size={scaleWidth(20)} color={themeColors.primary} />
                 </Pressable>
               ) : null} */}
             </View>
@@ -1424,7 +1415,7 @@ export default function PropertyDetailScreen() {
                   setScheduleVisitOpen(true);
                 }}
               >
-                <Calendar size={scaleWidth(20)} color={Colors.textLight} />
+                <Calendar size={scaleWidth(20)} color={isDarkMode ? themeColors.white : themeColors.textOnPrimary} />
                 <Text style={styles.scheduleButtonText}>Schedule Visit</Text>
               </Pressable>
             )}
@@ -1433,13 +1424,13 @@ export default function PropertyDetailScreen() {
               userTransactionType !== 'STAY' && styles.contactButtonsExpanded
             ]}>
               <Pressable style={styles.contactIconButton} onPress={openPhone}>
-                <Phone size={scaleWidth(20)} color={Colors.bronze} />
+                <Phone size={scaleWidth(20)} color={themeColors.primary} />
               </Pressable>
               <Pressable style={styles.contactIconButton} onPress={openWhatsApp}>
-                <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+                <MessageCircle size={scaleWidth(20)} color={themeColors.primary} />
               </Pressable>
               <Pressable style={styles.contactIconButton} onPress={openEmail}>
-                <Mail size={scaleWidth(20)} color={Colors.bronze} />
+                <Mail size={scaleWidth(20)} color={themeColors.primary} />
               </Pressable>
             </View>
           </>
@@ -1449,10 +1440,10 @@ export default function PropertyDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -1488,7 +1479,7 @@ const styles = StyleSheet.create({
     width: scaleWidth(40),
     height: scaleWidth(40),
     borderRadius: scaleWidth(20),
-    backgroundColor: Colors.overlayLight,
+    backgroundColor: colors.overlayLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1510,7 +1501,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(243, 237, 223, 0.5)',
   },
   indicatorActive: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     width: scaleWidth(24),
   },
   headerBackButton: {
@@ -1527,7 +1518,7 @@ const styles = StyleSheet.create({
     width: scaleWidth(44),
     height: scaleWidth(44),
     borderRadius: scaleWidth(22),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1546,7 +1537,7 @@ const styles = StyleSheet.create({
   propertyTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     marginBottom: scaleHeight(8),
     lineHeight: scaleFont(36),
   },
@@ -1557,49 +1548,49 @@ const styles = StyleSheet.create({
   },
   locationText: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   priceCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     padding: scaleWidth(20),
     borderRadius: scaleWidth(16),
     marginBottom: scaleHeight(20),
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
   },
   price: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '500',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   priceSubLine: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '600',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   listingTypeBadge: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     paddingVertical: scaleHeight(8),
     paddingHorizontal: scaleWidth(16),
     borderRadius: scaleWidth(20),
   },
   listingTypeText: {
-    color: Colors.bronze,
+    color: colors.primary,
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '500',
   },
   offplanSummaryCard: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     padding: scaleWidth(20),
     borderRadius: scaleWidth(16),
     marginBottom: scaleHeight(20),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   offplanRow: {
     flexDirection: 'row',
@@ -1608,27 +1599,27 @@ const styles = StyleSheet.create({
   },
   offplanLabel: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   offplanValue: {
     flex: 1,
     textAlign: 'right' as const,
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.text,
+    color: colors.text,
     fontWeight: '600',
   },
   offplanDivider: {
     height: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     marginVertical: scaleHeight(12),
   },
 
 
   unitCard: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(12),
     padding: scaleWidth(14),
   },
@@ -1641,7 +1632,7 @@ const styles = StyleSheet.create({
     width: scaleWidth(92),
     height: scaleHeight(130),
     borderRadius: scaleWidth(10),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   unitFloorPlanHint: {
     position: 'absolute' as const,
@@ -1666,7 +1657,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 640,
     height: '80%',
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderRadius: scaleWidth(18),
     overflow: 'hidden',
   },
@@ -1677,13 +1668,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(16),
     paddingVertical: scaleHeight(12),
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   floorPlanTitle: {
     flex: 1,
     fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
   },
   floorPlanCloseButton: {
     width: scaleWidth(36),
@@ -1691,13 +1682,13 @@ const styles = StyleSheet.create({
     borderRadius: scaleWidth(18),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   floorPlanBody: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: colors.white,
   },
   floorPlanImageWrap: {
     flex: 1,
@@ -1717,9 +1708,9 @@ const styles = StyleSheet.create({
     width: scaleWidth(92),
     height: scaleWidth(92),
     borderRadius: scaleWidth(10),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1739,13 +1730,13 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(6),
     paddingHorizontal: scaleWidth(10),
     borderRadius: scaleWidth(999),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   unitRoomText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     fontWeight: '700',
   },
   unitHeaderRow: {
@@ -1758,12 +1749,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   unitPrice: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   unitMetaRow: {
     flexDirection: 'row',
@@ -1773,13 +1764,13 @@ const styles = StyleSheet.create({
   },
   unitMetaText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   helperText: {
     marginTop: scaleHeight(8),
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabBar: {
     flexDirection: 'row',
@@ -1791,21 +1782,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(14),
     borderRadius: scaleWidth(999),
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     marginRight:scaleWidth(14),
   },
   tabChipActive: {
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     backgroundColor: 'rgba(183, 138, 59, 0.12)',
   },
   tabText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   tabTextActive: {
-    color: Colors.bronze,
+    color: colors.primary,
   },
   phaseRow: {
     flexDirection: 'row',
@@ -1816,19 +1807,19 @@ const styles = StyleSheet.create({
     width: scaleWidth(120),
     borderRadius: scaleWidth(12),
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     padding: scaleWidth(12),
   },
   phaseValue: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '800',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   phaseLabel: {
     marginTop: scaleHeight(6),
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.text,
+    color: colors.text,
     fontWeight: '600',
   },
   phaseArrowWrap: {
@@ -1838,17 +1829,17 @@ const styles = StyleSheet.create({
   },
   phaseArrowText: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '900',
   },
   keyDetailsCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     padding: scaleWidth(20),
     borderRadius: scaleWidth(16),
     marginBottom: scaleHeight(24),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   detailItem: {
     flex: 1,
@@ -1857,17 +1848,17 @@ const styles = StyleSheet.create({
   },
   detailDivider: {
     width: 1,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     marginHorizontal: scaleWidth(12),
   },
   detailLabel: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     fontWeight: '500',
   },
   detailValue: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     fontWeight: '700',
   },
   section: {
@@ -1876,7 +1867,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     marginBottom: scaleHeight(12),
   },
   sectionTitleRow: {
@@ -1894,8 +1885,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(14),
     borderRadius: scaleWidth(12),
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   attachmentLeft: {
     flex: 1,
@@ -1907,25 +1898,25 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: Platform.OS === 'android' ? scaleFont(11): scaleFont(13),
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   attachmentButton: {
     paddingVertical: scaleHeight(8),
     paddingHorizontal: scaleWidth(14),
     borderRadius: scaleWidth(999),
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     backgroundColor: 'rgba(183, 138, 59, 0.10)',
   },
   attachmentButtonText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   developerCard: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(16),
     padding: scaleWidth(16),
     gap: scaleHeight(12),
@@ -1933,7 +1924,7 @@ const styles = StyleSheet.create({
   developerNameText: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   developerButtonsRow: {
     flexDirection: 'row',
@@ -1941,18 +1932,18 @@ const styles = StyleSheet.create({
   },
   developerMetaText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     fontWeight: '600',
   },
 
   description: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
     lineHeight: scaleFont(24),
   },
   readMoreText: {
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    color: Colors.bronze,
+    color: colors.primary,
     fontWeight: '700',
   },
   amenitiesGrid: {
@@ -1961,16 +1952,16 @@ const styles = StyleSheet.create({
     gap: scaleWidth(12),
   },
   amenityChip: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     paddingVertical: scaleHeight(10),
     paddingHorizontal: scaleWidth(16),
     borderRadius: scaleWidth(20),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   amenityText: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.text,
+    color: colors.text,
     fontWeight: '500',
   },
   lifestyleRow: {
@@ -1978,25 +1969,25 @@ const styles = StyleSheet.create({
     gap: scaleWidth(12),
   },
   lifestyleBadge: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth:1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     paddingVertical: scaleHeight(10),
     paddingHorizontal: scaleWidth(20),
     borderRadius: scaleWidth(20),
   },
   lifestyleBadgeText: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.bronze,
+    color: colors.primary,
     fontWeight: '500',
   },
   agentCard: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     padding: scaleWidth(20),
     borderRadius: scaleWidth(16),
     marginBottom: scaleHeight(24),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   agentRow: {
     flexDirection: 'row',
@@ -2007,14 +1998,14 @@ const styles = StyleSheet.create({
     width: scaleWidth(60),
     height: scaleWidth(60),
     borderRadius: scaleWidth(30),
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   agentInitial: {
     fontSize: Platform.OS === 'android' ? scaleFont(22): scaleFont(24),
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.surface,
   },
   agentInfo: {
     flex: 1,
@@ -2023,15 +2014,15 @@ const styles = StyleSheet.create({
   agentName: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(18),
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   agentRole: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   agentStats: {
     fontSize: Platform.OS === 'android' ? scaleFont(11): scaleFont(13),
-    color: Colors.textSecondary,
+    color: isDarkMode ? 'rgba(255, 255, 255, 0.72)' : colors.textSecondary,
   },
   spacer: {
     height: scaleHeight(120),
@@ -2041,10 +2032,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     padding: scaleWidth(20),
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: colors.border,
     flexDirection: 'row',
     gap: scaleWidth(12),
   },
@@ -2061,9 +2052,9 @@ const styles = StyleSheet.create({
     width: scaleWidth(48),
     height: scaleWidth(48),
     borderRadius: scaleWidth(24),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth:1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2072,7 +2063,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.bronze,
+    backgroundColor: isDarkMode ? colors.black : colors.primary,
+    borderWidth: isDarkMode ? 1 : 0,
+    borderColor: isDarkMode ? colors.primary : 'transparent',
     paddingVertical: scaleHeight(14),
     borderRadius: scaleWidth(24),
     gap: scaleWidth(8),
@@ -2080,11 +2073,11 @@ const styles = StyleSheet.create({
   scheduleButtonText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(14),
     fontWeight: '600',
-    color: Colors.textLight,
+    color: isDarkMode ? colors.white : colors.surface,
   },
   errorContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     padding: scaleWidth(32),
@@ -2092,11 +2085,11 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: scaleHeight(20),
   },
   backButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     paddingVertical: scaleHeight(14),
     paddingHorizontal: scaleWidth(32),
     borderRadius: scaleWidth(24),
@@ -2105,6 +2098,6 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
-    color: Colors.textLight,
+    color: colors.surface,
   },
 });

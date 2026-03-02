@@ -5,8 +5,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Settings, Grid, Heart, MessageSquare, Edit, Gift, Briefcase, Star } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useTheme } from '@/utils/useTheme';
 import { mockProperties } from '@/mocks/properties';
 import { fetchPublicAgentVideos } from '@/utils/publicVideosApi';
 import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
@@ -22,6 +23,8 @@ type TabType = 'properties' | 'liked';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const bottomTabBarHeight = useBottomTabBarHeight();
   const [activeTab, setActiveTab] = useState<TabType>('properties');
   const { tier, postsUsed, postsLimit } = useSubscription();
@@ -169,11 +172,11 @@ export default function ProfileScreen() {
       <View style={styles.gridOverlay}>
         <View style={styles.gridStats}>
           <View style={styles.gridStat}>
-            <Heart size={scaleWidth(14)} color={Colors.textLight} fill={Colors.textLight} />
+            <Heart size={scaleWidth(14)} color={colors.white} fill={colors.white} />
             <Text style={styles.gridStatText}>{item.likesCount}</Text>
           </View>
           <View style={styles.gridStat}>
-            <MessageSquare size={scaleWidth(14)} color={Colors.textLight} />
+            <MessageSquare size={scaleWidth(14)} color={colors.white} />
             <Text style={styles.gridStatText}>{item.commentsCount}</Text>
           </View>
         </View>
@@ -183,17 +186,17 @@ export default function ProfileScreen() {
 
   if (!token) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profile</Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
         </View>
 
         <View style={[styles.contentContainer, { paddingBottom: bottomTabBarHeight + scaleHeight(16) }]}>
-          <View style={styles.authGateCard}>
-            <Text style={styles.authGateTitle}>Login required</Text>
-            <Text style={styles.authGateDescription}>Only logged in users can view profile.</Text>
-            <Pressable style={styles.authGateButton} onPress={() => router.replace('/auth/login' as any)}>
-              <Text style={styles.authGateButtonText}>Log in</Text>
+          <View style={[styles.authGateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.authGateTitle, { color: colors.text }]}>Login required</Text>
+            <Text style={[styles.authGateDescription, { color: colors.textSecondary }]}>Only logged in users can view profile.</Text>
+            <Pressable style={[styles.authGateButton, { backgroundColor: colors.primary }]} onPress={() => router.replace('/auth/login' as any)}>
+              <Text style={[styles.authGateButtonText, { color: colors.textOnPrimary }]}>Log in</Text>
             </Pressable>
           </View>
         </View>
@@ -202,11 +205,11 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
         <Pressable style={styles.settingsButton} onPress={() => router.push('/(tabs)/settings')}>
-          <Settings size={scaleWidth(24)} color={Colors.text} />
+          <Settings size={scaleWidth(24)} color={colors.text} />
         </Pressable>
       </View>
 
@@ -234,52 +237,52 @@ export default function ProfileScreen() {
               onPress={handlePickAvatar}
               disabled={isUploadingAvatar}
             >
-              <Edit size={scaleWidth(16)} color={Colors.textLight} />
+              <Edit size={scaleWidth(16)} color={colors.textOnPrimary} />
             </Pressable>
           </View>
 
-          <Text style={styles.userName}>{agent?.name ?? 'Agent'}</Text>
-          <Text style={styles.userBio}>Real Estate Agent</Text>
+          <Text style={[styles.userName, { color: colors.text }]}>{agent?.name ?? 'Agent'}</Text>
+          <Text style={[styles.userBio, { color: colors.textSecondary }]}>Real Estate Agent</Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{displayedProperties.length}</Text>
-              <Text style={styles.statLabel}>Properties</Text>
+              <Text style={[styles.statNumber, { color: colors.text }]}>{displayedProperties.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Properties</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Followers</Text>
+              <Text style={[styles.statNumber, { color: colors.text }]}>0</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Followers</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>0</Text>
-              <Text style={styles.statLabel}>Following</Text>
+              <Text style={[styles.statNumber, { color: colors.text }]}>0</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Following</Text>
             </View>
           </View>
 
-          <Pressable style={styles.editButton}>
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+          <Pressable style={[styles.editButton, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Text style={[styles.editButtonText, { color: colors.text }]}>Edit Profile</Text>
           </Pressable>
         </View>
 
-        <View style={styles.subscriptionCard}>
+        <View style={[styles.subscriptionCard, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
           <View style={styles.subscriptionHeader}>
             {tier === 'premium' ? (
-              <Star size={scaleWidth(20)} color={Colors.bronze} fill={Colors.bronze} />
+              <Star size={scaleWidth(20)} color={colors.primary} fill={colors.primary} />
             ) : tier === 'basic' ? (
-              <Briefcase size={scaleWidth(20)} color={Colors.bronze} />
+              <Briefcase size={scaleWidth(20)} color={colors.primary} />
             ) : (
-              <Gift size={scaleWidth(20)} color={Colors.bronze} />
+              <Gift size={scaleWidth(20)} color={colors.primary} />
             )}
-            <Text style={styles.subscriptionTier}>
+            <Text style={[styles.subscriptionTier, { color: colors.text }]}>
               {tier === 'free' && 'Free Tier'}
               {tier === 'basic' && 'Basic Agent'}
               {tier === 'premium' && 'Premium Agent ⭐'}
             </Text>
           </View>
 
-          <Text style={styles.subscriptionUsage}>
+          <Text style={[styles.subscriptionUsage, { color: colors.textSecondary }]}>
             {tier === 'premium'
               ? 'Unlimited posts'
               : tier === 'basic'
@@ -300,7 +303,7 @@ export default function ProfileScreen() {
           )}
 
           {tier === 'premium' && (
-            <Text style={styles.premiumBadgeText}>
+            <Text style={[styles.premiumBadgeText, { color: colors.primary }]}>
               ✓ Instagram promotion included
             </Text>
           )}
@@ -311,7 +314,7 @@ export default function ProfileScreen() {
             style={[styles.tab, activeTab === 'properties' && styles.tabActive]}
             onPress={() => setActiveTab('properties')}
           >
-            <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
+            <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>
               Properties
             </Text>
@@ -320,7 +323,7 @@ export default function ProfileScreen() {
             style={[styles.tab, activeTab === 'liked' && styles.tabActive]}
             onPress={() => setActiveTab('liked')}
           >
-            <Heart size={scaleWidth(20)} color={activeTab === 'liked' ? Colors.bronze : Colors.textSecondary} />
+            <Heart size={scaleWidth(20)} color={activeTab === 'liked' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'liked' && styles.tabTextActive]}>
               Liked
             </Text>
@@ -329,7 +332,7 @@ export default function ProfileScreen() {
 
         {activeTab === 'properties' && isLoadingVideos ? (
           <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center'}}>
-            <SavingSpinner color={Colors.bronze} accessibilityLabel="Loading videos" />
+            <SavingSpinner color={colors.primary} accessibilityLabel="Loading videos" />
           </View>
         ) : null}
 
@@ -343,7 +346,7 @@ export default function ProfileScreen() {
           ListEmptyComponent={
             activeTab === 'properties' ? (
               <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center' }}>
-                <Text style={{ color: Colors.textSecondary }}>No videos yet</Text>
+                <Text style={{ color: colors.textSecondary }}>No videos yet</Text>
               </View>
             ) : null
           }
@@ -353,10 +356,9 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -366,12 +368,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(20),
     paddingBottom: scaleHeight(16),
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(18),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   settingsButton: {
     width: scaleWidth(40),
@@ -384,43 +386,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleWidth(20),
     paddingTop: scaleHeight(24),
   },
- authGateCard: {
+  authGateCard: {
     marginTop: scaleHeight(16),
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     borderRadius: scaleWidth(16),
     padding: scaleWidth(20),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     alignItems: 'center',
   },
   authGateTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(20),
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: scaleHeight(6),
   },
   authGateDescription: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: scaleFont(20),
     marginBottom: scaleHeight(14),
   },
   authGateButton: {
     width: '100%',
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     paddingVertical: scaleHeight(14),
     borderRadius: scaleWidth(12),
     alignItems: 'center',
     marginBottom: scaleHeight(12),
   },
   authGateButtonText: {
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
   },
   authGateLink: {
-    color: Colors.brown,
+    color: colors.primary,
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '700',
   },
@@ -429,7 +431,7 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(24),
     paddingHorizontal: scaleWidth(20),
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   avatarContainer: {
     position: 'relative' as const,
@@ -439,11 +441,11 @@ const styles = StyleSheet.create({
     width: scaleWidth(100),
     height: scaleHeight(100),
     borderRadius: scaleWidth(50),
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.textLight,
+    borderColor: colors.surface,
   },
   avatarImage: {
     width: '100%',
@@ -453,7 +455,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(28),
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
   },
   editAvatarButton: {
     position: 'absolute' as const,
@@ -462,21 +464,21 @@ const styles = StyleSheet.create({
     width: scaleWidth(32),
     height: scaleHeight(32),
     borderRadius: scaleWidth(16),
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.background,
+    borderColor: colors.background,
   },
   userName: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(24),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: scaleHeight(4),
   },
   userBio: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: scaleHeight(20),
   },
@@ -493,35 +495,35 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   statLabel: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(13),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   statDivider: {
     width: scaleWidth(1),
     height: scaleHeight(24),
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
   },
   editButton: {
     width: '100%',
     paddingVertical: scaleHeight(12),
     borderRadius: scaleWidth(12),
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.textLight,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
   },
   editButtonText: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   tab: {
     flex: 1,
@@ -534,15 +536,15 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: Colors.bronze,
+    borderBottomColor: colors.primary,
   },
   tabText: {
     fontSize: Platform.OS === 'android' ? scaleFont(13): scaleFont(15),
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: Colors.bronze,
+    color: colors.primary,
   },
   gridContainer: {
     padding: scaleWidth(2),
@@ -551,7 +553,7 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 1,
     margin: scaleWidth(2),
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     position: 'relative' as const,
   },
   gridImage: {
@@ -580,20 +582,20 @@ const styles = StyleSheet.create({
   gridStatText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
-    color: Colors.textLight,
+    color: colors.white,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   subscriptionCard: {
-    backgroundColor: '#FFF9F0',
+    backgroundColor: colors.surface,
     borderRadius: scaleWidth(12),
     padding: scaleWidth(16),
     marginHorizontal: scaleWidth(20),
     marginBottom: scaleHeight(20),
     marginTop: scaleHeight(20),
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
   },
   subscriptionHeader: {
     flexDirection: 'row',
@@ -604,28 +606,28 @@ const styles = StyleSheet.create({
   subscriptionTier: {
     fontSize: Platform.OS === 'android' ? scaleFont(14): scaleFont(16),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   subscriptionUsage: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: scaleHeight(12),
   },
   upgradeButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     paddingVertical: scaleHeight(10),
     paddingHorizontal: scaleWidth(16),
     borderRadius: scaleWidth(8),
     alignItems: 'center',
   },
   upgradeButtonText: {
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
     fontWeight: '600',
   },
   premiumBadgeText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
-    color: Colors.bronze,
+    color: colors.primary,
     fontWeight: '600',
   },
 });

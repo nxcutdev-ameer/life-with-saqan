@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,8 @@ import {
   Alert,
 } from 'react-native';
 import { X, MessageCircle, Instagram, Link as LinkIcon, MoreHorizontal } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { Property } from '@/types';
 import * as Clipboard from 'expo-clipboard';
 
@@ -24,6 +25,8 @@ export default function ShareModal({
   onClose,
   property,
 }: ShareModalProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
   const propertyUrl = `https://saqan.app/property/${property.id}`;
 
   const handleShareWhatsApp = async () => {
@@ -93,7 +96,7 @@ export default function ShareModal({
       onPress={onPress}
     >
       <View style={[styles.shareIcon, { backgroundColor: color }]}>
-        <Icon size={24} color={Colors.textLight} />
+        <Icon size={24} color={colors.white} />
       </View>
       <Text style={styles.shareTitle}>{title}</Text>
     </Pressable>
@@ -112,7 +115,7 @@ export default function ShareModal({
           <View style={styles.header}>
             <Text style={styles.modalTitle}>Share Property</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={Colors.text} />
+              <X size={24} color={isDarkMode ? colors.white : colors.text} />
             </Pressable>
           </View>
 
@@ -141,7 +144,7 @@ export default function ShareModal({
             <ShareOption
               icon={LinkIcon}
               title="Copy Link"
-              color={Colors.bronze}
+              color={colors.primary}
               onPress={handleCopyLink}
             />
             <ShareOption
@@ -157,7 +160,7 @@ export default function ShareModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -167,7 +170,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 20,
@@ -183,29 +186,29 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   closeButton: {
     padding: 4,
   },
   propertyPreview: {
     padding: 16,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     marginBottom: 24,
   },
   propertyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     marginBottom: 4,
   },
   propertyPrice: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.bronze,
+    color: colors.primary,
   },
   shareOptions: {
     flexDirection: 'row',
@@ -230,7 +233,7 @@ const styles = StyleSheet.create({
   shareTitle: {
     fontSize: 13,
     fontWeight: '500',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     textAlign: 'center',
   },
 });

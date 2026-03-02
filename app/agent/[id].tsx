@@ -4,25 +4,28 @@ import { ActivityIndicator, Alert, FlatList, Linking, Platform, Pressable, Scrol
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { buildPropertyDetailsRoute } from '@/utils/routes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Grid, Heart, Mail, MessageCircle, Phone } from 'lucide-react-native';
+import { ArrowLeft, Heart, Mail, MessageCircle, Phone } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
-import { Colors } from '@/constants/colors';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { mockProperties } from '@/mocks/properties';
 import type { Agent, Property } from '@/types';
 import { fetchPublicAgentVideos } from '@/utils/publicVideosApi';
 import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
+import { useTheme } from '@/utils/useTheme';
+import type { ThemeColors } from '@/constants/theme';
 
 type TabType = 'properties' | 'liked';
 
 const isNumericId = (value: string) => /^\d+$/.test(value);
 
 export default function AgentProfileScreen() {
+  const { colors: themeColors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string }>();
-  const [activeTab, setActiveTab] = useState<TabType>('properties');
+  const [activeTab] = useState<TabType>('properties');
 
   const agentIdParam = params.id;
   const shouldUseApi = Boolean(agentIdParam && isNumericId(agentIdParam));
@@ -84,7 +87,7 @@ export default function AgentProfileScreen() {
   const displayedProperties = activeTab === 'properties' ? agentProperties : mockProperties.slice(0, 6);
 
   const renderPropertyItem = ({ item }: { item: Property }) => (
-    <Pressable style={styles.gridItem} onPress={() =>
+    <Pressable style={[styles.gridItem, { backgroundColor: themeColors.surface }]} onPress={() =>
         router.push(
           buildPropertyDetailsRoute({
             propertyReference: item.propertyReference,
@@ -98,7 +101,7 @@ export default function AgentProfileScreen() {
       <View style={styles.gridOverlay}>
         <View style={styles.gridStats}>
           <View style={styles.gridStat}>
-            <Heart size={scaleWidth(14)} color={Colors.textLight} fill={Colors.textLight} />
+            <Heart size={scaleWidth(14)} color={themeColors.white} fill={themeColors.white} />
             <Text style={styles.gridStatText}>{item.likesCount}</Text>
           </View>
 
@@ -160,19 +163,19 @@ export default function AgentProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()} hitSlop={10}>
-          <ArrowLeft size={scaleWidth(24)} color={Colors.text} />
+          <ArrowLeft size={scaleWidth(24)} color={isDarkMode ? themeColors.white : themeColors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Agent</Text>
+        <Text style={[styles.headerTitle, { color: isDarkMode ? themeColors.white : themeColors.text }]}>Agent</Text>
         <View style={styles.headerRightSpacer} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + scaleHeight(16) }}>
-        <View style={styles.profileSection}>
+        <View style={[styles.profileSection, { borderBottomColor: themeColors.border }]}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
+            <View style={[styles.avatar, { backgroundColor: themeColors.primary, borderColor: themeColors.background }]}>
               {agent?.photo ? (
                 <Image source={{ uri: agent.photo }} style={styles.avatarImage} contentFit="cover" />
               ) : (
@@ -181,22 +184,22 @@ export default function AgentProfileScreen() {
             </View>
           </View>
 
-          <Text style={styles.userName}>{agentName}</Text>
-          <Text style={styles.userBio}>Real Estate Agent</Text>
+          <Text style={[styles.userName, { color: themeColors.white }]}>{agentName}</Text>
+          <Text style={[styles.userBio, { color: themeColors.white }]}>Real Estate Agent</Text>
             <View style={styles.statsRow}>
                       <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{displayedProperties.length}</Text>
-                        <Text style={styles.statLabel}>Properties</Text>
+                        <Text style={[styles.statNumber, { color: themeColors.white }]}>{displayedProperties.length}</Text>
+                        <Text style={[styles.statLabel, { color: themeColors.white }]}>Properties</Text>
                       </View>
-                      <View style={styles.statDivider} />
+                      <View style={[styles.statDivider, { backgroundColor: themeColors.border }]} />
                       <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>0</Text>
-                        <Text style={styles.statLabel}>Followers</Text>
+                        <Text style={[styles.statNumber, { color: themeColors.white }]}>0</Text>
+                        <Text style={[styles.statLabel, { color: themeColors.white }]}>Followers</Text>
                       </View>
-                      <View style={styles.statDivider} />
+                      <View style={[styles.statDivider, { backgroundColor: themeColors.border }]} />
                       <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>0</Text>
-                        <Text style={styles.statLabel}>Following</Text>
+                        <Text style={[styles.statNumber, { color: themeColors.white }]}>0</Text>
+                        <Text style={[styles.statLabel, { color: themeColors.white }]}>Following</Text>
                       </View>
                     </View>
                         
@@ -209,28 +212,62 @@ export default function AgentProfileScreen() {
           </View>
 
           <View style={styles.contactButtons}>
-            <Pressable style={[styles.contactIconButton, !(agent?.phone ?? '') && { opacity: 0.4 }]} onPress={openPhone} disabled={!(agent?.phone ?? '')}>
-              <Phone size={scaleWidth(20)} color={Colors.bronze} />
+            <Pressable
+              style={[
+                styles.contactIconButton,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor: isDarkMode ? themeColors.border : themeColors.primary,
+                },
+                !(agent?.phone ?? '') && { opacity: 0.4 },
+              ]}
+              onPress={openPhone}
+              disabled={!(agent?.phone ?? '')}
+            >
+              <Phone size={scaleWidth(20)} color={isDarkMode ? themeColors.white : themeColors.primary} />
             </Pressable>
-            <Pressable style={[styles.contactIconButton, !(agent?.phone ?? '') && { opacity: 0.4 }]} onPress={openWhatsApp} disabled={!(agent?.phone ?? '')}>
-              <MessageCircle size={scaleWidth(20)} color={Colors.bronze} />
+            <Pressable
+              style={[
+                styles.contactIconButton,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor: isDarkMode ? themeColors.border : themeColors.primary,
+                },
+                !(agent?.phone ?? '') && { opacity: 0.4 },
+              ]}
+              onPress={openWhatsApp}
+              disabled={!(agent?.phone ?? '')}
+            >
+              <MessageCircle size={scaleWidth(20)} color={isDarkMode ? themeColors.white : themeColors.primary} />
             </Pressable>
-            <Pressable style={[styles.contactIconButton, !(agent?.email ?? '') && { opacity: 0.4 }]} onPress={openEmail} disabled={!(agent?.email ?? '')}>
-              <Mail size={scaleWidth(20)} color={Colors.bronze} />
+            <Pressable
+              style={[
+              
+                styles.contactIconButton,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor: isDarkMode ? themeColors.border : themeColors.primary,
+                },
+                !(agent?.email ?? '') && { opacity: 0.4 },
+              ]}
+              onPress={openEmail}
+              disabled={!(agent?.email ?? '')}
+            >
+              <Mail size={scaleWidth(20)} color={isDarkMode ? themeColors.white : themeColors.primary} />
             </Pressable>
           </View>
         </View>
 
         {/* <View style={styles.tabsContainer}>
           <Pressable style={[styles.tab, activeTab === 'properties' && styles.tabActive]} onPress={() => setActiveTab('properties')}>
-            <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? Colors.bronze : Colors.textSecondary} />
+            <Grid size={scaleWidth(20)} color={activeTab === 'properties' ? colors.primary : colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === 'properties' && styles.tabTextActive]}>Properties</Text>
           </Pressable>
         </View> */}
 
         {activeTab === 'properties' && isLoading ? (
           <View style={{ paddingVertical: scaleHeight(24) }}>
-            <ActivityIndicator color={Colors.bronze} />
+            <ActivityIndicator color={themeColors.primary} />
           </View>
         ) : null}
 
@@ -244,7 +281,7 @@ export default function AgentProfileScreen() {
           ListEmptyComponent={
             activeTab === 'properties' ? (
               <View style={{ paddingVertical: scaleHeight(24), alignItems: 'center' }}>
-                <Text style={{ color: Colors.textSecondary }}>No properties</Text>
+                <Text style={{ color: themeColors.textSecondary }}>No properties</Text>
               </View>
             ) : null
           }
@@ -254,10 +291,10 @@ export default function AgentProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -270,7 +307,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(22),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   backButton: {
     width: scaleWidth(40),
@@ -282,9 +319,9 @@ const styles = StyleSheet.create({
     width: scaleWidth(48),
     height: scaleWidth(48),
     borderRadius: scaleWidth(24),
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: Colors.bronze,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -301,7 +338,7 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(24),
     paddingHorizontal: scaleWidth(20),
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   avatarContainer: {
     position: 'relative' as const,
@@ -311,11 +348,11 @@ const styles = StyleSheet.create({
     width: scaleWidth(100),
     height: scaleHeight(100),
     borderRadius: scaleWidth(50),
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.textLight,
+    borderColor: colors.surface,
     overflow: 'hidden',
   },
   avatarImage: {
@@ -325,17 +362,17 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: Platform.OS === 'android' ? scaleFont(24): scaleFont(36),
     fontWeight: '700',
-    color: Colors.textLight,
+    color: colors.white,
   },
   userName: {
     fontSize: Platform.OS === 'android' ? scaleFont(18): scaleFont(24),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: scaleHeight(4),
   },
   userBio: {
     fontSize: Platform.OS === 'android' ? scaleFont(12): scaleFont(14),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: scaleHeight(20),
   },
@@ -352,21 +389,21 @@ const styles = StyleSheet.create({
    statDivider: {
     width: scaleWidth(1),
     height: scaleHeight(24),
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
   },
   statNumber: {
     fontSize: Platform.OS === 'android' ? scaleFont(16): scaleFont(20),
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   statLabel: {
     fontSize: scaleFont(13),
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   tab: {
     flex: 1,
@@ -379,15 +416,15 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: Colors.bronze,
+    borderBottomColor: colors.primary,
   },
   tabText: {
     fontSize: Platform.OS === 'android' ? scaleFont(13): scaleFont(15),
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: Colors.bronze,
+    color: colors.primary,
   },
   gridContainer: {
     padding: scaleWidth(2),
@@ -396,7 +433,7 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 1,
     margin: scaleWidth(2),
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.surface,
     position: 'relative' as const,
   },
   gridImage: {
@@ -426,7 +463,7 @@ const styles = StyleSheet.create({
   gridStatText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
-    color: Colors.textLight,
+    color: colors.white,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -434,7 +471,7 @@ const styles = StyleSheet.create({
   gridEmirateText: {
     fontSize: Platform.OS === 'android' ? scaleFont(10): scaleFont(12),
     fontWeight: '600',
-    color: Colors.textLight,
+    color: colors.white,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,

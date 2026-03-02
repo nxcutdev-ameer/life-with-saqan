@@ -10,15 +10,17 @@ export type AuthByPhoneResponse = {
   };
 };
 
+export type AuthMethod = 'whatsapp' | 'sms';
+
 // Unified endpoint that decides whether this phone should login or register.
-export async function authByPhone(phone: string): Promise<AuthByPhoneResponse> {
+export async function authByPhone(phone: string, method: AuthMethod = 'whatsapp'): Promise<AuthByPhoneResponse> {
   return fetchJson<AuthByPhoneResponse>(`${BASE_URL}`, {
     method: 'POST',
     timeoutMs: 30000,
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ phone }),
+    body: JSON.stringify({ phone, method }),
   });
 }
 

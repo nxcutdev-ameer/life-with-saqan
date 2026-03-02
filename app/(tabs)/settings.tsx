@@ -26,9 +26,10 @@ import {
   Activity,
   CreditCard,
 } from 'lucide-react-native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+import { useTheme } from '@/utils/useTheme';
 
 type SettingItemProps = {
   icon: any;
@@ -36,6 +37,7 @@ type SettingItemProps = {
   onPress?: () => void;
   showArrow?: boolean;
   rightElement?: React.ReactNode;
+  colors: ThemeColors;
 };
 
 const SettingItem = React.memo(function SettingItem({
@@ -44,14 +46,15 @@ const SettingItem = React.memo(function SettingItem({
   onPress,
   showArrow = true,
   rightElement,
+  colors,
 }: SettingItemProps) {
   return (
     <Pressable style={styles.settingItem} onPress={onPress}>
       <View style={styles.settingLeft}>
-        <Icon size={scaleFont(22)} color={Colors.text} />
-        <Text style={styles.settingTitle}>{title}</Text>
+        <Icon size={scaleFont(22)} color={colors.text} />
+        <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
       </View>
-      {rightElement || (showArrow && <ChevronRight size={scaleFont(20)} color={Colors.textSecondary} />)}
+      {rightElement || (showArrow && <ChevronRight size={scaleFont(20)} color={colors.textSecondary} />)}
     </Pressable>
   );
 });
@@ -62,6 +65,7 @@ type SettingToggleProps = {
   title: string;
   value: boolean;
   onToggle: () => void;
+  colors: ThemeColors;
 };
 
 const SettingToggle = React.memo(function SettingToggle({
@@ -70,12 +74,13 @@ const SettingToggle = React.memo(function SettingToggle({
   title,
   value,
   onToggle,
+  colors,
 }: SettingToggleProps) {
   return (
     <View style={styles.settingItem}>
       <View style={styles.settingLeft}>
-        <Icon size={scaleFont(22)} color={Colors.text} />
-        <Text style={styles.settingTitle}>{title}</Text>
+        <Icon size={scaleFont(22)} color={colors.text} />
+        <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
       </View>
       <Switch
         nativeID={id}
@@ -83,8 +88,8 @@ const SettingToggle = React.memo(function SettingToggle({
         accessibilityLabel={title}
         value={value}
         onValueChange={onToggle}
-        trackColor={{ false: Colors.border, true: Colors.bronze }}
-        thumbColor={Colors.background}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        thumbColor={colors.surface}
       />
     </View>
   );
@@ -94,7 +99,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const logout = useAuthStore((s) => s.logout);
 
-  const [darkMode, setDarkMode] = React.useState(false);
+  const { colors, isDarkMode, setDarkMode } = useTheme();
   const [pushNotifications, setPushNotifications] = React.useState(true);
   const [emailNotifications, setEmailNotifications] = React.useState(true);
   const [autoPlayOnWifi, setAutoPlayOnWifi] = React.useState(false);
@@ -123,44 +128,47 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account Settings</Text>
-        <View style={styles.card}>
-          <SettingItem icon={User} title="Edit Profile" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={CreditCard} title="Subscription & Billing" onPress={() => router.push('/paywall')} />
-          <View style={styles.divider} />
-          <SettingItem icon={Lock} title="Change Password" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={Globe} title="Language (English)" onPress={() => {}} />
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account Settings</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <SettingItem colors={colors} icon={User} title="Edit Profile" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={CreditCard} title="Subscription & Billing" onPress={() => router.push('/paywall')} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={Lock} title="Change Password" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={Globe} title="Language (English)" onPress={() => {}} />
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Notifications</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingToggle
             id="pushNotifications"
             icon={Bell}
             title="Push Notifications"
             value={pushNotifications}
             onToggle={() => setPushNotifications((prev) => !prev)}
+            colors={colors}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingToggle
             id="emailNotifications"
             icon={Bell}
             title="Email Notifications"
             value={emailNotifications}
             onToggle={() => setEmailNotifications((prev) => !prev)}
+            colors={colors}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingItem
+            colors={colors}
             icon={Bell}
             title="Notification Preferences"
             onPress={() => router.push('/notification-preferences' as any)}
@@ -169,50 +177,54 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Privacy</Text>
-        <View style={styles.card}>
-          <SettingItem icon={Lock} title="Profile Visibility" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={Lock} title="Blocked Users" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={FileText} title="Data & Privacy" onPress={() => {}} />
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Privacy</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <SettingItem colors={colors} icon={Lock} title="Profile Visibility" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={Lock} title="Blocked Users" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={FileText} title="Data & Privacy" onPress={() => {}} />
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>App Settings</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>App Settings</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingToggle
             id="darkMode"
             icon={Moon}
             title="Dark Mode"
-            value={darkMode}
-            onToggle={() => setDarkMode((prev) => !prev)}
+            value={isDarkMode}
+            onToggle={() => setDarkMode(!isDarkMode)}
+            colors={colors}
           />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingToggle
             id="autoPlayOnWifi"
             icon={Wifi}
             title="Auto-play on WiFi only"
             value={autoPlayOnWifi}
             onToggle={() => setAutoPlayOnWifi((prev) => !prev)}
+            colors={colors}
           />
-          <View style={styles.divider} />
-          <SettingItem icon={Trash2} title="Clear Cache" onPress={() => {}} />
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={Trash2} title="Clear Cache" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingItem
+            colors={colors}
             icon={Info}
             title="App Version"
             showArrow={false}
-            rightElement={<Text style={styles.versionText}>1.0.0</Text>}
+            rightElement={<Text style={[styles.versionText, { color: colors.textSecondary }]}>1.0.0</Text>}
           />
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Activity</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Activity</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <SettingItem
+            colors={colors}
             icon={Activity}
             title="Activity Center"
             onPress={() => router.push('/activity-center' as any)}
@@ -221,17 +233,17 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support & Legal</Text>
-        <View style={styles.card}>
-          <SettingItem icon={HelpCircle} title="Help Center" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={FileText} title="Contact Support" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={FileText} title="Terms of Service" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={FileText} title="Privacy Policy" onPress={() => {}} />
-          <View style={styles.divider} />
-          <SettingItem icon={FileText} title="Licenses" onPress={() => {}} />
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Support & Legal</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <SettingItem colors={colors} icon={HelpCircle} title="Help Center" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={FileText} title="Contact Support" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={FileText} title="Terms of Service" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={FileText} title="Privacy Policy" onPress={() => {}} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingItem colors={colors} icon={FileText} title="Licenses" onPress={() => {}} />
         </View>
       </View>
 
@@ -242,11 +254,11 @@ export default function SettingsScreen() {
           disabled={isLoggingOut}
         >
           {isLoggingOut ? (
-            <ActivityIndicator size="small" color={Colors.textLight} />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
-            <LogOut size={scaleFont(20)} color={Colors.textLight} />
+            <LogOut size={scaleFont(20)} color={colors.white} />
           )}
-          <Text style={styles.logoutText}>{isLoggingOut ? 'Logging out…' : 'Log Out'}</Text>
+          <Text style={[styles.logoutText, { color: colors.white }]}>{isLoggingOut ? 'Logging out…' : 'Log Out'}</Text>
         </Pressable>
       </View>
 
@@ -258,7 +270,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   header: {
     paddingTop: scaleHeight(60),
@@ -268,7 +279,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: scaleFont(36),
     fontWeight: '700',
-    color: Colors.text,
   },
   section: {
     paddingHorizontal: scaleWidth(24),
@@ -277,16 +287,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: scaleFont(14),
     fontWeight: '600',
-    color: Colors.textSecondary,
     marginBottom: scaleHeight(12),
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
   card: {
-    backgroundColor: Colors.background,
     borderRadius: scaleWidth(12),
     borderWidth: 1,
-    borderColor: Colors.border,
     overflow: 'hidden',
   },
   settingItem: {
@@ -305,16 +312,13 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: scaleFont(16),
     fontWeight: '500',
-    color: Colors.text,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.border,
     marginLeft: scaleWidth(50),
   },
   versionText: {
     fontSize: scaleFont(14),
-    color: Colors.textSecondary,
   },
   logoutButton: {
     flexDirection: 'row',
@@ -331,7 +335,6 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: scaleFont(16),
     fontWeight: '600',
-    color: Colors.textLight,
   },
   bottomSpacer: {
     height: scaleHeight(60),
