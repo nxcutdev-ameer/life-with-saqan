@@ -154,15 +154,6 @@ export default function OtpVerificationScreen() {
         };
 
         completeOtpVerification(nextSession);
-        // Set one-time welcome toast payload (not persisted).
-        if (nextSession.agent) {
-          setSession((prev) => ({
-            ...(prev ?? nextSession),
-            agent: nextSession.agent,
-          }));
-          // put on separate field for UI
-          useAuthStore.setState({ welcomeToastAgent: nextSession.agent });
-        }
         router.replace('/(tabs)/upload' as any);
         return;
       }
@@ -193,9 +184,6 @@ export default function OtpVerificationScreen() {
       };
 
       completeOtpVerification(nextSession);
-      if (nextSession.agent) {
-        useAuthStore.setState({ welcomeToastAgent: nextSession.agent });
-      }
 
       // If broker exists, go straight to upload. Otherwise show broker question.
       if (brokerExist === true) {

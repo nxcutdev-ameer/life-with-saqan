@@ -108,10 +108,15 @@ export const useAuthStore = create<AuthState>()(
 
       completeOtpVerification: (session) => {
         const pending = get().pendingPhoneNumber;
+        const nextSession = session ?? get().session;
+
         set({
           isAuthenticated: true,
           phoneNumber: pending ?? get().phoneNumber,
-          session: session ?? get().session,
+          session: nextSession,
+          // One-time welcome toast after a successful auth completion.
+          // Not persisted, so it won't re-show on app restart.
+          welcomeToastAgent: nextSession?.agent ?? null,
           pendingPhoneNumber: null,
           pendingFlow: null,
           pendingAuthMethod: null,

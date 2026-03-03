@@ -2,7 +2,8 @@ import { Platform, StyleSheet } from 'react-native';
 import type { ThemeColors } from '@/constants/theme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 
-export const createUploadStyles = (colors: ThemeColors) => StyleSheet.create({
+export const createUploadStyles = (colors: ThemeColors, opts?: { isDarkMode?: boolean }) =>
+  StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -490,10 +491,14 @@ export const createUploadStyles = (colors: ThemeColors) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    // Light mode: near-white wash. Dark mode: near-black wash.
+    backgroundColor: opts?.isDarkMode ? 'rgba(0,0,0,0.78)' : 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 9999,
+  },
+  publishingProgressTrack: {
+    backgroundColor: opts?.isDarkMode ? 'rgba(255,255,255,0.18)' : '#E0E0E0',
   },
   publishingOverlayText: {
     marginTop: scaleHeight(12),

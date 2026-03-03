@@ -33,7 +33,8 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [formattedPhone, setFormattedPhone] = useState('');
   const [isValidPhone, setIsValidPhone] = useState(false);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [sendingMethod, setSendingMethod] = useState<'whatsapp' | 'sms' | null>(null);
+  const isSendingOtp = sendingMethod !== null;
 
   const normalized = useMemo(() => normalizePhone(formattedPhone), [formattedPhone]);
 
@@ -45,9 +46,10 @@ export default function LoginScreen() {
     if (!isValidPhone || isSendingOtp) return;
 
     Keyboard.dismiss();
-    setIsSendingOtp(true);
+    setSendingMethod(method);
 
     try {
+      // IMPORTANT: `method` must be passed so SMS doesn't fallback to WhatsApp.
       const res = await authByPhone(normalized, method);
       if (!res?.success) {
         throw new Error(res?.message || 'Failed to send OTP');
@@ -61,7 +63,7 @@ export default function LoginScreen() {
     } catch (e: any) {
       Alert.alert('Login failed', e?.message ?? 'Something went wrong. Please try again.');
     } finally {
-      setIsSendingOtp(false);
+      setSendingMethod(null);
     }
   };
 
@@ -109,13 +111,13 @@ export default function LoginScreen() {
                     disabled={!isValidPhone || isSendingOtp}
                   >
                     <View style={styles.primaryButtonContent}>
-                      {isSendingOtp ? (
+                      {sendingMethod === 'whatsapp' ? (
                         <ActivityIndicator size="small" color={Colors.textLight} />
                       ) : (
                         <FontAwesome name="whatsapp" size={scaleFont(18)} color={Colors.textLight} />
                       )}
                       <Text style={styles.primaryButtonText}>
-                        {isSendingOtp ? 'Sending OTP…' : 'Login with WhatsApp'}
+                        {sendingMethod === 'whatsapp' ? 'Sending OTP…' : 'Login with WhatsApp'}
                       </Text>
                     </View>
                   </Pressable>
@@ -131,7 +133,14 @@ export default function LoginScreen() {
                   onPress={() => onLogin('sms')}
                   disabled={!isValidPhone || isSendingOtp}
                 >
-                  <Text style={styles.secondaryButtonText}>Login with SMS</Text>
+                  {sendingMethod === 'sms' ? (
+                    <View style={styles.secondaryButtonContent}>
+                      <ActivityIndicator size="small" color={Colors.text} />
+                      <Text style={styles.secondaryButtonText}>Sending OTP…</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.secondaryButtonText}>Login with SMS</Text>
+                  )}
                 </Pressable>
               </View>
             </SafeAreaView>
@@ -226,6 +235,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.text,
     alignItems: 'center',
+  },
+  secondaryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scaleWidth(10),
   },
   secondaryButtonText: {
     color: Colors.text,

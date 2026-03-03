@@ -4,7 +4,7 @@ import { FastForward } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { scaleFont, scaleWidth } from '@/utils/responsive';
+import { scaleFont } from '@/utils/responsive';
 
 interface Room {
   name: string;
@@ -14,6 +14,13 @@ interface Room {
 interface VideoPlayerOverlayProps {
   onSeek: (timestamp: number) => void;
   rooms?: Room[];
+
+  /**
+   * Optional: hold-to-speed callbacks. Intended for long-press behaviour on the trigger icon.
+   * When provided, a long-press should start 2x playback and releasing should restore 1x.
+   */
+  onSpeedHoldStart?: () => void;
+  onSpeedHoldEnd?: () => void;
 }
 
 const defaultRooms: Room[] = [
@@ -26,7 +33,12 @@ const defaultRooms: Room[] = [
   { name: 'Terrace', timestamp: 70 },
 ];
 
-export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: VideoPlayerOverlayProps) {
+export default function VideoPlayerOverlay({
+  onSeek,
+  rooms = defaultRooms,
+  onSpeedHoldStart,
+  onSpeedHoldEnd,
+}: VideoPlayerOverlayProps) {
   const [visible, setVisible] = useState(false);
 
   const ffScale = useRef(new Animated.Value(1)).current;
@@ -53,72 +65,102 @@ export default function VideoPlayerOverlay({ onSeek, rooms = defaultRooms }: Vid
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const suppressNextPressRef = useRef(false);
+  const speedHoldingRef = useRef(false);
+
+  const openModalWithAnimation = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Fast-forward micro animation
+    ffScale.stopAnimation();
+    ffTranslateX.stopAnimation();
+    ffOpacity.stopAnimation();
+    ffScale.setValue(1);
+    ffTranslateX.setValue(0);
+    ffOpacity.setValue(1);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(ffTranslateX, {
+          toValue: 6,
+          duration: 110,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ffTranslateX, {
+          toValue: 0,
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(ffScale, {
+          toValue: 1.08,
+          duration: 110,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(ffScale, {
+          toValue: 1,
+          stiffness: 260,
+          damping: 16,
+          mass: 0.9,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(ffOpacity, {
+          toValue: 0.9,
+          duration: 110,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ffOpacity, {
+          toValue: 1,
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    setVisible(true);
+  };
+
+  const startSpeedHold = () => {
+    if (!onSpeedHoldStart) return;
+    suppressNextPressRef.current = true;
+    speedHoldingRef.current = true;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onSpeedHoldStart();
+  };
+
+  const endSpeedHold = () => {
+    if (!speedHoldingRef.current) return;
+    speedHoldingRef.current = false;
+    onSpeedHoldEnd?.();
+  };
+
   return (
     <>
       <Pressable
         style={[styles.triggerButton, styles.iconShadow]}
+        delayLongPress={250}
+        onLongPress={startSpeedHold}
+        onPressOut={endSpeedHold}
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-          // Fast-forward micro animation
-          ffScale.stopAnimation();
-          ffTranslateX.stopAnimation();
-          ffOpacity.stopAnimation();
-          ffScale.setValue(1);
-          ffTranslateX.setValue(0);
-          ffOpacity.setValue(1);
-
-          Animated.parallel([
-            Animated.sequence([
-              Animated.timing(ffTranslateX, {
-                toValue: 6,
-                duration: 110,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-              Animated.timing(ffTranslateX, {
-                toValue: 0,
-                duration: 180,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-            ]),
-            Animated.sequence([
-              Animated.timing(ffScale, {
-                toValue: 1.08,
-                duration: 110,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-              Animated.spring(ffScale, {
-                toValue: 1,
-                stiffness: 260,
-                damping: 16,
-                mass: 0.9,
-                useNativeDriver: true,
-              }),
-            ]),
-            Animated.sequence([
-              Animated.timing(ffOpacity, {
-                toValue: 0.9,
-                duration: 110,
-                easing: Easing.out(Easing.quad),
-                useNativeDriver: true,
-              }),
-              Animated.timing(ffOpacity, {
-                toValue: 1,
-                duration: 180,
-                easing: Easing.out(Easing.quad),
-                useNativeDriver: true,
-              }),
-            ]),
-          ]).start();
-
-          setVisible(true);
+          // RN Pressable fires onPress even after onLongPress; suppress the modal in that case.
+          if (suppressNextPressRef.current) {
+            suppressNextPressRef.current = false;
+            return;
+          }
+          openModalWithAnimation();
         }}
       >
         <Animated.View style={ffAnimatedStyle}>
-          <FastForward size={32} color={Colors.WHITE} fill={Colors.WHITE} />
+          <FastForward size={28} color={Colors.WHITE} fill={Colors.WHITE} />
         </Animated.View>
       </Pressable>
 

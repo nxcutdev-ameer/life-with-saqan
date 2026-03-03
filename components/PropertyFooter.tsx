@@ -26,6 +26,11 @@ interface PropertyFooterProps {
   onOpenComments?: (id: string) => void;
   onShare?: (id: string) => void;
   onSeek: (timestamp: number) => void;
+
+  /** Optional: enable hold-to-speed behaviour on the VideoPlayerOverlay trigger. */
+  onSpeedHoldStart?: () => void;
+  onSpeedHoldEnd?: () => void;
+
   onSubtitleSelect?: (subtitleUrl: string, languageCode: string) => void;
   selectedSubtitleCode?: string;
   /** Navigate to property details (only triggered from the footer tap area). */
@@ -68,6 +73,8 @@ export default function PropertyFooter({
   onOpenComments,
   onShare,
   onSeek,
+  onSpeedHoldStart,
+  onSpeedHoldEnd,
   onSubtitleSelect,
   selectedSubtitleCode,
   onNavigateToProperty,
@@ -161,16 +168,11 @@ export default function PropertyFooter({
           style={[styles.floatingActionsBar, { bottom: scaleHeight(140) + bottomTabBarHeight }]}
         >
         <View style={styles.agentSection}>
-       <TranslationOverlay
-            agentName={(item.agentName || item.agent?.name || 'Agent').trim()}
-            languages={translations}
-            selectedCode={selectedSubtitleCode}
-            onLanguageSelect={(lang) => {
-              setSelectedLanguage(lang);
-              if (lang.subtitleUrl) {
-                onSubtitleSelect?.(lang.subtitleUrl, lang.code);
-              }
-            }}
+          <VideoPlayerOverlay
+            onSeek={onSeek}
+            rooms={item.rooms}
+            onSpeedHoldStart={onSpeedHoldStart}
+            onSpeedHoldEnd={onSpeedHoldEnd}
           />
           <View style={styles.footerActionButton}>
             <View style={styles.agentAvatarContainer}>
@@ -223,8 +225,17 @@ export default function PropertyFooter({
           onOpenComments={onOpenComments}
           onShare={onShare}
         />
-
-        <VideoPlayerOverlay onSeek={onSeek} rooms={item.rooms} />
+               <TranslationOverlay
+            agentName={(item.agentName || item.agent?.name || 'Agent').trim()}
+            languages={translations}
+            selectedCode={selectedSubtitleCode}
+            onLanguageSelect={(lang) => {
+              setSelectedLanguage(lang);
+              if (lang.subtitleUrl) {
+                onSubtitleSelect?.(lang.subtitleUrl, lang.code);
+              }
+            }}
+          />
         </View>
       ) : null}
 

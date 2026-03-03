@@ -153,7 +153,7 @@ export const feedStyles = StyleSheet.create({
     height: AVATAR_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: scaleWidth(10),
+   // marginRight: scaleWidth(2),
   },
   agentAvatar: {
     width: AVATAR_SIZE,

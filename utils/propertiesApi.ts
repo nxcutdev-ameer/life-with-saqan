@@ -377,15 +377,51 @@ export type UploadMediaPayload = {
 export async function uploadMedia(params: {
   propertiesToken: string;
   uri: string;
+  /** Optional filename override (useful on iOS where the URI may not include an extension). */
+  fileName?: string;
+  /** Optional MIME type override (useful when the asset is HEIC/JPEG/etc). */
+  mimeType?: string;
   featured?: '0' | '1';
   timeoutMs?: number;
 }): Promise<ApiResponse<UploadMediaPayload>> {
   const t0 = Date.now();
 
   const form = new FormData();
-  const fileName = params.uri.split('/').pop() || 'image.jpg';
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  const fallbackNameFromUri = params.uri.split('/').pop() || 'image';
+  const initialName = (params.fileName || fallbackNameFromUri || 'image').trim();
+
+  const ext = initialName.includes('.') ? initialName.split('.').pop()?.toLowerCase() : undefined;
+  const inferredMime =
+    ext === 'png'
+      ? 'image/png'
+      : ext === 'webp'
+        ? 'image/webp'
+        : ext === 'heic' || ext === 'heif'
+          ? 'image/heic'
+          : 'image/jpeg';
+
+  const mime = (params.mimeType && params.mimeType.startsWith('image/') ? params.mimeType : inferredMime) as string;
+
+  const mimeToExt = (m: string) => {
+    if (m.includes('png')) return 'png';
+    if (m.includes('webp')) return 'webp';
+    if (m.includes('heic') || m.includes('heif')) return 'heic';
+    if (m.includes('jpeg') || m.includes('jpg')) return 'jpg';
+    return undefined;
+  };
+
+  const desiredExt = mimeToExt(mime);
+  let fileName = initialName || 'image';
+  if (desiredExt) {
+    const base = fileName.replace(/\.[^/.]+$/, '');
+    const currentExt = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : undefined;
+
+    // Ensure the filename extension matches the MIME type (iOS may give HEIC name for a JPEG asset, etc).
+    if (!currentExt || currentExt !== desiredExt) {
+      fileName = `${base}.${desiredExt}`;
+    }
+  }
 
   form.append('file', {
     uri: params.uri,

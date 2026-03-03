@@ -151,7 +151,13 @@ export function mapPublicVideoToProperty(v: any): Property {
     transactionType: meta?.type ?? backendProperty?.type ?? undefined,
     // Preserve backend property type (sale/rent/offplan) for routing.
     type: backendProperty?.type ?? undefined,
-    propertyReference: v?.property_reference ?? backendProperty?.reference_id ?? backendProperty?.referenceId ?? null,
+    // Public videos API uses `property_reference` (snake_case). Some older payloads may expose `propertyReference`.
+    propertyReference:
+      v?.property_reference ??
+      v?.propertyReference ??
+      backendProperty?.reference_id ??
+      backendProperty?.referenceId ??
+      null,
     title,
     description: backendProperty?.description || v.description || '',
     rooms,

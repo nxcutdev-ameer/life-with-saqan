@@ -345,6 +345,8 @@ function ReelItemActive({ item, index, isViewable, isLiked, isSaved, scrollY, on
           isLiked={isLiked}
           isSaved={isSaved}
           onSeek={handleSeek}
+          onSpeedHoldStart={startSpeed}
+          onSpeedHoldEnd={stopSpeed}
          // onNavigateToProperty={() => onNavigateToProperty(item.id)}
         />
       </View>

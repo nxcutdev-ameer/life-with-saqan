@@ -50,6 +50,7 @@ import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useTheme } from '@/utils/useTheme';
 import { PropertyType, TransactionType } from '@/types';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useUiLockStore } from '@/stores/uiLockStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -81,8 +82,8 @@ type HighlightStep = string;
 const DEFAULT_HIGHLIGHT_OPTIONS = ['Kitchen', 'Living room', 'Bedroom', 'Bathroom'] as const;
 
 export default function UploadScreen() {
-  const { colors } = useTheme();
-  const styles = useMemo(() => createUploadStyles(colors), [colors]);
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createUploadStyles(colors, { isDarkMode }), [colors, isDarkMode]);
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const { openTextOverlay } = useLocalSearchParams<{ openTextOverlay?: string }>();
@@ -206,23 +207,61 @@ export default function UploadScreen() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  /**
+   * Upload progress is stored as a fraction in [0..1].
+   *
+   * We normalize/clamp because some callers may accidentally report 0..100.
+   * We also enforce monotonic updates so progress never moves backwards.
+   */
+  const normalizeUploadProgress = React.useCallback((value: number) => {
+    if (!Number.isFinite(value)) return 0;
+
+    // Accept either [0..1] fractions or [0..100] percentages.
+    const asFraction = value > 1 ? (value <= 100 ? value / 100 : 1) : value;
+
+    if (asFraction <= 0) return 0;
+    if (asFraction >= 1) return 1;
+    return asFraction;
+  }, []);
+
+  const updateUploadProgress = React.useCallback(
+    (value: number) => {
+      const next = normalizeUploadProgress(value);
+      setUploadProgress((prev) => (next > prev ? next : prev));
+    },
+    [normalizeUploadProgress]
+  );
+
+  const resetUploadProgress = React.useCallback(
+    (initial: number = 0) => {
+      setUploadProgress(normalizeUploadProgress(initial));
+    },
+    [normalizeUploadProgress]
+  );
+
+  // Keep a ref with the latest progress so the simulated timer doesn't depend on stale closures.
+  const uploadProgressRef = React.useRef(0);
+  useEffect(() => {
+    uploadProgressRef.current = uploadProgress;
+  }, [uploadProgress]);
+
   // Simulated progress: XHR upload.onprogress doesn't fire reliably in React Native
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-    if (isPublishing && uploadProgress < 0.95) {
-      interval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 0.95) return prev;
-          // Gradually increase, slowing down as we approach 95%
-          const increment = (0.95 - prev) * 0.15;
-          return Math.min(prev + increment, 0.95);
-        });
-      }, 800);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isPublishing, uploadProgress]);
+    if (!isPublishing) return;
+
+    const interval = setInterval(() => {
+      const prev = uploadProgressRef.current;
+      if (prev >= 0.95) return;
+
+      // Gradually increase, slowing down as we approach 95%
+      const increment = (0.95 - prev) * 0.15;
+      const next = Math.min(prev + increment, 0.95);
+
+      updateUploadProgress(next);
+    }, 800);
+
+    return () => clearInterval(interval);
+  }, [isPublishing, updateUploadProgress]);
   const [overlayText, setOverlayText] = useState('');
   const [overlayTextSize, setOverlayTextSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [overlayTextColor, setOverlayTextColor] = useState<'white' | 'black' | 'yellow'>('white');
@@ -540,8 +579,16 @@ export default function UploadScreen() {
   const [amenitiesSearch, setAmenitiesSearch] = useState('');
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<number[]>([]);
   const amenitiesSearchInputRef = useRef<TextInput>(null);
+  const offPlanSearchInputRef = useRef<TextInput>(null);
   type SelectedImage = {
+    /** Original picker URI (used as stable key + for UI preview). */
     uri: string;
+    /** URI that will actually be uploaded (may be resized/converted on iOS). */
+    uploadUri?: string | null;
+    /** Optional metadata from the picker. Helps on iOS where the URI may not include an extension. */
+    fileName?: string | null;
+    /** Optional metadata from the picker. */
+    mimeType?: string | null;
     uploadId?: number | null; // returned from POST /media
     attachId?: number | null; // returned from POST /properties/{ref}/media
     uploading?: boolean;
@@ -970,6 +1017,8 @@ export default function UploadScreen() {
   };
 
   const resetUploadFlow = React.useCallback(() => {
+    resetUploadProgress(0);
+
     // Core flow
     setStep('select');
     setDetailsFlow('status');
@@ -1105,7 +1154,7 @@ export default function UploadScreen() {
       // Highlights are optional
 
       setIsPublishing(true);
-      setUploadProgress(0.01);
+      resetUploadProgress(0.01);
 
       try {
         const saqanToken = sessionTokens?.saqancomToken;
@@ -1124,7 +1173,7 @@ export default function UploadScreen() {
           agentId: 1,
           onProgress: (progress) => {
             console.log('Generic upload progress:', progress);
-            setUploadProgress(progress);
+            updateUploadProgress(progress);
           },
         });
 
@@ -1134,6 +1183,7 @@ export default function UploadScreen() {
           Boolean((res as any)?.data?.video_id);
 
         if (isSuccess) {
+          updateUploadProgress(1);
           setShowPublishToast(true);
           return;
         }
@@ -1182,7 +1232,7 @@ export default function UploadScreen() {
       }
 
       setIsPublishing(true);
-      setUploadProgress(0.01);
+      resetUploadProgress(0.01);
 
       // If user never tapped “Set <room>”, fall back to whatever is stored in highlightsByRoom.
       const timestampsFromMap = Object.entries(highlightsByRoom)
@@ -1215,7 +1265,7 @@ export default function UploadScreen() {
           agentId: 1,
           onProgress: (progress) => {
             console.log('Off-plan upload progress:', progress);
-            setUploadProgress(progress);
+            updateUploadProgress(progress);
           },
         });
 
@@ -1225,6 +1275,7 @@ export default function UploadScreen() {
           Boolean((res as any)?.data?.video_id);
 
         if (isSuccess) {
+          updateUploadProgress(1);
           setShowPublishToast(true);
           return;
         }
@@ -1303,7 +1354,7 @@ export default function UploadScreen() {
       }
 
       setIsPublishing(true);
-      setUploadProgress(0.01);
+      resetUploadProgress(0.01);
       showToast('Uploading...');
 
       const roomTimestamps = highlightTimestamps.map((t) => ({
@@ -1327,7 +1378,7 @@ export default function UploadScreen() {
         agentId: 1,
         onProgress: (progress) => {
           console.log('Ready upload progress:', progress);
-          setUploadProgress(progress);
+          updateUploadProgress(progress);
         },
       });
       const isSuccess =
@@ -1342,6 +1393,8 @@ export default function UploadScreen() {
         });
         return;
       }
+
+      updateUploadProgress(1);
 
       const currentMonth = new Date().toISOString().slice(0, 7);
       const current = parseInt(await AsyncStorage.getItem(`@posts_used_${currentMonth}`) || '0');
@@ -1400,6 +1453,8 @@ export default function UploadScreen() {
 
   const uploadMediaAndAttachToProperty = async (params: {
     uri: string;
+    fileName?: string | null;
+    mimeType?: string | null;
     referenceId: string;
     propertiesToken: string;
   }): Promise<{ uploadId: number; attachId: number }> => {
@@ -1409,6 +1464,9 @@ export default function UploadScreen() {
     const uploadRes = await uploadMedia({
       propertiesToken: params.propertiesToken,
       uri: params.uri,
+      // Pass iOS picker metadata through so backend receives correct file type.
+      fileName: params.fileName ?? undefined,
+      mimeType: params.mimeType ?? undefined,
       featured: '1',
     });
     console.log('[media] upload response', uploadRes?.success, `t=${Date.now() - t0}ms`, uploadRes);
@@ -1452,12 +1510,95 @@ export default function UploadScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'] as any,
       allowsMultipleSelection: true,
-      quality: 1,
+      // iOS often returns huge HEIC originals; asking for a compatible representation and applying
+      // light compression makes uploads dramatically faster while keeping good quality.
+      ...(Platform.OS === 'ios'
+        ? {
+            preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+            quality: 0.75,
+          }
+        : { quality: 1 }),
     });
 
     if (result.canceled) return;
 
-    const picked = result.assets.map((a) => a.uri);
+    // For iOS, the picker often returns very large PNG/HEIC originals.
+    // `quality` does NOT reduce PNG size, so we optionally convert large/PNG assets to resized JPEGs
+    // before uploading.
+    const pickedAssets = await Promise.all(
+      result.assets.map(async (a) => {
+        const base = {
+          uri: a.uri,
+          fileName: a.fileName ?? null,
+          mimeType: a.mimeType ?? null,
+          fileSize: typeof a.fileSize === 'number' ? a.fileSize : null,
+        };
+
+        const isIOS = Platform.OS === 'ios';
+        if (!isIOS) return { ...base, uploadUri: a.uri, uploadFileName: base.fileName, uploadMimeType: base.mimeType };
+
+        const isPng = (base.mimeType || '').toLowerCase() === 'image/png' || (base.fileName || '').toLowerCase().endsWith('.png');
+        const isHeic = /image\/(heic|heif)/i.test(base.mimeType || '') || /\.(heic|heif)$/i.test(base.fileName || '');
+
+        // Heuristic: convert PNG always (huge) and convert any asset bigger than 2.5MB.
+        const shouldOptimize = isPng || isHeic || (typeof base.fileSize === 'number' && base.fileSize > 2.5 * 1024 * 1024);
+
+        if (!shouldOptimize) {
+          return {
+            ...base,
+            uploadUri: a.uri,
+            uploadFileName: base.fileName,
+            uploadMimeType: base.mimeType,
+          };
+        }
+
+        const t0 = Date.now();
+        try {
+          // Resize to max width 2048 (keeps aspect ratio); for property photos this is usually plenty.
+          const result = await manipulateAsync(
+            a.uri,
+            [{ resize: { width: 2048 } }],
+            { format: SaveFormat.JPEG, compress: 0.75 }
+          );
+
+          if (__DEV__) {
+            console.log('[media] optimized image', {
+              original: { uri: a.uri, fileName: base.fileName, mimeType: base.mimeType, fileSize: base.fileSize },
+              optimized: { uri: result.uri, width: result.width, height: result.height },
+              ms: Date.now() - t0,
+            });
+          }
+
+          return {
+            ...base,
+            uploadUri: result.uri,
+            uploadFileName: (base.fileName ? base.fileName.replace(/\.[^/.]+$/, '') : 'image') + '.jpg',
+            uploadMimeType: 'image/jpeg',
+          };
+        } catch (err) {
+          // Fallback to original if manipulation fails.
+          if (__DEV__) console.warn('[media] optimize failed, uploading original', { uri: a.uri, err });
+          return {
+            ...base,
+            uploadUri: a.uri,
+            uploadFileName: base.fileName,
+            uploadMimeType: base.mimeType,
+          };
+        }
+      })
+    );
+
+    if (__DEV__) {
+      const totalMb = pickedAssets.reduce((sum, a) => sum + (a.fileSize ?? 0), 0) / (1024 * 1024);
+      console.log('[media] picked images', {
+        count: pickedAssets.length,
+        totalMb: Number(totalMb.toFixed(2)),
+        platform: Platform.OS,
+        sample: pickedAssets.slice(0, 3).map((a) => ({ uri: a.uri, fileName: a.fileName, mimeType: a.mimeType, fileSize: a.fileSize })),
+      });
+    }
+
+    const picked = pickedAssets.map((a) => a.uri);
 
     // IMPORTANT: compute new URIs outside setState.
     // React may defer running the state updater function, so mutating `newUris` inside it can
@@ -1467,6 +1608,8 @@ export default function UploadScreen() {
 
     if (!newUrisOriginal.length) return;
 
+    const assetByUri = new Map(pickedAssets.map((a) => [a.uri, a] as const));
+
     const newUris = newUrisOriginal;
 
     setSelectedImages((prev) => {
@@ -1475,7 +1618,16 @@ export default function UploadScreen() {
       for (const uri of newUris) {
         if (existing.has(uri)) continue;
         existing.add(uri);
-        merged.push({ uri, uploadId: null, attachId: null, uploading: true });
+        const meta = assetByUri.get(uri);
+        merged.push({
+          uri,
+          uploadUri: meta?.uploadUri ?? uri,
+          fileName: meta?.uploadFileName ?? meta?.fileName ?? null,
+          mimeType: meta?.uploadMimeType ?? meta?.mimeType ?? null,
+          uploadId: null,
+          attachId: null,
+          uploading: true,
+        });
       }
       return merged;
     });
@@ -1506,8 +1658,23 @@ export default function UploadScreen() {
         if (!uri) break;
 
         try {
+          const meta = assetByUri.get(uri);
+          const uploadUri = meta?.uploadUri ?? uri;
+
+          if (__DEV__) {
+            console.log('[media] queue item', {
+              originalUri: uri,
+              uploadUri,
+              fileName: meta?.uploadFileName ?? meta?.fileName ?? null,
+              mimeType: meta?.uploadMimeType ?? meta?.mimeType ?? null,
+              fileSize: meta?.fileSize ?? null,
+            });
+          }
+
           const ids = await uploadMediaAndAttachToProperty({
-            uri,
+            uri: uploadUri,
+            fileName: meta?.uploadFileName ?? meta?.fileName ?? null,
+            mimeType: meta?.uploadMimeType ?? meta?.mimeType ?? null,
             referenceId,
             propertiesToken,
           });
@@ -2453,25 +2620,27 @@ export default function UploadScreen() {
           {uploadProgress > 0 ? (
             <View style={{ width: '60%', alignItems: 'center', marginTop: scaleHeight(12) }}>
               <View
-                style={{
-                  width: '100%',
-                  height: scaleHeight(6),
-                  backgroundColor: '#E0E0E0',
-                  borderRadius: scaleHeight(3),
-                  marginBottom: scaleHeight(12),
-                  overflow: 'hidden',
-                }}
+                style={[
+                  {
+                    width: '100%',
+                    height: scaleHeight(6),
+                    borderRadius: scaleHeight(3),
+                    marginBottom: scaleHeight(12),
+                    overflow: 'hidden',
+                  },
+                  styles.publishingProgressTrack,
+                ]}
               >
                 <View
                   style={{
-                    width: `${uploadProgress * 100}%`,
+                    width: `${Math.min(uploadProgress, 1) * 100}%`,
                     height: '100%',
                     backgroundColor: colors.primary,
                   }}
                 />
               </View>
               <Text style={styles.publishingOverlayText}>
-                {`Uploading ${Math.round(uploadProgress * 100)}%`}
+                {`Uploading ${Math.round(Math.min(uploadProgress, 1) * 100)}%`}
               </Text>
             </View>
           ) : (
@@ -3460,101 +3629,110 @@ export default function UploadScreen() {
           animationType="fade"
           onRequestClose={() => setAmenitiesModalVisible(false)}
         >
-          <View style={{ flex: 1 }}>
-            <TouchableWithoutFeedback onPress={() => setAmenitiesModalVisible(false)}>
-              <View style={[styles.locationModal, { paddingBottom: keyboardHeight }]}>
-                {/* Card container: swallow touches so they don't hit the backdrop */}
-                <Pressable style={[styles.modal, { height: windowHeight * 0.55 }]} onPress={() => {}}>
-                  <View style={styles.modalHeader}>
-                    <View style={styles.modalHeaderSpacer} />
-                    <Text style={styles.modalTitle}>Select Amenities</Text>
-                    <Pressable
-                      style={styles.modalHeaderCloseButton}
-                      onPress={() => setAmenitiesModalVisible(false)}
-                    >
-                      <X size={scaleWidth(18)} color={colors.textSecondary} />
-                    </Pressable>
-                  </View>
+          <View style={styles.modalOverlay} pointerEvents="box-none">
+            {/* Backdrop (sibling of the sheet so it can't steal taps inside the sheet) */}
+            <Pressable
+              style={StyleSheet.absoluteFillObject}
+              onPress={() => {
+                Keyboard.dismiss();
+                setAmenitiesModalVisible(false);
+              }}
+            />
 
-                  <TextInput
-                    ref={amenitiesSearchInputRef}
-                    style={[styles.input, styles.searchInput]}
-                    placeholder="Search amenities..."
-                    placeholderTextColor={colors.textSecondary}
-                    value={amenitiesSearch}
-                    onChangeText={setAmenitiesSearch}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                    clearButtonMode="while-editing"
-                    autoFocus
-                  />
+            <View style={[styles.locationModal, { paddingBottom: keyboardHeight }]} pointerEvents="box-none">
+              {/* Sheet */}
+              <View style={[styles.modal, { height: windowHeight * 0.55 }]} pointerEvents="auto">
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderSpacer} />
+                  <Text style={styles.modalTitle}>Select Amenities</Text>
+                  <Pressable
+                    style={styles.modalHeaderCloseButton}
+                    onPress={() => {
+                      // Close button should dismiss keyboard
+                      Keyboard.dismiss();
+                      setAmenitiesModalVisible(false);
+                    }}
+                  >
+                    <X size={scaleWidth(18)} color={colors.textSecondary} />
+                  </Pressable>
+                </View>
 
-                  {isAmenitiesError && (
-                    <Pressable
-                      style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
-                      onPress={() => refetchAmenities()}
-                    >
-                      <Text style={styles.modalButtonText}>Retry loading amenities</Text>
-                    </Pressable>
+                <TextInput
+                  ref={amenitiesSearchInputRef}
+                  style={[styles.input, styles.searchInput]}
+                  placeholder="Search amenities..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={amenitiesSearch}
+                  onChangeText={setAmenitiesSearch}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  clearButtonMode="while-editing"
+                  autoFocus
+                />
+
+                {isAmenitiesError && (
+                  <Pressable
+                    style={[styles.modalButton, { marginBottom: scaleHeight(12) }]}
+                    onPress={() => refetchAmenities()}
+                  >
+                    <Text style={styles.modalButtonText}>Retry loading amenities</Text>
+                  </Pressable>
+                )}
+
+                <View style={{ flex: 1 }}>
+                  {isAmenitiesLoading ? (
+                    <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
+                      <SavingSpinner accessibilityLabel="Loading amenities" />
+                    </View>
+                  ) : (
+                    <FlatList<Amenity>
+                      keyboardShouldPersistTaps="always"
+                      keyboardDismissMode="none"
+                      data={filteredAmenities}
+                      keyExtractor={(item) => String(item.id)}
+                      ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
+                      contentContainerStyle={{ paddingBottom: scaleHeight(70) }}
+                      renderItem={({ item }) => {
+                        const selected = selectedAmenityIds.includes(item.id);
+                        return (
+                          <TouchableWithoutFeedback
+                            // Keep keyboard state stable while multi-selecting.
+                            onPress={() => toggleAmenity(item.id)}
+                          >
+                            <View style={styles.amenityItem}>
+                              <View style={styles.amenityLeft}>
+                                <Text style={styles.pickerItemText}>{item.name}</Text>
+                              </View>
+                              <View style={[styles.amenityCheck, selected && styles.amenityCheckSelected]}>
+                                {selected ? <Check size={scaleWidth(14)} color="#fff" /> : null}
+                              </View>
+                            </View>
+                          </TouchableWithoutFeedback>
+                        );
+                      }}
+                      ListEmptyComponent={
+                        <Text style={styles.emptyPickerText}>
+                          {amenitiesSearch.trim().length ? 'No results' : 'No amenities'}
+                        </Text>
+                      }
+                    />
                   )}
 
-                  <View style={{ flex: 1 }}>
-                    {isAmenitiesLoading ? (
-                      <View style={{ paddingVertical: scaleHeight(16), alignItems: 'center' }}>
-                        <SavingSpinner accessibilityLabel="Loading amenities" />
-                      </View>
-                    ) : (
-                      <FlatList<Amenity>
-                        keyboardShouldPersistTaps="always"
-                        keyboardDismissMode="none"
-                        data={filteredAmenities}
-                        keyExtractor={(item) => String(item.id)}
-                        ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
-                        contentContainerStyle={{ paddingBottom: scaleHeight(70) }}
-                        renderItem={({ item }) => {
-                          const selected = selectedAmenityIds.includes(item.id);
-                          return (
-                            <TouchableWithoutFeedback
-                              onPressIn={() => amenitiesSearchInputRef.current?.focus()}
-                              onPress={() => {
-                                toggleAmenity(item.id);
-                              }}
-                            >
-                              <View style={styles.amenityItem}>
-                                <View style={styles.amenityLeft}>
-                                  <Text style={styles.pickerItemText}>{item.name}</Text>
-                                </View>
-                                <View style={[styles.amenityCheck, selected && styles.amenityCheckSelected]}>
-                                  {selected ? <Check size={scaleWidth(14)} color="#fff" /> : null}
-                                </View>
-                              </View>
-                            </TouchableWithoutFeedback>
-                          );
-                        }}
-                        ListEmptyComponent={
-                          <Text style={styles.emptyPickerText}>
-                            {amenitiesSearch.trim().length ? 'No results' : 'No amenities'}
-                          </Text>
-                        }
-                      />
-                    )}
-
-                    <View style={styles.modalFooter}>
-                      <Pressable
-                        style={styles.modalDoneButton}
-                        onPress={() => {
-                          Keyboard.dismiss();
-                          setAmenitiesModalVisible(false);
-                          showToast('Amenities updated');
-                        }}
-                      >
-                        <Text style={styles.modalDoneButtonText}>Done</Text>
-                      </Pressable>
-                    </View>
+                  <View style={styles.modalFooter}>
+                    <Pressable
+                      style={styles.modalDoneButton}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setAmenitiesModalVisible(false);
+                        showToast('Amenities updated');
+                      }}
+                    >
+                      <Text style={styles.modalDoneButtonText}>Done</Text>
+                    </Pressable>
                   </View>
-                </Pressable>
+                </View>
               </View>
-            </TouchableWithoutFeedback>
+            </View>
           </View>
         </Modal>
 
@@ -3580,15 +3758,18 @@ export default function UploadScreen() {
           animationType="fade"
           onRequestClose={() => setOffPlanPickerOpen(false)}
         >
-          <View style={{ flex: 1 }}>
+          <View style={styles.modalOverlay} pointerEvents="box-none">
+            {/* Backdrop sibling so it can't steal taps inside the sheet */}
             <Pressable
-              style={[styles.locationModal, { paddingBottom: keyboardHeight }]}
+              style={StyleSheet.absoluteFillObject}
               onPress={() => {
                 Keyboard.dismiss();
                 setOffPlanPickerOpen(false);
               }}
-            >
-              <View style={[styles.modal, { height: windowHeight * 0.55 }]}>
+            />
+
+            <View style={[styles.locationModal, { paddingBottom: keyboardHeight }]} pointerEvents="box-none">
+              <View style={[styles.modal, { height: windowHeight * 0.55 }]} pointerEvents="auto">
 
                 <View style={styles.modalHeader}>
                   <View style={styles.modalHeaderSpacer} />
@@ -3599,6 +3780,7 @@ export default function UploadScreen() {
                 </View>
 
                 <TextInput
+                  ref={offPlanSearchInputRef}
                   style={[styles.input, styles.searchInput]}
                   placeholder="Search project..."
                   placeholderTextColor={colors.textSecondary}
@@ -3637,40 +3819,44 @@ export default function UploadScreen() {
                   renderItem={({ item }) => {
                     const thumbUrl = item.media?.[0]?.upload?.url;
                     return (
-                      <Pressable
-                        style={styles.offPlanItem}
+                      <TouchableWithoutFeedback
                         onPress={() => {
                           const referenceId = item.reference_id ?? '';
+
+                          // Commit selection
                           setPropertyDetails({
                             ...propertyDetails,
                             offPlanProjectId: item.id,
                             offPlanProjectReferenceId: referenceId,
                             offPlanProjectTitle: item.title,
                           });
-
-                          // OFF_PLAN: uses the selected project's reference_id.
                           setDraftPropertyReferenceId(referenceId || null);
 
-                          setOffPlanSearch('');
-                          Keyboard.dismiss();
-                          setOffPlanPickerOpen(false);
+                          // Defer closing/dismissing until after this tap is fully processed on iOS.
+                          requestAnimationFrame(() => {
+                            Keyboard.dismiss();
+                            setOffPlanSearch('');
+                            setOffPlanPickerOpen(false);
+                          });
                         }}
                       >
-                        <View style={styles.offPlanThumb}>
-                          {thumbUrl ? (
-                            <Image
-                              source={{ uri: thumbUrl }}
-                              style={styles.offPlanThumbImage}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.offPlanThumbPlaceholder} />
-                          )}
+                        <View style={styles.offPlanItem}>
+                          <View style={styles.offPlanThumb}>
+                            {thumbUrl ? (
+                              <Image
+                                source={{ uri: thumbUrl }}
+                                style={styles.offPlanThumbImage}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View style={styles.offPlanThumbPlaceholder} />
+                            )}
+                          </View>
+                          <Text style={styles.offPlanTitle} numberOfLines={2}>
+                            {item.title}
+                          </Text>
                         </View>
-                        <Text style={styles.offPlanTitle} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                      </Pressable>
+                      </TouchableWithoutFeedback>
                     );
                   }}
                   ListEmptyComponent={
@@ -3695,7 +3881,7 @@ export default function UploadScreen() {
                   }
                 />
               </View>
-            </Pressable>
+            </View>
           </View>
         </Modal>
 

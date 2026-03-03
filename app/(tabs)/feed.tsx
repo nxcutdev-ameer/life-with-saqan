@@ -220,6 +220,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
 
     // Ensure we never keep a feed item at 2x when it leaves the viewport.
     setIsSpeeding(false);
+    setIsFooterSpeeding(false);
     onSpeedingChange?.(false);
     try {
       (player as any).playbackRate = 1;
@@ -379,10 +380,13 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
   };
 
   const [isSpeeding, setIsSpeeding] = useState(false);
+  const [isFooterSpeeding, setIsFooterSpeeding] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const wasPausedBeforeSpeedRef = useRef(false);
+  const wasPausedBeforeFooterSpeedRef = useRef(false);
   const wasPausedBeforeScrubRef = useRef(false);
 
+  // Edge touch-zones speed hold: used to temporarily speed up and also hide the footer to avoid accidental taps.
   const startSpeed = () => {
     if (!player) return;
     wasPausedBeforeSpeedRef.current = isPaused;
@@ -412,6 +416,38 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
       } catch {}
       setIsPaused(true);
       wasPausedBeforeSpeedRef.current = false;
+    }
+  };
+
+  // Footer trigger long-press speed hold: must NOT unmount the footer (otherwise onPressOut won't fire).
+  const startFooterSpeed = () => {
+    if (!player) return;
+    wasPausedBeforeFooterSpeedRef.current = isPaused;
+
+    // If the video was paused, temporarily resume while holding for 2x.
+    if (isPaused) {
+      setIsPaused(false);
+      try {
+        player.play();
+      } catch {}
+    }
+
+    setIsFooterSpeeding(true);
+    setPlaybackRate(2);
+  };
+
+  const stopFooterSpeed = () => {
+    if (!player) return;
+    setIsFooterSpeeding(false);
+    setPlaybackRate(1);
+
+    // If it was paused before the hold started, restore paused state.
+    if (wasPausedBeforeFooterSpeedRef.current) {
+      try {
+        player.pause();
+      } catch {}
+      setIsPaused(true);
+      wasPausedBeforeFooterSpeedRef.current = false;
     }
   };
 
@@ -455,7 +491,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
           </View>
         )}
 
-        {showPlayOverlay && !isSpeeding ? (
+        {showPlayOverlay && !isSpeeding && !isFooterSpeeding ? (
           <Animated.View
             pointerEvents="none"
             style={{
@@ -550,7 +586,10 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
       </View>
 
      {/* Centered just above the progress bar */}
-     <SpeedBoostOverlay visible={isSpeeding} bottom={bottomTabBarHeight + scaleHeight(10)} />
+     <SpeedBoostOverlay
+       visible={isSpeeding || isFooterSpeeding}
+       bottom={bottomTabBarHeight + scaleHeight(10)}
+     />
 
      {!isSpeeding ? (
        <PropertyFooter
@@ -568,6 +607,8 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
          isLiked={isLiked}
          isSaved={isSaved}
          onSeek={handleSeek}
+         onSpeedHoldStart={startFooterSpeed}
+         onSpeedHoldEnd={stopFooterSpeed}
          scrubbing={isScrubbing}
          onScrubStart={() => {
            if (!player) return;
@@ -577,6 +618,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
 
            // If user starts scrubbing, stop any 2x hold and disable overlay zones.
            stopSpeed();
+           stopFooterSpeed();
 
            // Pause video while scrubbing.
            player.pause();
