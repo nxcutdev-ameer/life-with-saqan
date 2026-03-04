@@ -57,6 +57,11 @@ interface FeedItemProps {
   isViewable: boolean;
   isSaved: boolean;
   scrollY: Animated.Value;
+  /** Height for a single paged item (screen height minus bottom tab bar). */
+  pageHeight: number;
+  /** fade for overlay chrome during scroll. */
+  chromeOpacity: Animated.AnimatedInterpolation<number>;
+  /** Bottom tab bar height for positioning within the item. Use 0 if the list is already sized above the tab bar. */
   bottomTabBarHeight: number;
   overlayTop: number;
   overlayBottom: number;
@@ -67,7 +72,7 @@ interface FeedItemProps {
   onScrubbingChange?: (isScrubbing: boolean) => void;
 }
 
-const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, bottomTabBarHeight, overlayTop, overlayBottom, onNavigateToProperty, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
+const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoPlay, isViewable, isSaved, scrollY, pageHeight, chromeOpacity, bottomTabBarHeight, overlayTop, overlayBottom, onNavigateToProperty, globalSubtitleLanguageCode, onGlobalSubtitleLanguageChange, onSpeedingChange, onScrubbingChange }: FeedItemProps) {
   const registerPlayer = useVideoPlaybackRegistryStore((s) => s.register);
   const unregisterPlayer = useVideoPlaybackRegistryStore((s) => s.unregister);
   // Subscribe per-item so only the affected cell re-renders when likes change.
@@ -481,7 +486,7 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
   ).current;
 
   return (
-    <View style={styles.propertyContainer} {...panResponder.panHandlers}>
+    <View style={[styles.propertyContainer, { height: pageHeight }]} {...panResponder.panHandlers}>
       <View style={styles.videoTouchArea}>
         {item.videoUrl ? (
           <VideoView player={player} style={styles.video} contentFit="cover" nativeControls={false} />
@@ -593,6 +598,8 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
 
      {!isSpeeding ? (
        <PropertyFooter
+         bottomTabBarHeightOverride={bottomTabBarHeight}
+         chromeOpacity={chromeOpacity}
          item={item}
          onNavigateAway={() => {
            if (player) {
@@ -677,7 +684,18 @@ export default function FeedScreen() {
   }, [params.location, params.transactionType]);
   useUserPreferences();
   const insets = useSafeAreaInsets();
-  const bottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+  const rawBottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
+
+  // Our tab bar is styled with a fixed height (see `app/(tabs)/_layout.tsx`: `height: scaleHeight(75)`).
+  // On Android (especially with `position: 'absolute'`), `useBottomTabBarHeight()` can under-report,
+  // which causes a per-page drift when we compute `PAGE_HEIGHT` (it accumulates as you scroll).
+  const effectiveBottomTabBarHeight = Math.max(rawBottomTabBarHeight, scaleHeight(75));
+
+  // Each page/item ends at the TOP of the bottom tab bar.
+  const PAGE_HEIGHT = SCREEN_HEIGHT - effectiveBottomTabBarHeight;
+
+  // Since the FlatList is sized above the tab bar, positioning inside each cell should NOT offset by tab height.
+  const bottomTabBarHeight = 0;
 
   // Constrain the touch overlay so it doesn't steal interactions from the AppHeader (top)
   // or the engagement/video controls (bottom).
@@ -719,6 +737,9 @@ export default function FeedScreen() {
   const _isFocused = useIsFocused();
   const [screenActive, setScreenActive] = useState(false);
   const currentIndexRef = useRef(0);
+
+  // Video prewarm/pool window around the active index.
+  const lastPrewarmIndexRef = useRef<number>(-1);
 
   const pooledByUrl = useVideoPlayerPoolStore((s) => s.byUrl);
   const releasePoolExcept = useVideoPlayerPoolStore((s) => s.releaseExcept);
@@ -767,9 +788,22 @@ export default function FeedScreen() {
       setIsFetching(true);
       const res = await fetchPublicVideos({ page: nextPage, perPage: 20 });
       const fetched = (res?.data ?? []).map(mapVideoToProperty);
-      
+
       // TEMP: filtering disabled; show all videos.
       const newItems = fetched;
+
+      // Prewarm freshly fetched items immediately so when the user reaches them they start instantly.
+      // We only warm a handful to avoid spiking memory/network.
+      const fetchedUrls = newItems.map((it) => it.videoUrl).filter(Boolean) as string[];
+      if (fetchedUrls.length) {
+        warmUpExpoVideoPlayers(fetchedUrls, {
+          count: 3,
+          playMs: 220,
+          keepInPool: true,
+        }).catch(() => {
+          // ignore
+        });
+      }
 
       const meta = res?.meta;
       // API may omit `has_more_pages` but include `current_page`/`last_page`/`total`.
@@ -986,6 +1020,26 @@ export default function FeedScreen() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
 
+  // We approximate "between pages" by distance from nearest PAGE_HEIGHT multiple.
+  const scrollChromeOpacity = useMemo(() => {
+    const pageProgress = Animated.divide(scrollY, PAGE_HEIGHT);
+    const frac = Animated.modulo(pageProgress, 1);
+
+    // Avoid Animated.abs (not supported). Create a triangle wave:
+    // frac: 0 -> 1 maps to dist: 0 -> 0.5 -> 0
+    const dist = frac.interpolate({
+      inputRange: [0, 0.5, 1],
+      outputRange: [0, 0.5, 0],
+    });
+
+    // Map: at page edges => 1, at mid-swipe => 0.25
+    return dist.interpolate({
+      inputRange: [0, 0.5],
+      outputRange: [1, 0.25],
+      extrapolate: 'clamp',
+    });
+  }, [PAGE_HEIGHT, scrollY]);
+
   const viewabilityConfig = useRef({
     // Fast switching for instant playback, but still avoids tiny overlaps.
     itemVisiblePercentThreshold: 55,
@@ -995,7 +1049,7 @@ export default function FeedScreen() {
 
   const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
     if (!screenActive) return;
-    // With pagingEnabled, at most one item should be predominantly visible.
+
     const active = viewable.find((it) => it.isViewable);
     const activeId = (active?.key as string) || null;
 
@@ -1012,14 +1066,47 @@ export default function FeedScreen() {
       currentIndexRef.current = activeIndex;
     }
 
-    // Once the user scrolls past the first few items, we can release pooled warmup players
-    // to reduce memory usage.
-    if (activeIndex >= 3) {
-      const keepUrls = items
-        .slice(activeIndex, activeIndex + 2)
+    // Keep a bounded rolling window of players in the pool:
+    // - A few behind (for instant back swipes)
+    // - A few ahead (for instant forward swipes)
+    const PREWARM_BEFORE = 2;
+    const PREWARM_AFTER = 3;
+    const KEEP_HISTORY = 5;
+
+    if (activeIndex >= 0 && activeIndex !== lastPrewarmIndexRef.current) {
+      lastPrewarmIndexRef.current = activeIndex;
+
+      const start = Math.max(0, activeIndex - PREWARM_BEFORE);
+      const end = Math.min(items.length, activeIndex + PREWARM_AFTER + 1);
+      const windowItems = items.slice(start, end);
+      const windowUrls = windowItems.map((it) => it.videoUrl).filter(Boolean) as string[];
+
+      // Keep a bit of history behind the current index so back-swipes remain instant.
+      const histStart = Math.max(0, activeIndex - KEEP_HISTORY);
+      const histUrls = items
+        .slice(histStart, activeIndex)
         .map((it) => it.videoUrl)
         .filter(Boolean) as string[];
-      // keep the current and next item (best-effort)
+
+      const keepUrls = Array.from(new Set([...histUrls, ...windowUrls]));
+
+      // Warm only the current + next few ahead to reduce memory pressure.
+      const warmUrls = windowItems
+        .slice(PREWARM_BEFORE, PREWARM_BEFORE + 3)
+        .map((it) => it.videoUrl)
+        .filter(Boolean) as string[];
+
+      if (warmUrls.length) {
+        warmUpExpoVideoPlayers(warmUrls, {
+          count: warmUrls.length,
+          playMs: 260,
+          keepInPool: true,
+        }).catch(() => {
+          // ignore
+        });
+      }
+
+      // Release everything else outside keep set.
       releasePoolExcept(keepUrls);
     }
 
@@ -1122,11 +1209,14 @@ export default function FeedScreen() {
       <FeedItem
         item={item}
         index={index}
-        pooledPlayer={index < 3 && item.videoUrl ? pooledByUrl[item.videoUrl]?.player : undefined}
+        // Use any pooled player that exists for this URL (pool is managed as a rolling window).
+        pooledPlayer={item.videoUrl ? pooledByUrl[item.videoUrl]?.player : undefined}
         autoPlay={canPlay && activeItemId === item.id}
         isViewable={canPlay && activeItemId === item.id}
         isSaved={savedProperties.has(item.id)}
         scrollY={scrollY}
+        pageHeight={PAGE_HEIGHT}
+        chromeOpacity={scrollChromeOpacity}
         bottomTabBarHeight={bottomTabBarHeight}
         overlayTop={overlayTop}
         overlayBottom={overlayBottom}
@@ -1192,6 +1282,7 @@ export default function FeedScreen() {
         />
       ) : null}
       <Animated.FlatList
+        style={{ height: PAGE_HEIGHT }}
         initialScrollIndex={0}
         ref={(r) => {
           // @ts-ignore
@@ -1201,7 +1292,10 @@ export default function FeedScreen() {
         renderItem={renderProperty}
         keyExtractor={keyExtractor}
         scrollEnabled={!isScrubbing && !isHoldingSpeed}
-        pagingEnabled={Platform.OS === 'ios'}
+        // NOTE: do NOT use `pagingEnabled` here because it pages by viewport/screen height.
+        // When item height is `PAGE_HEIGHT` (screen minus tab bar), paging by `SCREEN_HEIGHT` creates an
+        // accumulating gap (each page overshoots by the tab bar height). Use `snapToInterval` instead.
+        pagingEnabled={false}
         showsVerticalScrollIndicator={false}
         // Offset the spinner so it doesn't sit under the absolute AppHeader.
         progressViewOffset={insets.top + scaleHeight(75)}
@@ -1213,11 +1307,13 @@ export default function FeedScreen() {
             progressViewOffset={insets.top + scaleHeight(75)}
           />
         }
-        snapToInterval={Platform.OS === 'android' ? SCREEN_HEIGHT : undefined}
+        snapToInterval={PAGE_HEIGHT}
         snapToAlignment="start"
         overScrollMode="never"
-        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.98}
-        disableIntervalMomentum={Platform.OS === 'android'}
+        
+        // Android: lower value stops quicker; iOS: 'fast' already snaps well.
+        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.9}
+        disableIntervalMomentum={true}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
         // NOTE: disabling clipping improves reliability for video players during fast swipes.
@@ -1229,17 +1325,16 @@ export default function FeedScreen() {
         maxToRenderPerBatch={3}
         windowSize={5}
         updateCellsBatchingPeriod={16}
-        getItemLayout={(_data, index) => ({ length: SCREEN_HEIGHT, offset: SCREEN_HEIGHT * index, index })}
+        getItemLayout={(_data, index) => ({ length: PAGE_HEIGHT, offset: PAGE_HEIGHT * index, index })}
         // Avoid landing on index 1 due to "maintain visible position" heuristics when data changes.
         // We want the feed to always start from the top on entry.
         // maintainVisibleContentPosition={undefined as any}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
           useNativeDriver: true,
         })}
-        scrollEventThrottle={16}
+        scrollEventThrottle={Platform.OS === 'ios' ? 16 : 8}
         onScrollBeginDrag={() => {
-          // Hard-stop any lingering audio as the user starts a fast swipe,
-          // but keep the currently active item playing for an instant/continuous feel.
+          // Pause all but keep the currently active item to avoid audio overlap.
           const active = filteredProperties[currentIndexRef.current];
           const keepUrl = active?.videoUrl ? [active.videoUrl] : [];
           if (keepUrl.length) {
@@ -1274,8 +1369,9 @@ export default function FeedScreen() {
         onMomentumScrollEnd={(e) => {
           // Deterministic active item selection.
           const offsetY = e.nativeEvent.contentOffset.y;
-          const nextIndex = Math.max(0, Math.round(offsetY / SCREEN_HEIGHT));
+          const nextIndex = Math.max(0, Math.round(offsetY / PAGE_HEIGHT));
           currentIndexRef.current = nextIndex;
+
           const item = filteredProperties[nextIndex];
           if (screenActive && item?.id) {
             setActiveItemId(item.id);

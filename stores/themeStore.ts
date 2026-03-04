@@ -14,7 +14,8 @@ const STORAGE_KEY = '@saqan_theme_v1';
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      isDarkMode: false,
+      // Default to dark mode on first launch (fresh installs)
+      isDarkMode: true,
       setDarkMode: (enabled) => set({ isDarkMode: enabled }),
       toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
     }),

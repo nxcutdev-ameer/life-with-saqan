@@ -64,6 +64,7 @@ import ScheduleVisitModal from '@/components/ScheduleVisitModal';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { SavingSpinner } from '@/components/SavingSpinner';
 import { useTheme } from '@/utils/useTheme';
+import { useAuthStore } from '@/stores/authStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -72,17 +73,24 @@ export default function PropertyDetailScreen() {
   const styles = useMemo(() => createStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
   const router = useRouter();
   // Route param is treated as the property reference.
-  const { id, videoId, mode, agentPhone } = useLocalSearchParams<{ 
+  const { id, videoId, mode, agentPhone, source } = useLocalSearchParams<{ 
     id?: string | string[];
     videoId?: string | string[];
     mode?: string | string[];
     agentPhone?: string | string[];
+    source?: string | string[];
   }>();
   const propertyReference = Array.isArray(id) ? id[0] : id;
   const videoIdParam = Array.isArray(videoId) ? videoId[0] : videoId;
   const modeParam = Array.isArray(mode) ? mode[0] : mode;
   const agentPhoneParam = Array.isArray(agentPhone) ? agentPhone[0] : agentPhone;
+  const sourceParam = Array.isArray(source) ? source[0] : source;
   const isOffplanMode = (modeParam || '').toLowerCase() === 'offplan';
+  const isProfileSource = (sourceParam || '').toLowerCase() === 'profile';
+
+  // Logged-in agent details (Profile videos are always owned by the logged-in agent)
+  const loggedInAgentId = useAuthStore((s) => s.session?.agent?.id);
+  const loggedInAgentPhoneRaw = (useAuthStore((s) => s.phoneNumber) || '').trim();
   // `videoId` is optional; when provided, we keep it as the local property id for engagement tracking.
 
   const [property, setProperty] = useState<Property | null>(() => {
@@ -98,6 +106,7 @@ export default function PropertyDetailScreen() {
   const [offplanDetails, setOffplanDetails] = useState<OffplanDetails | null>(null);
 
   const mapApiPayloadToProperty = (payload: PropertyDetailsPayload, videoIdOverride?: string): Property => {
+    const AvatarUrl = (raw: string | null | undefined): string => (raw ?? '').trim();
     const parseNum = (value: unknown, fallback = 0) => {
       const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
       return Number.isFinite(n) ? n : fallback;
@@ -198,14 +207,14 @@ export default function PropertyDetailScreen() {
         name: payload.agent?.name ?? `Agent ${payload.agent?.id ?? ''}`.trim(),
         agency: payload.agency?.agency_name ?? 'Agency',
         // Use real avatar URL if provided; otherwise keep empty so UI can fall back to initials.
-        photo: payload.agent?.avatar?.url ?? '',
+        photo: AvatarUrl(payload.agent?.avatar?.url),
         phone: payload.agent?.phone ?? '',
         email: payload.agent?.email ?? '',
         isVerified: true,
       },
       agentName: payload.agent?.name ??(`Agent ${payload.agent?.id ?? ''}`.trim() || 'Agent'),
       // Keep empty when missing so initials render correctly.
-      agentPhoto: payload.agent?.avatar?.url ?? '',
+      agentPhoto: AvatarUrl(payload.agent?.avatar?.url),
       likesCount: 0,
       savesCount: 0,
       sharesCount: 0,
@@ -226,8 +235,21 @@ export default function PropertyDetailScreen() {
         const cached = await AsyncStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (isOffplanMode) setOffplanDetails(normalizeOffplanDetails(parsed));
-          else setProperty(parsed);
+          if (isOffplanMode) {
+            setOffplanDetails(normalizeOffplanDetails(parsed));
+          } else {
+            // Older app versions may have cached the raw API payload (PropertyDetailsPayload)
+            // rather than mapped `Property` shape.
+            const looksLikeDetailsPayload =
+              parsed && typeof parsed === 'object' && typeof parsed.reference_id === 'string';
+
+            const nextProperty = looksLikeDetailsPayload
+              ? mapApiPayloadToProperty(parsed as PropertyDetailsPayload, videoIdParam)
+              : (parsed as Property);
+
+            setProperty(nextProperty);
+            setAgentAvatarError(false);
+          }
         }
       } catch {
         // ignore
@@ -258,6 +280,7 @@ export default function PropertyDetailScreen() {
         } else {
           const mapped = mapApiPayloadToProperty(payload as PropertyDetailsPayload, videoIdParam);
           setProperty(mapped);
+          setAgentAvatarError(false);
 
           const cacheKey = `@property_cache_ready_${propertyReference}`;
           await AsyncStorage.setItem(cacheKey, JSON.stringify(mapped));
@@ -592,7 +615,24 @@ export default function PropertyDetailScreen() {
     );
   }
 
-  const readyAgentPhoneRaw = property?.agent?.phone ?? '+971501234567';
+  const propertyAgentId = Number(property?.agent?.agentId ?? property?.agent?.id ?? NaN);
+  const isSelfAgent =
+    typeof loggedInAgentId === 'number' &&
+    Number.isFinite(propertyAgentId) &&
+    propertyAgentId === loggedInAgentId;
+
+  // When opening from Profile, we know the content belongs to the logged-in agent even if the
+  // details payload doesn't include agent ids (common for some offplan responses).
+  const preferLoggedInAgentPhone = isProfileSource || isSelfAgent;
+
+  // Prefer the logged-in agent phone when the opened property belongs to them (e.g. from Profile).
+  // Otherwise prefer an explicitly passed agent phone and then fall back to the phone on the property payload.
+  const readyAgentPhoneRaw = (
+    (preferLoggedInAgentPhone ? loggedInAgentPhoneRaw : '') ||
+    agentPhoneParam ||
+    property?.agent?.phone ||
+    ''
+  ).trim();
 
   const getInitials = (name: string) => {
     const cleaned = (name ?? '').trim();
@@ -605,7 +645,14 @@ export default function PropertyDetailScreen() {
   };
 
   const agentDisplayName = (property?.agent?.name || property?.agentName || 'Agent').trim() || 'Agent';
-  const agentAvatarUrl = (property?.agent?.photo || property?.agentPhoto || '').trim();
+  const agentAvatarUrl = (
+    property?.agent?.photo ||
+    property?.agentPhoto ||
+    // Defensive fallback in case `property` is still in a backend-like shape.
+    (property as any)?.agent?.avatar?.url ||
+    (property as any)?.agent?.avatarUrl ||
+    ''
+  ).trim();
   const agentInitials = getInitials(agentDisplayName);
 
   const agentEmail =
@@ -653,11 +700,19 @@ export default function PropertyDetailScreen() {
   };
 
   const openPhone = async () => {
+    if (!readyAgentPhoneRaw) {
+      Alert.alert('No phone number', 'This agent does not have a phone number available.');
+      return;
+    }
+
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const telUrl = `tel:${readyAgentPhoneRaw}`;
     if (await Linking.canOpenURL(telUrl)) {
       await Linking.openURL(telUrl);
+      return;
     }
+
+    Alert.alert('Unable to call', 'Calling is not supported on this device.');
   };
 
   const openWhatsApp = async () => {
@@ -700,22 +755,25 @@ export default function PropertyDetailScreen() {
     }
   };
 
-  const developerPhoneRaw = (offplanDetails?.developerContact?.phone ?? '').trim();
-  const developerPhoneDigits = developerPhoneRaw.replace(/[^0-9]/g, '');
+  const offplanContactPhoneRaw = (offplanDetails?.developerContact?.phone ?? '').trim();
+  const developerPhoneDigits = offplanContactPhoneRaw.replace(/[^0-9]/g, '');
 
-  const agentPhoneRaw = (agentPhoneParam || property?.agent?.phone || '').trim();
+  const agentPhoneRaw = ((preferLoggedInAgentPhone ? loggedInAgentPhoneRaw : '') || agentPhoneParam || property?.agent?.phone || '').trim();
   const agentPhoneDigits = agentPhoneRaw.replace(/[^0-9]/g, '');
 
   const contactPhoneRaw = isOffplanMode
-    ? agentPhoneRaw || developerPhoneRaw
-    : developerPhoneRaw;
+    ? agentPhoneRaw || offplanContactPhoneRaw
+    : offplanContactPhoneRaw;
   const contactPhoneDigits = isOffplanMode
     ? agentPhoneDigits || developerPhoneDigits
     : developerPhoneDigits;
-  const showOffplanFooter = Boolean(isOffplanMode && contactPhoneDigits);
+  // In offplan mode we normally only show the footer when we have a valid contact number.
+  // When opening from Profile (self agent), force showing the footer so the agent can contact via their
+  // stored number even if the payload is missing ids/phone.
+  const showOffplanFooter = Boolean(isOffplanMode && (contactPhoneDigits || preferLoggedInAgentPhone));
   const showFooter = isOffplanMode ? showOffplanFooter : true;
 
-  const openDeveloperPhone = async () => {
+  const openAgentPhone = async () => {
     // In offplan mode we prefer the agent phone (passed from feed), but fall back to developer phone.
     if (!contactPhoneRaw) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -732,7 +790,7 @@ export default function PropertyDetailScreen() {
     }
   };
 
-  const openDeveloperWhatsApp = async () => {
+  const openAgentWhatsApp = async () => {
     // In offplan mode we prefer the agent phone (passed from feed), but fall back to developer phone.
     if (!contactPhoneDigits) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1341,7 +1399,13 @@ export default function PropertyDetailScreen() {
                 <Image
                   source={{ uri: agentAvatarUrl }}
                   style={styles.agentAvatar}
-                  onError={() => setAgentAvatarError(true)}
+                  contentFit="cover"
+                  onError={(e) => {
+                    setAgentAvatarError(true);
+                    if (__DEV__) {
+                      console.warn('[agent avatar] failed to load', agentAvatarUrl, e);
+                    }
+                  }}
                 />
               ) : (
                 <View style={[styles.agentAvatar, { overflow: 'hidden' }]}>
@@ -1366,7 +1430,7 @@ export default function PropertyDetailScreen() {
           <>
             <Pressable
               style={[styles.scheduleButton, { flex: 1 }]}
-              onPress={openDeveloperPhone}
+              onPress={openAgentPhone}
               disabled={!contactPhoneRaw}
             >
               <Phone size={scaleWidth(20)} color={themeColors.white} />
@@ -1377,8 +1441,8 @@ export default function PropertyDetailScreen() {
 
             <View style={styles.contactButtons}>
               <Pressable
-                style={[styles.contactIconButton, !developerPhoneDigits && { opacity: 0.4 }]}
-                onPress={openDeveloperWhatsApp}
+                style={[styles.contactIconButton, !contactPhoneDigits && { opacity: 0.4 }]}
+                onPress={openAgentWhatsApp}
                 disabled={!contactPhoneDigits}
               >
                 <MessageCircle size={scaleWidth(20)} color={themeColors.primary} />

@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
+
+const ERROR_COLOR = '#C62828';
 
 export type PhoneFieldChange = {
   countryCode: CountryCode;
@@ -58,6 +61,9 @@ export function PhoneField({
   onChangeValue,
   onChange,
 }: PhoneFieldProps) {
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
+
   const [countryCode, setCountryCode] = useState<CountryCode>(defaultCountryCode);
   const [callingCode, setCallingCode] = useState<string>(defaultCallingCode);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
@@ -128,7 +134,7 @@ export function PhoneField({
           keyboardType="number-pad"
           maxLength={15}
           placeholder={placeholder}
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           autoCorrect={false}
         />
@@ -139,54 +145,54 @@ export function PhoneField({
   );
 }
 
-const styles = StyleSheet.create({
-  label: {
-    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(14),
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  phoneRow: {
-    width: '100%',
-    height: scaleHeight(52),
-    flexDirection: 'row',
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
-    marginTop: scaleHeight(10),
-  },
-  countryBox: {
-    width: scaleWidth(100),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRightWidth: 1,
-    borderRightColor: Colors.border,
-    backgroundColor: 'rgba(0,0,0,0.04)',
-    paddingHorizontal: scaleWidth(10),
-    //gap: scaleWidth(8),
-  },
-  countryPickerButton: {
-    padding: 0,
-    margin: 0,
-  },
-  callingCodeText: {
-    color: Colors.text,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
-    fontWeight: '600',
-  },
-  phoneInput: {
-    flex: 1,
-    height: scaleHeight(52),
-    paddingHorizontal: scaleWidth(14),
-    color: Colors.text,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
-  },
-  errorText: {
-    marginTop: scaleHeight(8),
-    color: (Colors as any).error ?? '#C62828',
-     fontSize: Platform.OS === 'android' ? scaleFont(11) : scaleFont(13),
-    fontWeight: '600',
-  },
-});
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) =>
+  StyleSheet.create({
+    label: {
+      fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(14),
+      fontWeight: '700',
+      color: colors.text,
+    },
+    phoneRow: {
+      width: '100%',
+      height: scaleHeight(52),
+      flexDirection: 'row',
+      borderRadius: scaleWidth(12),
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'transparent',
+      overflow: 'hidden',
+      marginTop: scaleHeight(10),
+    },
+    countryBox: {
+      width: scaleWidth(100),
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRightWidth: 1,
+      borderRightColor: colors.border,
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      paddingHorizontal: scaleWidth(10),
+    },
+    countryPickerButton: {
+      padding: 0,
+      margin: 0,
+    },
+    callingCodeText: {
+      color: colors.text,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
+      fontWeight: '600',
+    },
+    phoneInput: {
+      flex: 1,
+      height: scaleHeight(52),
+      paddingHorizontal: scaleWidth(14),
+      color: colors.text,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
+    },
+    errorText: {
+      marginTop: scaleHeight(8),
+      color: ERROR_COLOR,
+      fontSize: Platform.OS === 'android' ? scaleFont(11) : scaleFont(13),
+      fontWeight: '600',
+    },
+  });

@@ -23,7 +23,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
+import { useTheme } from '@/utils/useTheme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
 import { requestBrokerIdUpdate } from '@/utils/brokerApi';
@@ -35,6 +36,9 @@ export default function BrokerQuestionScreen() {
   const logout = useAuthStore((s) => s.logout);
   const setPendingAuth = useAuthStore((s) => s.setPendingAuth);
   const backofficeToken = useAuthStore((s) => s.session?.tokens?.backofficeToken) ?? null;
+
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
 
   const [step, setStep] = useState<'question' | 'brokerNumber'>('question');
   const [isBroker, setIsBroker] = useState(false);
@@ -73,6 +77,14 @@ export default function BrokerQuestionScreen() {
       Keyboard.dismiss();
     }
   }, [step]);
+
+  const gradientColors = useMemo(
+    () =>
+      isDarkMode
+        ? (['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)'] as const)
+        : (['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)'] as const),
+    [isDarkMode]
+  );
 
   const onYes = () => {
     Keyboard.dismiss();
@@ -298,7 +310,7 @@ export default function BrokerQuestionScreen() {
       <LinearGradient
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 0 }}
-        colors={['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)']}
+        colors={gradientColors as any}
         style={styles.gradient}
       >
         <SafeAreaView style={styles.safeArea}>
@@ -329,8 +341,8 @@ export default function BrokerQuestionScreen() {
                     accessibilityLabel="Are you broker"
                     value={isBroker}
                     onValueChange={(v) => setIsBroker(v)}
-                    trackColor={{ false: Colors.textSecondary, true: Colors.bronze }}
-                    thumbColor={Colors.background}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor={colors.surface}
                   />
                 </View>
 
@@ -370,7 +382,7 @@ export default function BrokerQuestionScreen() {
                   value={brokerNumber}
                   onChangeText={(t) => setBrokerNumber(t.replace(/[^0-9]/g, ''))}
                   placeholder="Enter your broker number"
-                  placeholderTextColor={Colors.overlayLight}
+                  placeholderTextColor={colors.textSecondary}
                   keyboardType="number-pad"
                  // maxLength={5}
                   style={styles.input}
@@ -459,7 +471,7 @@ export default function BrokerQuestionScreen() {
                   disabled={!brokerNumber.trim() || isAnimating || isSubmitting}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator size="small" color={Colors.textLight} />
+                    <ActivityIndicator size="small" color={colors.textOnPrimary} />
                   ) : (
                     <Text style={styles.primaryButtonText}>Continue</Text>
                   )}
@@ -482,9 +494,10 @@ export default function BrokerQuestionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) =>
+  StyleSheet.create({
   sectionLabel: {
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(13),
     fontWeight: '700',
     marginBottom: scaleHeight(8),
@@ -495,36 +508,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(12),
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleHeight(12),
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.22)',
   },
   dropdownButtonText: {
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
     fontWeight: '600',
   },
   dropdownChevron: {
-    color: Colors.text,
+    color: colors.textSecondary,
     fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
     fontWeight: '800',
   },
   uploadBox: {
     marginTop: scaleHeight(6),
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(12),
     borderStyle: 'dashed',
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.18)',
     height: scaleHeight(140),
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   uploadHint: {
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '600',
     opacity: 0.85,
@@ -542,8 +555,8 @@ const styles = StyleSheet.create({
   modalSheet: {
     borderRadius: scaleWidth(16),
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     paddingVertical: scaleHeight(10),
     overflow: 'hidden',
   },
@@ -552,24 +565,24 @@ const styles = StyleSheet.create({
     paddingVertical: scaleHeight(10),
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
     fontWeight: '800',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   modalItem: {
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleHeight(14),
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.06)',
+    borderTopColor: isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   modalItemSelected: {
-    backgroundColor: 'rgba(0,0,0,0.04)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
   },
   modalItemText: {
     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(15),
     fontWeight: '700',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   modalItemTextSelected: {
     fontWeight: '900',
@@ -577,7 +590,7 @@ const styles = StyleSheet.create({
   checkmark: {
     fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '900',
-    color: Colors.text,
+    color: colors.primary,
   },
   checkmarkSpacer: {
     width: scaleWidth(18),
@@ -612,25 +625,25 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(16),
     padding: scaleWidth(16),
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.12)',
     overflow: 'visible',
   },
   input: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: scaleWidth(12),
     paddingHorizontal: scaleWidth(14),
     paddingVertical: scaleHeight(12),
     fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
-    color: Colors.text,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    color: isDarkMode ? colors.white : colors.text,
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.22)',
     marginBottom: scaleHeight(10),
   },
   helperText: {
-    color: Colors.overlayLight,
+    color: colors.textSecondary,
     fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
     marginBottom: scaleHeight(12),
     fontWeight: '600',
@@ -641,7 +654,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(28),
     fontWeight: '800',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     textAlign: 'center',
     marginBottom: scaleHeight(16),
   },
@@ -660,7 +673,7 @@ const styles = StyleSheet.create({
   cardTitleInline: {
     fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(22),
     fontWeight: '800',
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
   },
   buttonBase: {
     flex: 1,
@@ -669,19 +682,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButton: {
-    backgroundColor: Colors.bronze,
+    backgroundColor: colors.primary,
   },
   primaryButtonText: {
-    color: Colors.textLight,
+    color: colors.textOnPrimary,
     fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '700',
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
+    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'transparent',
   },
   secondaryButtonText: {
-    color: Colors.text,
+    color: isDarkMode ? colors.white : colors.text,
     fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
     fontWeight: '700',
   },

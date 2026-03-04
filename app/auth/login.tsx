@@ -18,17 +18,20 @@ import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
 import { authByPhone } from '@/utils/authApi';
-import {normalizePhone} from '@/utils/formatters'
-
+import { normalizePhone } from '@/utils/formatters';
+import { useTheme } from '@/utils/useTheme';
 
 export default function LoginScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const setPendingAuth = useAuthStore((s) => s.setPendingAuth);
+  const { colors: themeColors, isDarkMode } = useTheme();
+
+  const styles = useMemo(() => createStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
 
   const [phone, setPhone] = useState('');
   const [formattedPhone, setFormattedPhone] = useState('');
@@ -37,6 +40,14 @@ export default function LoginScreen() {
   const isSendingOtp = sendingMethod !== null;
 
   const normalized = useMemo(() => normalizePhone(formattedPhone), [formattedPhone]);
+
+  const gradientColors = useMemo(
+    () =>
+      isDarkMode
+        ? (['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)'] as const)
+        : (['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)'] as const),
+    [isDarkMode]
+  );
 
   React.useEffect(() => {
     navigation.setOptions({ gestureEnabled: false } as any);
@@ -76,7 +87,7 @@ export default function LoginScreen() {
       <LinearGradient
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 0 }}
-        colors={['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)']}
+        colors={gradientColors as any}
         style={styles.gradient}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -112,30 +123,30 @@ export default function LoginScreen() {
                   >
                     <View style={styles.primaryButtonContent}>
                       {sendingMethod === 'whatsapp' ? (
-                        <ActivityIndicator size="small" color={Colors.textLight} />
+                        <ActivityIndicator size="small" color={themeColors.textOnPrimary} />
                       ) : (
-                        <FontAwesome name="whatsapp" size={scaleFont(18)} color={Colors.textLight} />
+                        <FontAwesome
+                          name="whatsapp"
+                          size={scaleFont(18)}
+                          color={themeColors.textOnPrimary}
+                        />
                       )}
                       <Text style={styles.primaryButtonText}>
                         {sendingMethod === 'whatsapp' ? 'Sending OTP…' : 'Login with WhatsApp'}
                       </Text>
                     </View>
                   </Pressable>
-
                 </View>
 
                 <Text style={styles.orText}>or</Text>
                 <Pressable
-                  style={[
-                    styles.secondaryButton,
-                    (!isValidPhone || isSendingOtp) && styles.primaryButtonDisabled,
-                  ]}
+                  style={[styles.secondaryButton, (!isValidPhone || isSendingOtp) && styles.primaryButtonDisabled]}
                   onPress={() => onLogin('sms')}
                   disabled={!isValidPhone || isSendingOtp}
                 >
                   {sendingMethod === 'sms' ? (
                     <View style={styles.secondaryButtonContent}>
-                      <ActivityIndicator size="small" color={Colors.text} />
+                      <ActivityIndicator size="small" color={themeColors.text} />
                       <Text style={styles.secondaryButtonText}>Sending OTP…</Text>
                     </View>
                   ) : (
@@ -151,123 +162,103 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  gradient: {
-    flex: 1,
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: scaleWidth(24),
-    marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) :scaleWidth(16),
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    width: '100%',
-    maxWidth: 420,
-    paddingBottom: scaleHeight(16),
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
-    fontWeight: '800',
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: scaleHeight(8),
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(16),
-    padding: scaleWidth(16),
-    backgroundColor: 'transparent',
-  },
-  label: {
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: scaleHeight(8),
-  },
-  primaryButton: {
-    marginTop: scaleHeight(14),
-    backgroundColor: Colors.bronze,
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.5,
-  },
-  primaryButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: scaleWidth(10),
-  },
-  primaryButtonText: {
-    color: Colors.textLight,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    width: '100%',
-    maxWidth: 420,
-    marginTop: 0,
-    backgroundColor: 'transparent',
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.text,
-    alignItems: 'center',
-  },
-  secondaryButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: scaleWidth(10),
-  },
-  secondaryButtonText: {
-    color: Colors.text,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
-    fontWeight: '600',
-  },
-  orText: {
-    marginTop: scaleHeight(16),
-    marginBottom: scaleHeight(12),
-    color: Colors.textSecondary,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  footerRow: {
-    marginTop: scaleHeight(14),
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: scaleWidth(6),
-  },
-  footerText: {
-    color: Colors.textSecondary,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-  },
-  link: {
-    color: Colors.brown,
-     fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    fontWeight: '700',
-  },
-});
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    gradient: {
+      flex: 1,
+    },
+    keyboardAvoidingView: {
+      flex: 1,
+    },
+    safeArea: {
+      flex: 1,
+      paddingHorizontal: scaleWidth(24),
+      marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) : scaleWidth(16),
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    header: {
+      width: '100%',
+      maxWidth: 420,
+      paddingBottom: scaleHeight(16),
+      alignItems: 'center',
+    },
+    title: {
+      fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
+      fontWeight: '800',
+      color: isDarkMode ? colors.white : colors.text,
+      textAlign: 'center',
+    },
+    subtitle: {
+      marginTop: scaleHeight(8),
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    card: {
+      width: '100%',
+      maxWidth: 420,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: scaleWidth(16),
+      padding: scaleWidth(16),
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'transparent',
+    },
+    primaryButton: {
+      marginTop: scaleHeight(14),
+      backgroundColor: colors.primary,
+      paddingVertical: scaleHeight(14),
+      borderRadius: scaleWidth(12),
+      alignItems: 'center',
+    },
+    primaryButtonDisabled: {
+      opacity: 0.5,
+    },
+    primaryButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: scaleWidth(10),
+    },
+    primaryButtonText: {
+      color: colors.textOnPrimary,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
+      fontWeight: '700',
+    },
+    secondaryButton: {
+      width: '100%',
+      maxWidth: 420,
+      marginTop: 0,
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'transparent',
+      paddingVertical: scaleHeight(14),
+      borderRadius: scaleWidth(12),
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+    },
+    secondaryButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: scaleWidth(10),
+    },
+    secondaryButtonText: {
+      color: isDarkMode ? colors.white : colors.text,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
+      fontWeight: '600',
+    },
+    orText: {
+      marginTop: scaleHeight(16),
+      marginBottom: scaleHeight(12),
+      color: colors.textSecondary,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(16),
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+  });

@@ -12,6 +12,8 @@ export function buildPropertyDetailsRoute(input: {
   id?: string | null;
   mode?: 'ready' | 'offplan' | string | null;
   agentPhone?: string | null;
+  /** Optional caller context (e.g. 'profile') */
+  source?: string | null;
 }): Href {  
   // Using an object Href keeps expo-router types happy (avoids pushing arbitrary strings).
 
@@ -28,15 +30,18 @@ export function buildPropertyDetailsRoute(input: {
   const agentPhone = (input.agentPhone || '').trim();
   const agentPhoneParams = agentPhone ? { agentPhone } : {};
 
+  const source = (input.source || '').trim();
+  const sourceParams = source ? { source } : {};
+
   if (videoId && videoId !== ref) {
     return {
       pathname: '/property/[id]',
-      params: { id: ref, videoId, ...modeParams, ...agentPhoneParams },
+      params: { id: ref, videoId, ...modeParams, ...agentPhoneParams, ...sourceParams },
     } as unknown as Href;
   }
 
   return {
     pathname: '/property/[id]',
-    params: { id: ref, ...modeParams, ...agentPhoneParams },
+    params: { id: ref, ...modeParams, ...agentPhoneParams, ...sourceParams },
   } as unknown as Href;
 }

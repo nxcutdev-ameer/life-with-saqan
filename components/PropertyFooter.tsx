@@ -21,6 +21,12 @@ interface PropertyFooterProps {
   duration: number;
   isLiked: boolean;
   isSaved: boolean;
+
+  /** Opacity for overlay chrome during scroll (TikTok-like fade). */
+  chromeOpacity?: Animated.AnimatedInterpolation<number> | number;
+
+  /** Optional: override the bottom tab bar height offset used for positioning (use 0 when the feed list is already sized above the tab bar). */
+  bottomTabBarHeightOverride?: number;
   onToggleLike?: (id: string) => void;
   onToggleSave?: (id: string) => void;
   onOpenComments?: (id: string) => void;
@@ -68,6 +74,8 @@ export default function PropertyFooter({
   duration,
   isLiked,
   isSaved,
+  chromeOpacity = 1,
+  bottomTabBarHeightOverride,
   onToggleLike,
   onToggleSave,
   onOpenComments,
@@ -87,12 +95,20 @@ export default function PropertyFooter({
   const router = useRouter();
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageTranslation | null>(null);
   const insets = useSafeAreaInsets();
-  const rawBottomTabBarHeight = useBottomTabBarHeight?.() ?? 0;
-  
+
+  // Always call the hook (rules-of-hooks). We can still override its value.
+  const bottomTabBarFromHook = useBottomTabBarHeight?.() ?? 0;
+
+  // Allow feed screens to override this when the FlatList is already sized above the tab bar.
+  const rawBottomTabBarHeight = bottomTabBarHeightOverride ?? bottomTabBarFromHook;
+
   // Android positioning - use responsive calculation for consistent positioning
-  const bottomTabBarHeight = Platform.OS === 'android' 
-    ? scaleHeight(35) + insets.bottom // Responsive Android tab bar height + safe area
-    : rawBottomTabBarHeight; // iOS uses hook value (works correctly)
+  const bottomTabBarHeight =
+    bottomTabBarHeightOverride != null
+      ? bottomTabBarHeightOverride
+      : Platform.OS === 'android'
+        ? scaleHeight(35) + insets.bottom // Responsive Android tab bar height + safe area
+        : rawBottomTabBarHeight; // iOS uses hook value (works correctly)
 
   const [followIconState, setFollowIconState] = useState<'plus' | 'check' | 'hidden'>('plus');
   const followIconScale = useRef(new Animated.Value(1)).current;
@@ -164,8 +180,11 @@ export default function PropertyFooter({
     <>
       {/* Action buttons floating above footer (exclude bottom tab bar height) */}
       {!scrubbing ? (
-        <View
-          style={[styles.floatingActionsBar, { bottom: scaleHeight(140) + bottomTabBarHeight }]}
+        <Animated.View
+          style={[
+            styles.floatingActionsBar,
+            { bottom: scaleHeight(140) + bottomTabBarHeight, opacity: chromeOpacity },
+          ]}
         >
         <View style={styles.agentSection}>
           <VideoPlayerOverlay
@@ -225,7 +244,7 @@ export default function PropertyFooter({
           onOpenComments={onOpenComments}
           onShare={onShare}
         />
-               <TranslationOverlay
+        <TranslationOverlay
             agentName={(item.agentName || item.agent?.name || 'Agent').trim()}
             languages={translations}
             selectedCode={selectedSubtitleCode}
@@ -235,12 +254,12 @@ export default function PropertyFooter({
                 onSubtitleSelect?.(lang.subtitleUrl, lang.code);
               }
             }}
-          />
-        </View>
+        />
+        </Animated.View>
       ) : null}
 
       {/* Black footer bar with progress and property info (sits above bottom tabs) */}
-      <View style={[styles.globalFooterBar, { bottom: bottomTabBarHeight }]}> 
+      <Animated.View style={[styles.globalFooterBar, { bottom: bottomTabBarHeight, opacity: chromeOpacity }]}> 
         {/* Property info (tap to navigate) */}
         {!scrubbing ? (
           <Pressable
@@ -270,7 +289,7 @@ export default function PropertyFooter({
           onScrubEnd={onScrubEnd}
           showTimeLabel={scrubbing}
         />
-      </View>
+      </Animated.View>
     </>
   );
 }

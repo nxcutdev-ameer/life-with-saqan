@@ -160,6 +160,7 @@ export default function ProfileScreen() {
               propertyReference: item.propertyReference,
               id: item.id,
               mode: item.type === 'offplan' ? 'offplan' : undefined,
+              source: 'profile',
             }) as any
           )
         }
