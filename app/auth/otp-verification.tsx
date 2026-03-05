@@ -17,7 +17,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
-import { Colors } from '@/constants/colors';
+import type { ThemeColors } from '@/constants/theme';
 import { scaleFont, scaleHeight, scaleWidth } from '@/utils/responsive';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -26,7 +26,8 @@ import {
   verifyRegisterPhoneOtp,
 } from '@/utils/authApi';
 import { requestBrokerIdUpdate, validateBrokerOtp } from '@/utils/brokerApi';
-import {maskPhone} from '@/utils/formatters'
+import { maskPhone } from '@/utils/formatters';
+import { useTheme } from '@/utils/useTheme';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
@@ -46,6 +47,17 @@ export default function OtpVerificationScreen() {
   const completeOtpVerification = useAuthStore((s) => s.completeOtpVerification);
   const setSession = useAuthStore((s) => s.setSession);
   const clearPendingAuth = useAuthStore((s) => s.clearPendingAuth);
+
+  const { colors: themeColors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
+  const gradientColors = useMemo(
+    () =>
+      isDarkMode
+        ? (['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)'] as const)
+        : (['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)'] as const),
+    [isDarkMode]
+  );
+
   const [digits, setDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ''));
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
@@ -58,7 +70,7 @@ export default function OtpVerificationScreen() {
   const otp = useMemo(() => digits.join(''), [digits]);
   const isComplete = otp.length === OTP_LENGTH && !digits.some((d) => d === '');
 
-   useEffect(() => {
+  useEffect(() => {
     navigation.setOptions({ gestureEnabled: false } as any);
   }, [navigation]);
 
@@ -329,7 +341,7 @@ export default function OtpVerificationScreen() {
       <LinearGradient
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 0 }}
-        colors={['rgba(243, 237, 223, 0.3)', 'rgba(240, 228, 228, 0.85)']}
+        colors={gradientColors as any}
         style={styles.gradient}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -399,7 +411,7 @@ export default function OtpVerificationScreen() {
                   >
                     <View style={styles.primaryButtonContent}>
                       {isVerifying ? (
-                        <ActivityIndicator size="small" color={Colors.textLight} />
+                        <ActivityIndicator size="small" color={themeColors.textOnPrimary} />
                       ) : null}
                       <Text style={styles.primaryButtonText}>
                         {isVerifying ? 'Verifying OTP…' : 'Verify OTP'}
@@ -419,7 +431,7 @@ export default function OtpVerificationScreen() {
                     <Text style={styles.disclaimer}>
                       {resendSecondsLeft > 0
                         ? `Resend OTP in ${resendSecondsLeft}s`
-                        : 'Didn’t receive the code?'}
+                        : "Didn't receive the code?"}
                     </Text>
                     <Pressable
                       onPress={onResendOtp}
@@ -446,151 +458,153 @@ export default function OtpVerificationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  gradient: {
-    flex: 1,
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: scaleWidth(24),
-    marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) :scaleWidth(16),
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    width: '100%',
-    maxWidth: 520,
-    paddingBottom: scaleHeight(16),
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
-    fontWeight: '800',
-    color: Colors.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: scaleHeight(8),
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  infoBanner: {
-    marginTop: scaleHeight(12),
-    paddingVertical: scaleHeight(10),
-    paddingHorizontal: scaleWidth(12),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-  infoBannerText: {
-    color: Colors.text,
-   fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(13),
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: scaleFont(18),
-  },
-  card: {
-    width: '100%',
-    maxWidth: 520,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(16),
-    padding: scaleWidth(16),
-    backgroundColor: 'transparent',
-  },
-  otpRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: scaleWidth(10),
-  },
-  otpBox: {
-    flex: 1,
-    height: scaleHeight(56),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  otpBoxFilled: {
-    borderColor: Colors.bronze,
-  },
-  otpDigitText: {
-    fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(20),
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  hiddenOtpInput: {
-    position: 'absolute',
-    opacity: 0,
-    width: 1,
-    height: 1,
-  },
-  primaryButton: {
-    marginTop: scaleHeight(18),
-    backgroundColor: Colors.bronze,
-    paddingVertical: scaleHeight(14),
-    borderRadius: scaleWidth(12),
-    alignItems: 'center',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.5,
-  },
-  primaryButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: scaleWidth(10),
-  },
-  primaryButtonText: {
-    color: Colors.textLight,
-    fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    marginTop: scaleHeight(10),
-    paddingVertical: scaleHeight(12),
-    borderRadius: scaleWidth(12),
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-  },
-  secondaryButtonDisabled: {
-    opacity: 0.5,
-  },
-  secondaryButtonText: {
-    color: Colors.text,
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    fontWeight: '700',
-  },
-  resendRow: {
-    marginTop: scaleHeight(14),
-    alignItems: 'center',
-    gap: scaleHeight(6),
-  },
-  disclaimer: {
-    fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  resendLink: {
-    fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
-    fontWeight: '700',
-    color: Colors.brown,
-  },
-  resendLinkDisabled: {
-    opacity: 0.5,
-  },
-});
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    gradient: {
+      flex: 1,
+    },
+    keyboardAvoidingView: {
+      flex: 1,
+    },
+    safeArea: {
+      flex: 1,
+      paddingHorizontal: scaleWidth(24),
+      marginHorizontal: Platform.OS === 'android' ? scaleWidth(2) : scaleWidth(16),
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    header: {
+      width: '100%',
+      maxWidth: 520,
+      paddingBottom: scaleHeight(16),
+      alignItems: 'center',
+    },
+    title: {
+      fontSize: Platform.OS === 'android' ? scaleFont(26) : scaleFont(34),
+      fontWeight: '800',
+      color: isDarkMode ? colors.white : colors.text,
+      textAlign: 'center',
+    },
+    subtitle: {
+      marginTop: scaleHeight(8),
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    infoBanner: {
+      marginTop: scaleHeight(12),
+      paddingVertical: scaleHeight(10),
+      paddingHorizontal: scaleWidth(12),
+      borderRadius: scaleWidth(12),
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.22)',
+    },
+    infoBannerText: {
+      color: isDarkMode ? colors.white : colors.text,
+      fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(13),
+      fontWeight: '700',
+      textAlign: 'center',
+      lineHeight: scaleFont(18),
+    },
+    card: {
+      width: '100%',
+      maxWidth: 520,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: scaleWidth(16),
+      padding: scaleWidth(16),
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'transparent',
+    },
+    otpRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: scaleWidth(10),
+    },
+    otpBox: {
+      flex: 1,
+      height: scaleHeight(56),
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: scaleWidth(12),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'transparent',
+    },
+    otpBoxFilled: {
+      borderColor: colors.primary,
+    },
+    otpDigitText: {
+      fontSize: Platform.OS === 'android' ? scaleFont(18) : scaleFont(20),
+      fontWeight: '700',
+      color: isDarkMode ? colors.white : colors.text,
+    },
+    hiddenOtpInput: {
+      position: 'absolute',
+      opacity: 0,
+      width: 1,
+      height: 1,
+    },
+    primaryButton: {
+      marginTop: scaleHeight(18),
+      backgroundColor: colors.primary,
+      paddingVertical: scaleHeight(14),
+      borderRadius: scaleWidth(12),
+      alignItems: 'center',
+    },
+    primaryButtonDisabled: {
+      opacity: 0.5,
+    },
+    primaryButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: scaleWidth(10),
+    },
+    primaryButtonText: {
+      color: colors.textOnPrimary,
+      fontSize: Platform.OS === 'android' ? scaleFont(14) : scaleFont(16),
+      fontWeight: '700',
+    },
+    secondaryButton: {
+      marginTop: scaleHeight(10),
+      paddingVertical: scaleHeight(12),
+      borderRadius: scaleWidth(12),
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'transparent',
+    },
+    secondaryButtonDisabled: {
+      opacity: 0.5,
+    },
+    secondaryButtonText: {
+      color: isDarkMode ? colors.white : colors.text,
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
+      fontWeight: '700',
+    },
+    resendRow: {
+      marginTop: scaleHeight(14),
+      alignItems: 'center',
+      gap: scaleHeight(6),
+    },
+    disclaimer: {
+      fontSize: Platform.OS === 'android' ? scaleFont(10) : scaleFont(12),
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    resendLink: {
+      fontSize: Platform.OS === 'android' ? scaleFont(12) : scaleFont(14),
+      fontWeight: '700',
+      color: colors.secondary,
+    },
+    resendLinkDisabled: {
+      opacity: 0.5,
+    },
+  });
