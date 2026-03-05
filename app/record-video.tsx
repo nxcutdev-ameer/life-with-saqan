@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SavingSpinner } from '@/components/SavingSpinner';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import { ArrowLeft, RefreshCcw } from 'lucide-react-native';
 import { Colors, LifestyleColors } from '@/constants/colors';
@@ -27,9 +27,10 @@ export default function RecordVideoScreen() {
 
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const [audioPermission, setAudioPermission] = useState<boolean | null>(null);
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   const cameraGranted = !!permission?.granted;
+  const audioGranted = !!micPermission?.granted;
   const cameraActive = cameraGranted;
 
   const [isRecording, setIsRecording] = useState(false);
@@ -39,6 +40,22 @@ export default function RecordVideoScreen() {
 
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Attempt to set audio mode on mount to allow recording on iOS.
+    // Without this, the camera can freeze on the first frame.
+    const configureAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+      } catch (e) {
+        console.warn('Failed to configure audio session', e);
+      }
+    };
+    configureAudio();
+  }, []);
 
   useEffect(() => {
     if (!isRecording) {
@@ -102,38 +119,20 @@ export default function RecordVideoScreen() {
     }
   }, [permission, requestPermission]);
 
-  // Read microphone permission on mount (avoid prompting immediately).
-  useEffect(() => {
-    const checkAudioPermission = async () => {
-      try {
-        const { status } = await Audio.getPermissionsAsync();
-        setAudioPermission(status === 'granted');
-      } catch (error) {
-        console.warn('Audio permission check failed:', error);
-        setAudioPermission(false);
-      }
-    };
-
-    checkAudioPermission();
-  }, []);
-
   const ensureMicrophonePermission = async (): Promise<boolean> => {
-    if (audioPermission === true) return true;
+    if (audioGranted) return true;
 
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      const granted = status === 'granted';
-      setAudioPermission(granted);
-      if (!granted) {
+      const res = await requestMicPermission();
+      if (!res.granted) {
         Alert.alert(
           'Audio Permission Required',
           'Microphone access is required to record video with audio. Please enable it in device settings.'
         );
       }
-      return granted;
+      return res.granted;
     } catch (error) {
       console.warn('Audio permission request failed:', error);
-      setAudioPermission(false);
       Alert.alert('Permission Error', 'Failed to request microphone permission.');
       return false;
     }
@@ -176,6 +175,7 @@ export default function RecordVideoScreen() {
 
       const res = await camera.recordAsync({
         maxDuration: 60,
+        codec: 'avc1',
       });
 
       // recordAsync resolves after stopRecording is called (or maxDuration reached)

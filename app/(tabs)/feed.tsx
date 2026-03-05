@@ -176,15 +176,14 @@ const FeedItem = React.memo(function FeedItem({ item, index, pooledPlayer, autoP
       } catch {}
     };
 
+    // Play immediately – pooled/prewarmed players are already buffered so this
+    // resolves in the same frame. One short safety retry covers the rare case
+    // where the native player needs a single JS tick to settle.
     tryPlay();
-    const t1 = setTimeout(tryPlay, 120);
-    const t2 = setTimeout(tryPlay, 320);
-    const t3 = setTimeout(tryPlay, 600);
+    const t1 = setTimeout(tryPlay, 60);
 
     return () => {
       clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
     };
   }, [player]);
 
@@ -737,6 +736,9 @@ export default function FeedScreen() {
   const _isFocused = useIsFocused();
   const [screenActive, setScreenActive] = useState(false);
   const currentIndexRef = useRef(0);
+  // Ref mirror of `screenActive` so useRef-created callbacks (onViewableItemsChanged)
+  // always read the live value without a stale closure.
+  const screenActiveRef = useRef(false);
 
   // Video prewarm/pool window around the active index.
   const lastPrewarmIndexRef = useRef<number>(-1);
@@ -751,6 +753,7 @@ export default function FeedScreen() {
   useFocusEffect(
     useCallback(() => {
       setScreenActive(true);
+      screenActiveRef.current = true;
 
       // Set active immediately on focus to avoid a "paused on landing" frame.
       const item = filteredProperties[currentIndexRef.current] ?? filteredProperties[0];
@@ -761,6 +764,7 @@ export default function FeedScreen() {
       return () => {
         // Stop all playback when leaving the feed screen.
         setScreenActive(false);
+        screenActiveRef.current = false;
         setActiveItemId(null);
         // Hard stop any pooled players (prevents audio continuing after fast navigation/reloads).
         pauseAllPool();
@@ -1041,14 +1045,14 @@ export default function FeedScreen() {
   }, [PAGE_HEIGHT, scrollY]);
 
   const viewabilityConfig = useRef({
-    // Fast switching for instant playback, but still avoids tiny overlaps.
-    itemVisiblePercentThreshold: 55,
+    // Faster trigger for immediate playback.
+    itemVisiblePercentThreshold: 50,
     minimumViewTime: 0,
     waitForInteraction: false,
   }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems: viewable }: { viewableItems: ViewToken[] }) => {
-    if (!screenActive) return;
+    if (!screenActiveRef.current) return;
 
     const active = viewable.find((it) => it.isViewable);
     const activeId = (active?.key as string) || null;
@@ -1292,6 +1296,7 @@ export default function FeedScreen() {
         renderItem={renderProperty}
         keyExtractor={keyExtractor}
         scrollEnabled={!isScrubbing && !isHoldingSpeed}
+        
         // NOTE: do NOT use `pagingEnabled` here because it pages by viewport/screen height.
         // When item height is `PAGE_HEIGHT` (screen minus tab bar), paging by `SCREEN_HEIGHT` creates an
         // accumulating gap (each page overshoots by the tab bar height). Use `snapToInterval` instead.
@@ -1312,7 +1317,7 @@ export default function FeedScreen() {
         overScrollMode="never"
         
         // Android: lower value stops quicker; iOS: 'fast' already snaps well.
-        decelerationRate={Platform.OS === 'ios' ? 'fast' : 0.9}
+        decelerationRate="fast"
         disableIntervalMomentum={true}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -1332,7 +1337,7 @@ export default function FeedScreen() {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
           useNativeDriver: true,
         })}
-        scrollEventThrottle={Platform.OS === 'ios' ? 16 : 8}
+        scrollEventThrottle={16}
         onScrollBeginDrag={() => {
           // Pause all but keep the currently active item to avoid audio overlap.
           const active = filteredProperties[currentIndexRef.current];
@@ -1343,6 +1348,18 @@ export default function FeedScreen() {
           } else {
             pauseAllRegistry('feed');
             pauseAllPool();
+          }
+        }}
+        onScrollEndDrag={(e) => {
+          // When the user lifts their finger without enough velocity for momentum,
+          // snap logic still runs but onMomentumScrollEnd never fires.
+          // Immediately set the active item here so playback starts right away.
+          const offsetY = e.nativeEvent.contentOffset.y;
+          const nextIndex = Math.max(0, Math.round(offsetY / PAGE_HEIGHT));
+          currentIndexRef.current = nextIndex;
+          const item = filteredProperties[nextIndex];
+          if (screenActiveRef.current && item?.id) {
+            setActiveItemId(item.id);
           }
         }}
         onMomentumScrollBegin={() => {

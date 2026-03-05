@@ -4,10 +4,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { ArrowLeft } from 'lucide-react-native';
 import { SavingSpinner } from '@/components/SavingSpinner';
+import { useTheme } from '@/utils/useTheme';
+import { ThemeColors } from '@/constants/theme';
 
 export default function PdfViewerScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ url?: string | string[]; title?: string | string[] }>();
+
+  const { colors, isDarkMode } = useTheme();
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
 
   const url = useMemo(() => {
     const value = Array.isArray(params.url) ? params.url[0] : params.url;
@@ -38,7 +43,7 @@ export default function PdfViewerScreen() {
       {/* Floating Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={20} color="#222" />
+          <ArrowLeft size={20} color={colors.text} />
         </Pressable>
 
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -69,10 +74,10 @@ export default function PdfViewerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors, isDarkMode: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F4F7',
+    backgroundColor: colors.background,
   },
 
   header: {
@@ -86,9 +91,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 12,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: isDarkMode ? 'rgba(23, 24, 26, 0.95)' : 'rgba(255, 255, 255, 0.95)',
     shadowColor: '#000',
-    shadowOpacity: 0.1,
+    shadowOpacity: isDarkMode ? 0.3 : 0.1,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
   },
@@ -97,7 +102,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EFEFEF',
+    backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#EFEFEF',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -107,7 +112,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 16,
     fontWeight: '700',
-    color: '#222',
+    color: colors.text,
     marginHorizontal: 10,
   },
 
@@ -118,9 +123,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowOpacity: isDarkMode ? 0.2 : 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
   },
@@ -134,17 +139,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
   },
 
   loadingText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
 
   webview: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
   },
 });

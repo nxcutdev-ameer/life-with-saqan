@@ -18,6 +18,7 @@ import {
   Animated,
   Easing,
   Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import { VideoScrubber } from '@/components/VideoScrubber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -554,7 +555,7 @@ export default function UploadScreen() {
         const res = await createDraftProperty({
           propertiesToken,
           type: 'sale',
-          state: 'draft',
+          state: 'active',
         });
 
         const referenceId = res?.payload?.reference_id ?? null;
@@ -1276,6 +1277,7 @@ export default function UploadScreen() {
 
         if (isSuccess) {
           updateUploadProgress(1);
+          DeviceEventEmitter.emit('refreshFeed');
           setShowPublishToast(true);
           return;
         }
@@ -1401,6 +1403,7 @@ export default function UploadScreen() {
       await AsyncStorage.setItem(`@posts_used_${currentMonth}`, (current + 1).toString());
       await refreshSubscription();
 
+      DeviceEventEmitter.emit('refreshFeed');
       setShowPublishToast(true);
       return;
     } catch (err: any) {
