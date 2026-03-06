@@ -147,5 +147,6 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: scaleWidth(8),
+    right: scaleWidth(-8),
   },
 });

@@ -2349,7 +2349,8 @@ export default function UploadScreen() {
            style={[styles.previewActionButton, styles.previewActionPrimary]}
            onPress={() => {
              setIsPreviewPlaying(false);
-             setStep('edit');
+             // Navigate directly to highlights step
+             handleSkipToHighlights();
            }}
          >
            <Text style={styles.previewActionPrimaryText}>Use Video</Text>
@@ -2420,7 +2421,7 @@ export default function UploadScreen() {
             />
 
             <View pointerEvents="box-none" style={styles.editPreviewControlsOverlay}>
-            {overlayText && (
+            {/* {overlayText && (
               <View pointerEvents="none" style={[
                 styles.textOverlayPreview,
                 overlayTextPosition === 'top' && styles.textTop,
@@ -2439,11 +2440,11 @@ export default function UploadScreen() {
                   {overlayText}
                 </Text>
               </View>
-            )}
+            )} */}
           </View>
           </View>
 
-          <View style={styles.controlSection}>
+          {/* <View style={styles.controlSection}>
             <Text style={styles.controlTitle}>Text Overlay</Text>
             <TextInput
               style={styles.textInput}
@@ -2526,7 +2527,7 @@ export default function UploadScreen() {
                 </View>
               </>
             )}
-          </View>
+          </View> */}
 
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -2541,16 +2542,17 @@ export default function UploadScreen() {
           <Pressable
             style={styles.continueButton}
             onPress={() => {
-              setShowShareModal(true);
+              // Jump directly to highlights skipping share modal
+              handleSkipToHighlights();
             }}
           >
             <Text style={styles.continueButtonText}>
-              {overlayText ? 'Next' : 'Skip Text'}
+              {overlayText ? 'Next' : 'Skip'}
             </Text>
           </Pressable>
         </View>
 
-        {showShareModal && (
+        {/* {showShareModal && (
           <View
             style={[
               styles.modalOverlay,
@@ -2585,7 +2587,7 @@ export default function UploadScreen() {
               </View>
             </View>
           </View>
-        )}
+        )} */}
       </View>
     );
   }

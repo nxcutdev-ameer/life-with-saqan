@@ -7,15 +7,35 @@ import { Colors } from '@/constants/colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Platform } from 'react-native';
 import { scaleFont } from '@/utils/responsive';
+import { warmUpExpoVideoPlayers } from '@/utils/expoVideoWarmup';
+import { mapPublicVideoToProperty } from '@/utils/publicVideoMapper';
 
 export default function LandingScreen() {
   const router = useRouter();
 
   // Background preload: fetch public videos page-1 early so later filters are instant.
   useEffect(() => {
-    warmPublicVideosPage1().catch(() => {
-      // ignore
-    });
+    warmPublicVideosPage1()
+      .then((videos) => {
+        if (videos && videos.length > 0) {
+          // Map to app Property model to extract video URLs correctly.
+          const items = videos.map(mapPublicVideoToProperty);
+          const urls = items
+            .map((it) => it.videoUrl)
+            .filter(Boolean)
+            .slice(0, 3) as string[];
+
+          if (urls.length > 0) {
+            // Warm up players and keep them in the pool for instant playback on feed entry.
+            warmUpExpoVideoPlayers(urls, { count: 3, playMs: 600, keepInPool: true }).catch(() => {
+              // ignore
+            });
+          }
+        }
+      })
+      .catch(() => {
+        // ignore
+      });
   }, []);
 
   return (

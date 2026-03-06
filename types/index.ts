@@ -56,7 +56,11 @@ export interface Property {
   transactionType?: string;
   propertyType: PropertyType;
   bedrooms: number;
+  /** Optional upper bound bedrooms (used by offplan cards to show a range). */
+  bedroomsTo?: number;
   bathrooms: number;
+  /** Optional upper bound bathrooms (used by offplan cards to show a range). */
+  bathroomsTo?: number;
   /** Primary size in sqft (for offplan: typically the `from` square footage). */
   sizeSqft: number;
   /** Optional upper bound size in sqft (used by offplan cards to show a range). */

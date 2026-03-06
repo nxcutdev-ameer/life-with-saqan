@@ -52,14 +52,30 @@ export default function PropertyInfo({ item, translationContent }: PropertyInfoP
       </View>
       
       <View style={styles.footerDetailsRow}>
-        <View style={styles.footerDetailItem}>
-          <Bed size={14} color="#FFFFFF" fill="#FFFFFF" />
-          <Text style={styles.footerSmallText}>{item.bedrooms}</Text>
-        </View>
-        <View style={styles.footerDetailItem}>
-          <Bath size={14} color="#FFFFFF" fill="#FFFFFF" />
-          <Text style={styles.footerSmallText}>{item.bathrooms}</Text>
-        </View>
+        {item.bedrooms === 0 && (!item.bedroomsTo || item.bedroomsTo === 0) ? (
+          <View style={styles.footerDetailItem}>
+            <Text style={styles.footerSmallText}>STUDIO</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.footerDetailItem}>
+              <Bed size={14} color="#FFFFFF" fill="#FFFFFF" />
+              <Text style={styles.footerSmallText}>
+                {item.type === 'offplan' && item.bedroomsTo && item.bedroomsTo > item.bedrooms
+                  ? `From ${item.bedrooms} to ${item.bedroomsTo}`
+                  : `${item.bedrooms} ${item.bedrooms === 1 ? 'Bedroom' : 'Bedrooms'}`}
+              </Text>
+            </View>
+            <View style={styles.footerDetailItem}>
+              <Bath size={14} color="#FFFFFF" fill="#FFFFFF" />
+              <Text style={styles.footerSmallText}>
+                {item.type === 'offplan' && item.bathroomsTo && item.bathroomsTo > item.bathrooms
+                  ? `From ${item.bathrooms} to ${item.bathroomsTo}`
+                  : `${item.bathrooms} ${item.bathrooms === 1 ? 'Bathroom' : 'Bathrooms'}`}
+              </Text>
+            </View>
+          </>
+        )}
         <View style={styles.footerDetailItem}>
           <Ruler size={14} color="#FFFFFF" fill="#FFFFFF" />
           <Text style={styles.footerSmallText}>

@@ -39,7 +39,21 @@ export default function LocationsScreen() {
   const handleCitySelect = (city: string) => {
     setSelectedCity(city);
     
-    // Navigate immediately
+    // Background tasks: sync preferences and preload feed
+    const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
+    
+    // 1. Sync preferences
+    syncPreferencesInBackground(transactionType, city, lifestyles);
+
+    // 2. Preload feed and warm players (non-blocking)
+    if (transactionType !== 'STAY') {
+      preloadFeedFromCacheBeforeNavigate(
+        { transactionType: backendTransactionType, city },
+        { warmPlayers: true, warmCount: 3 }
+      ).catch(() => {});
+    }
+
+    // Navigate
     if (transactionType === 'STAY') {
       router.push({
         pathname: '/lifestyle',
@@ -49,7 +63,6 @@ export default function LocationsScreen() {
         },
       });
     } else {
-      const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
       router.push({
         pathname: '/(tabs)/feed',
         params: {
@@ -57,27 +70,6 @@ export default function LocationsScreen() {
           location: city,
         },
       });
-    }
-
-    // Android optimization: Defer all background tasks to next tick
-    if (Platform.OS === 'android') {
-      // Use setImmediate to push to next event loop (Android-specific optimization)
-      setImmediate(() => {
-        syncPreferencesInBackground(transactionType, city, lifestyles);
-        if (transactionType !== 'STAY') {
-          const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
-          preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
-            .catch(() => {});
-        }
-      });
-    } else {
-      // iOS: Original background task handling
-      syncPreferencesInBackground(transactionType, city, lifestyles);
-      if (transactionType !== 'STAY') {
-        const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
-        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city }, { warmPlayers: false })
-          .catch(() => {});
-      }
     }
   };
 

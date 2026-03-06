@@ -29,22 +29,16 @@ export default function LifestyleScreen() {
   const handleContinue = () => {
     const transactionType = (params.transactionType as TransactionType) || 'RENT';
     const location = (params.location as string) || 'Dubai';
+    const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
 
     // Persist to global preferences so AppHeader reflects the chosen values.
     updatePreferences(transactionType, location, selectedLifestyles);
 
-    // Use LandingScreen-warmed cache to prepare the exact feed (strict type+city) before navigating.
-    // Commit filtered items synchronously (fast, from cache) so Feed mounts already filtered.
-    // Warm players in background so we don't block navigation on player init.
-    const backendTransactionType = transactionType === 'BUY' ? 'SALE' : transactionType;
-
-    preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city: location }, { warmPlayers: false })
-      .catch(() => {
-        // Ignore preload failures; feed will load normally.
-      })
-      .finally(() => {
-        preloadFeedFromCacheBeforeNavigate({ transactionType: backendTransactionType, city: location }, { warmPlayers: true }).catch(() => {});
-      });
+    // Preload feed and warm players (non-blocking) before navigation.
+    preloadFeedFromCacheBeforeNavigate(
+      { transactionType: backendTransactionType, city: location },
+      { warmPlayers: true, warmCount: 3 }
+    ).catch(() => {});
 
     router.push({
       pathname: '/(tabs)/feed',

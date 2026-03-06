@@ -135,7 +135,11 @@ export function mapPublicVideoToProperty(v: any): Property {
   const priceTo = isOffplan ? offplanPriceTo : undefined;
 
   const bedrooms = isOffplan ? toNumberOrZero(backendProperty?.bedrooms?.from) : toNumberOrZero(meta?.bedrooms);
+  const bedroomsTo = isOffplan ? toNumberOrZero(backendProperty?.bedrooms?.to) : undefined;
+
   const bathrooms = isOffplan ? toNumberOrZero(backendProperty?.bathrooms?.from) : toNumberOrZero(meta?.bathrooms);
+  const bathroomsTo = isOffplan ? toNumberOrZero(backendProperty?.bathrooms?.to) : undefined;
+
   const sizeSqft = isOffplan ? (offplanSquareFrom || offplanSquareTo) : toNumberOrZero(meta?.square);
   const sizeSqftTo = isOffplan ? offplanSquareTo : undefined;
 
@@ -169,7 +173,9 @@ export function mapPublicVideoToProperty(v: any): Property {
     listingType: backendProperty?.type === 'rent' ? 'RENT' : 'BUY',
     propertyType: 'apartment' as PropertyType,
     bedrooms,
+    bedroomsTo: bedroomsTo && bedroomsTo !== bedrooms ? bedroomsTo : undefined,
     bathrooms,
+    bathroomsTo: bathroomsTo && bathroomsTo !== bathrooms ? bathroomsTo : undefined,
     sizeSqft,
     sizeSqftTo: sizeSqftTo && sizeSqftTo !== sizeSqft ? sizeSqftTo : undefined,
     location: { city, area, latitude: 0, longitude: 0 },
